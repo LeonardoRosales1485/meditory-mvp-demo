@@ -58,6 +58,10 @@ SUPABASE_URL=...
 Notas:
 
 - El backend usa `SUPABASE_SERVICE_ROLE_KEY` y `SUPABASE_URL` (o fallback a `VITE_SUPABASE_URL`).
+- Podés tomar como base el archivo [`.env.example`](.env.example).
+- Contrato recomendado para Vercel:
+  - Públicas (cliente): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
+  - Privadas (server): `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
 
 ### 3.3 Levantar en desarrollo
 
@@ -111,15 +115,20 @@ Ejecutar scripts en este orden exacto desde `sql/`:
 
 ### 6.2 Deploy en Vercel
 
+Prerequisito: este proyecto usa **TanStack Start + Nitro** para generar salida compatible con Vercel Functions.
+
 1. Importar repo en Vercel.
-2. Configurar variables de entorno en Vercel:
+2. Configurar variables de entorno en Vercel (Production y Preview):
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_ANON_KEY`
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `SUPABASE_URL` (recomendado explícito)
-3. Build command: `npm run build`
-4. Output: default de Vite/TanStack Start (sin custom)
-5. Deploy.
+3. Project Settings -> Build and Output Settings:
+   - Install Command: `npm install`
+   - Build Command: `npm run build`
+   - Output Directory: dejar vacío (auto, manejado por Nitro)
+4. Deploy.
+5. Si venías de un intento fallido con configuración vieja, hacer **Redeploy** sin cache.
 
 ### 6.3 Smoke test post-deploy
 
@@ -129,6 +138,8 @@ Ejecutar scripts en este orden exacto desde `sql/`:
 - Creación de transferencia.
 - Creación de pedido médico.
 - Auditoría visible.
+- Verificar que no aparezca `404 NOT_FOUND` en `/` y rutas profundas (`/login`, `/app/pedidos`, `/app/transferencias`).
+- Confirmar que las server functions respondan (acciones que mutan datos y refrescan estado).
 
 ---
 

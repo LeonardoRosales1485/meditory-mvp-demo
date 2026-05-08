@@ -98,13 +98,13 @@ function PacientesPage() {
   }
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex items-start justify-between">
+    <div className="space-y-4 p-3 sm:space-y-6 sm:p-6">
+      <div className="flex flex-col items-start justify-between gap-3 sm:flex-row">
         <div>
           <h1 className="text-xl font-semibold">Pacientes</h1>
           <p className="text-sm text-muted-foreground">ABM básico de pacientes del workspace.</p>
         </div>
-        <Button onClick={startAdd}>
+        <Button onClick={startAdd} className="w-full sm:w-auto">
           <UserRoundPlus className="mr-2 h-4 w-4" />
           Nuevo paciente
         </Button>
@@ -119,10 +119,10 @@ function PacientesPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Nombre</TableHead>
-                <TableHead>Obra social</TableHead>
-                <TableHead>Diagnóstico</TableHead>
-                <TableHead>Médico asignado</TableHead>
-                <TableHead>Sala</TableHead>
+                <TableHead className="hidden md:table-cell">Obra social</TableHead>
+                <TableHead className="hidden lg:table-cell">Diagnóstico</TableHead>
+                <TableHead className="hidden md:table-cell">Médico asignado</TableHead>
+                <TableHead className="hidden lg:table-cell">Sala</TableHead>
                 <TableHead className="text-right">Acciones</TableHead>
               </TableRow>
             </TableHeader>
@@ -130,10 +130,10 @@ function PacientesPage() {
               {rows.map((p) => (
                 <TableRow key={p.id}>
                   <TableCell className="font-medium">{p.lastName}, {p.firstName}</TableCell>
-                  <TableCell>{p.insurance || "—"}</TableCell>
-                  <TableCell>{p.diagnosis || "—"}</TableCell>
-                  <TableCell>{p.assignedDoctor}</TableCell>
-                  <TableCell>{p.room || "—"}</TableCell>
+                  <TableCell className="hidden md:table-cell">{p.insurance || "—"}</TableCell>
+                  <TableCell className="hidden lg:table-cell">{p.diagnosis || "—"}</TableCell>
+                  <TableCell className="hidden md:table-cell">{p.assignedDoctor}</TableCell>
+                  <TableCell className="hidden lg:table-cell">{p.room || "—"}</TableCell>
                   <TableCell className="text-right">
                     <Button size="sm" variant="ghost" onClick={() => startEdit(p.id)}>
                       <Pencil className="h-3.5 w-3.5" />
@@ -154,7 +154,7 @@ function PacientesPage() {
           <DialogHeader>
             <DialogTitle>{editingId ? "Editar paciente" : "Nuevo paciente"}</DialogTitle>
           </DialogHeader>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label>Nombre</Label>
               <Input value={form.firstName} onChange={(e) => setForm((f) => ({ ...f, firstName: e.target.value }))} />
@@ -171,11 +171,11 @@ function PacientesPage() {
               <Label>Sala</Label>
               <Input value={form.room} onChange={(e) => setForm((f) => ({ ...f, room: e.target.value }))} />
             </div>
-            <div className="col-span-2 space-y-1.5">
+            <div className="space-y-1.5 sm:col-span-2">
               <Label>Diagnóstico</Label>
               <Input value={form.diagnosis} onChange={(e) => setForm((f) => ({ ...f, diagnosis: e.target.value }))} />
             </div>
-            <div className="col-span-2 space-y-1.5">
+            <div className="space-y-1.5 sm:col-span-2">
               <Label>Médico asignado</Label>
               <Select
                 value={form.assignedDoctor}

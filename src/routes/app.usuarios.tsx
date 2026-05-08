@@ -136,15 +136,15 @@ function UsuariosPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between">
+    <div className="space-y-4 sm:space-y-6">
+      <div className="flex flex-col items-start justify-between gap-3 sm:flex-row">
         <div>
           <h1 className="text-xl font-semibold">Usuarios</h1>
           <p className="text-sm text-muted-foreground">
             Gestión de usuarios de {session?.workspaceName}
           </p>
         </div>
-        <Button onClick={openAdd} size="sm">
+        <Button onClick={openAdd} size="sm" className="w-full sm:w-auto">
           <UserPlus className="mr-2 h-4 w-4" />
           Nuevo usuario
         </Button>
@@ -179,7 +179,7 @@ function UsuariosPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Nombre</TableHead>
-                <TableHead>Email</TableHead>
+                <TableHead className="hidden md:table-cell">Email</TableHead>
                 <TableHead>Rol</TableHead>
                 <TableHead className="text-right">Acciones</TableHead>
               </TableRow>
@@ -195,7 +195,7 @@ function UsuariosPage() {
                         <span className="ml-2 text-[10px] text-muted-foreground">(vos)</span>
                       )}
                     </TableCell>
-                    <TableCell className="font-mono text-xs text-muted-foreground">
+                    <TableCell className="hidden font-mono text-xs text-muted-foreground md:table-cell">
                       {user.email}
                     </TableCell>
                     <TableCell>

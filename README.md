@@ -215,6 +215,31 @@ En entorno empresa, definir:
 
 ---
 
-## 11) Documentación funcional
+## 11) Responsive guidelines
+
+Lineamientos base para mantener UI responsive en futuras pantallas:
+
+- Breakpoints de referencia:
+  - Mobile: `320px`, `375px`, `390px`
+  - Tablet: `768px`
+  - Desktop: `1024px+`
+- Layout:
+  - usar `mobile-first` (`grid-cols-1` por defecto y escalar con `sm:/md:/lg:`),
+  - evitar paddings fijos grandes en mobile,
+  - aplicar `min-w-0` en contenedores flex para prevenir cortes.
+- Headers:
+  - en mobile, `title + action` debe apilar (`flex-col`) y volver a fila en `sm+`.
+- Tablas:
+  - permitir scroll horizontal (`overflow-x-auto`),
+  - ocultar columnas secundarias en mobile con `hidden md:table-cell` / `hidden lg:table-cell`.
+- Modales/formularios:
+  - mantener `max-h` + `overflow-y-auto` en contenido,
+  - formularios de 1 columna en mobile y 2 columnas desde `md`.
+- QA visual mínimo antes de merge:
+  - revisar `/login`, `/app/*` principales y modales críticos en 320/375/390/768/1024+.
+
+---
+
+## 12) Documentación funcional
 
 Documentos de este proyecto pueden ser consultados en este drive: https://drive.google.com/drive/folders/1otq1ulj76Yv3Cpwubhg5wMFSPumoD8AO?usp=drive_link

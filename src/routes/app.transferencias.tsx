@@ -253,7 +253,7 @@ function Transfers() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Desde</Label>
                     <Input value={centralWarehouse?.name ?? "Sin depósito central"} disabled />
@@ -295,7 +295,7 @@ function Transfers() {
                       ))}
                     </SelectContent>
                   </Select>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     <div className="space-y-1">
                       <Label className="text-xs text-muted-foreground">Vencimiento del lote</Label>
                       <Input value={selectedBatch ? formatDate(selectedBatch.expiry) : "—"} disabled />
@@ -336,12 +336,12 @@ function Transfers() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>ID</TableHead>
+                <TableHead className="hidden md:table-cell">ID</TableHead>
                 <TableHead>Medicamento</TableHead>
-                <TableHead>Ruta</TableHead>
+                <TableHead className="hidden lg:table-cell">Ruta</TableHead>
                 <TableHead className="text-right">Cantidad</TableHead>
-                <TableHead>Solicitante</TableHead>
-                <TableHead>Fecha</TableHead>
+                <TableHead className="hidden md:table-cell">Solicitante</TableHead>
+                <TableHead className="hidden md:table-cell">Fecha</TableHead>
                 <TableHead>Estado</TableHead>
                 <TableHead></TableHead>
               </TableRow>
@@ -360,7 +360,7 @@ function Transfers() {
               )}
               {transfers.map((t) => (
                 <TableRow key={t.id}>
-                  <TableCell className="font-mono text-xs">{t.transferCode ?? t.id}</TableCell>
+                  <TableCell className="hidden font-mono text-xs md:table-cell">{t.transferCode ?? t.id}</TableCell>
                   <TableCell className="font-medium">
                     <button
                       type="button"
@@ -370,7 +370,7 @@ function Transfers() {
                       {medName(t.medicationId)}
                     </button>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="hidden lg:table-cell">
                     <div className="flex items-center gap-2 text-sm">
                       <span>{warehouseName(t.fromWarehouseId)}</span>
                       <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
@@ -378,8 +378,8 @@ function Transfers() {
                     </div>
                   </TableCell>
                   <TableCell className="text-right font-semibold">{t.quantity}</TableCell>
-                  <TableCell className="text-sm">{t.requestedBy}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{formatDate(t.date)}</TableCell>
+                  <TableCell className="hidden text-sm md:table-cell">{t.requestedBy}</TableCell>
+                  <TableCell className="hidden text-sm text-muted-foreground md:table-cell">{formatDate(t.date)}</TableCell>
                   <TableCell>
                     <StatusBadge status={t.status} />
                   </TableCell>

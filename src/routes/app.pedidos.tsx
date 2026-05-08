@@ -228,9 +228,9 @@ function DoctorView() {
   }
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-4 p-3 sm:space-y-6 sm:p-6">
       <div>
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
           <div>
             <h1 className="text-xl font-semibold">Pedidos médicos</h1>
             <p className="text-sm text-muted-foreground">
@@ -240,14 +240,14 @@ function DoctorView() {
               </span>
             </p>
           </div>
-          <Button onClick={() => setOpenCreate(true)}>
+          <Button onClick={() => setOpenCreate(true)} className="w-full sm:w-auto">
             <Plus className="mr-1 h-4 w-4" />
             Nuevo pedido
           </Button>
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
         <Card>
           <CardContent className="flex items-center gap-3 p-4">
             <Clock className="h-8 w-8 text-amber-500" />
@@ -291,11 +291,11 @@ function DoctorView() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Medicamento</TableHead>
-                  <TableHead>Paciente</TableHead>
-                  <TableHead>Sala</TableHead>
+                  <TableHead className="hidden md:table-cell">Paciente</TableHead>
+                  <TableHead className="hidden lg:table-cell">Sala</TableHead>
                   <TableHead className="text-right">Cant.</TableHead>
                   <TableHead>Estado</TableHead>
-                  <TableHead>Fecha</TableHead>
+                  <TableHead className="hidden md:table-cell">Fecha</TableHead>
                   <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
@@ -303,13 +303,13 @@ function DoctorView() {
                 {myOrders.map((o) => (
                   <TableRow key={o.id}>
                     <TableCell className="font-medium">{medName(o.medicationId)}</TableCell>
-                    <TableCell className="text-muted-foreground">{o.patient}</TableCell>
-                    <TableCell className="text-muted-foreground">{o.room}</TableCell>
+                    <TableCell className="hidden text-muted-foreground md:table-cell">{o.patient}</TableCell>
+                    <TableCell className="hidden text-muted-foreground lg:table-cell">{o.room}</TableCell>
                     <TableCell className="text-right">{o.quantity}</TableCell>
                     <TableCell>
                       <StatusBadge status={o.status} />
                     </TableCell>
-                    <TableCell className="text-muted-foreground text-xs">
+                    <TableCell className="hidden text-muted-foreground text-xs md:table-cell">
                       {formatDate(o.requestedAt)}
                     </TableCell>
                     <TableCell className="text-right">
@@ -353,7 +353,7 @@ function DoctorView() {
               Registrá una nueva solicitud de medicación.
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleSubmit} className="grid gap-4 md:grid-cols-2">
+          <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="space-y-1.5">
               <Label>Medicamento</Label>
               <Select
@@ -418,7 +418,7 @@ function DoctorView() {
                   ))}
                 </SelectContent>
               </Select>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <div className="space-y-1">
                   <Label className="text-xs text-muted-foreground">Vencimiento del lote</Label>
                   <Input value={selectedLot ? formatDate(selectedLot.expiry) : "—"} disabled />
@@ -722,16 +722,16 @@ function AdminView() {
   }
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-4 p-3 sm:space-y-6 sm:p-6">
       <div>
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
           <div>
             <h1 className="text-xl font-semibold">Pedidos médicos</h1>
             <p className="text-sm text-muted-foreground">
               Solicitudes recibidas en Farmacia Interna
             </p>
           </div>
-          <Button onClick={() => setOpenCreate(true)}>
+          <Button onClick={() => setOpenCreate(true)} className="w-full sm:w-auto">
             <Plus className="mr-1 h-4 w-4" />
             Nuevo pedido asistido
           </Button>
@@ -739,7 +739,7 @@ function AdminView() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
         <Card>
           <CardContent className="flex items-center gap-3 p-4">
             <Clock className="h-8 w-8 text-amber-500" />
@@ -783,15 +783,15 @@ function AdminView() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Médico</TableHead>
-                  <TableHead>Paciente</TableHead>
-                  <TableHead>Sala</TableHead>
-                  <TableHead>Depósito</TableHead>
+                  <TableHead className="hidden md:table-cell">Médico</TableHead>
+                  <TableHead className="hidden lg:table-cell">Paciente</TableHead>
+                  <TableHead className="hidden lg:table-cell">Sala</TableHead>
+                  <TableHead className="hidden md:table-cell">Depósito</TableHead>
                   <TableHead>Medicamento</TableHead>
                   <TableHead className="text-right">Cant.</TableHead>
-                  <TableHead className="text-right">Stock disp.</TableHead>
+                  <TableHead className="hidden text-right md:table-cell">Stock disp.</TableHead>
                   <TableHead>Estado</TableHead>
-                  <TableHead>Fecha</TableHead>
+                  <TableHead className="hidden md:table-cell">Fecha</TableHead>
                   <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
@@ -801,13 +801,13 @@ function AdminView() {
                   const canDispatch = o.status === "aprobado" && stock >= o.quantity;
                   return (
                     <TableRow key={o.id}>
-                      <TableCell className="font-medium">{o.doctor}</TableCell>
-                      <TableCell>{o.patient}</TableCell>
-                      <TableCell className="text-muted-foreground">{o.room}</TableCell>
-                      <TableCell className="text-muted-foreground">{warehouseName(o.warehouseId)}</TableCell>
+                      <TableCell className="hidden font-medium md:table-cell">{o.doctor}</TableCell>
+                      <TableCell className="hidden lg:table-cell">{o.patient}</TableCell>
+                      <TableCell className="hidden text-muted-foreground lg:table-cell">{o.room}</TableCell>
+                      <TableCell className="hidden text-muted-foreground md:table-cell">{warehouseName(o.warehouseId)}</TableCell>
                       <TableCell>{medName(o.medicationId)}</TableCell>
                       <TableCell className="text-right">{o.quantity}</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="hidden text-right md:table-cell">
                         <span
                           className={
                             stock < o.quantity
@@ -821,7 +821,7 @@ function AdminView() {
                       <TableCell>
                         <StatusBadge status={o.status} />
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
+                      <TableCell className="hidden text-xs text-muted-foreground md:table-cell">
                         {formatDate(o.requestedAt)}
                       </TableCell>
                       <TableCell className="text-right">
@@ -997,7 +997,7 @@ function AdminView() {
               Registrá un pedido en nombre del médico. La auditoría dejará trazado que lo cargó un admin.
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={createAssistedOrder} className="grid gap-4 md:grid-cols-2">
+          <form onSubmit={createAssistedOrder} className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="space-y-1.5">
               <Label>Médico solicitante</Label>
               <Select
@@ -1077,7 +1077,7 @@ function AdminView() {
                   ))}
                 </SelectContent>
               </Select>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <div className="space-y-1">
                   <Label className="text-xs text-muted-foreground">Vencimiento del lote</Label>
                   <Input value={selectedLot ? formatDate(selectedLot.expiry) : "—"} disabled />

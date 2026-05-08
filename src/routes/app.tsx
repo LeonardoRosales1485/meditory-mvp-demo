@@ -63,7 +63,7 @@ function AppShell() {
   if (session && session.role !== "admin" && warehouseIds.length === 0) {
     return (
       <SidebarProvider>
-        <div className="flex min-h-screen w-full items-center justify-center bg-background p-6">
+        <div className="flex min-h-screen w-full items-center justify-center bg-background p-4 sm:p-6">
           <div className="max-w-md rounded-lg border bg-card p-6 text-center">
             <h2 className="text-lg font-semibold">Sin depósitos asignados</h2>
             <p className="mt-2 text-sm text-muted-foreground">
@@ -83,9 +83,9 @@ function AppShell() {
     <SidebarProvider>
       <div className="flex min-h-screen w-full bg-background">
         <AppSidebar />
-        <div className="flex flex-1 flex-col">
+        <div className="flex min-w-0 flex-1 flex-col">
           <AppHeader />
-          <main className="flex-1 p-6">
+          <main className="flex-1 p-3 sm:p-4 md:p-6">
             <Outlet />
           </main>
         </div>
@@ -106,9 +106,9 @@ function AppHeader() {
   };
 
   return (
-    <header className="sticky top-0 z-10 flex h-14 items-center gap-3 border-b bg-card/80 px-4 backdrop-blur">
+    <header className="sticky top-0 z-10 flex h-14 min-w-0 items-center gap-2 border-b bg-card/80 px-2 sm:gap-3 sm:px-4 backdrop-blur">
       <SidebarTrigger />
-      <div className="hidden text-xs text-muted-foreground md:block">
+      <div className="hidden truncate text-xs text-muted-foreground md:block">
         {session?.workspaceName}
       </div>
       <div className="ml-auto flex items-center gap-2">

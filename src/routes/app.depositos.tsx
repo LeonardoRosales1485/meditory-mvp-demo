@@ -154,12 +154,12 @@ function WarehousesPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       <PageHeader
         title="Depósitos"
         description="Gestión de depósitos y visualización completa de stock por depósito."
         action={
-          <Button onClick={openAdd} disabled={showLoading}>
+          <Button onClick={openAdd} disabled={showLoading} className="w-full sm:w-auto">
             <Plus className="mr-1.5 h-4 w-4" /> Nuevo depósito
           </Button>
         }
@@ -178,7 +178,7 @@ function WarehousesPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Nombre</TableHead>
-                    <TableHead>Tipo</TableHead>
+                    <TableHead className="hidden md:table-cell">Tipo</TableHead>
                     <TableHead className="text-right">Stock total</TableHead>
                     <TableHead className="text-right">Acciones</TableHead>
                   </TableRow>
@@ -205,7 +205,7 @@ function WarehousesPage() {
                         onClick={() => setSelectedWarehouseId(warehouse.id)}
                       >
                         <TableCell className="font-medium">{warehouse.name}</TableCell>
-                        <TableCell>{TYPE_LABEL[warehouse.type]}</TableCell>
+                        <TableCell className="hidden md:table-cell">{TYPE_LABEL[warehouse.type]}</TableCell>
                         <TableCell className="text-right font-semibold">{stockTotal}</TableCell>
                         <TableCell className="text-right">
                           <Button
@@ -252,8 +252,8 @@ function WarehousesPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Medicamento</TableHead>
-                    <TableHead>Lote</TableHead>
-                    <TableHead>Vencimiento</TableHead>
+                    <TableHead className="hidden md:table-cell">Lote</TableHead>
+                    <TableHead className="hidden md:table-cell">Vencimiento</TableHead>
                     <TableHead className="text-right">Cantidad</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -270,8 +270,8 @@ function WarehousesPage() {
                     selectedStock.map((batch) => (
                       <TableRow key={batch.id}>
                         <TableCell className="font-medium">{medName(batch.medicationId)}</TableCell>
-                        <TableCell className="font-mono text-xs">{batch.lot}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{formatDate(batch.expiry)}</TableCell>
+                        <TableCell className="hidden font-mono text-xs md:table-cell">{batch.lot}</TableCell>
+                        <TableCell className="hidden text-sm text-muted-foreground md:table-cell">{formatDate(batch.expiry)}</TableCell>
                         <TableCell className="text-right font-semibold">{batch.quantity}</TableCell>
                       </TableRow>
                     ))

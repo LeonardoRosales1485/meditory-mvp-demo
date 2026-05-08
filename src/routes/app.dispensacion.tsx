@@ -103,10 +103,10 @@ function Dispensing() {
         title="Dispensación interna"
         description={`Egresos a salas. Operando en ${warehouse.name}.`}
         action={
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center">
             {warehouses.length > 1 && (
               <Select value={warehouse.id} onValueChange={(id) => setWarehouse(warehouses.find((w) => w.id === id)!)}>
-                <SelectTrigger className="w-44">
+                <SelectTrigger className="w-full sm:w-44">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -118,7 +118,7 @@ function Dispensing() {
             )}
             <Dialog open={open} onOpenChange={setOpen}>
               <DialogTrigger asChild>
-                <Button>Nueva dispensación</Button>
+                <Button className="w-full sm:w-auto">Nueva dispensación</Button>
               </DialogTrigger>
             <DialogContent>
               <DialogHeader>
@@ -144,7 +144,7 @@ function Dispensing() {
                     <p className="text-xs text-muted-foreground">Stock disponible: {available} u</p>
                   )}
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Cantidad</Label>
                     <Input type="number" min="1" value={qty} onChange={(e) => setQty(e.target.value)} />
@@ -188,11 +188,11 @@ function Dispensing() {
               <TableRow>
                 <TableHead>Medicamento</TableHead>
                 <TableHead className="text-right">Cantidad</TableHead>
-                <TableHead>Doctor</TableHead>
-                <TableHead>Paciente</TableHead>
-                <TableHead>Sala</TableHead>
-                <TableHead>Tratamiento</TableHead>
-                <TableHead>Fecha</TableHead>
+                <TableHead className="hidden md:table-cell">Doctor</TableHead>
+                <TableHead className="hidden md:table-cell">Paciente</TableHead>
+                <TableHead className="hidden lg:table-cell">Sala</TableHead>
+                <TableHead className="hidden lg:table-cell">Tratamiento</TableHead>
+                <TableHead className="hidden md:table-cell">Fecha</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -200,11 +200,11 @@ function Dispensing() {
                 <TableRow key={d.id}>
                   <TableCell className="font-medium">{medName(d.medicationId)}</TableCell>
                   <TableCell className="text-right">{d.quantity}</TableCell>
-                  <TableCell className="text-sm">{d.doctor}</TableCell>
-                  <TableCell className="text-sm">{d.patient}</TableCell>
-                  <TableCell className="text-sm">{d.room}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{d.treatment}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{formatDate(d.date)}</TableCell>
+                  <TableCell className="hidden text-sm md:table-cell">{d.doctor}</TableCell>
+                  <TableCell className="hidden text-sm md:table-cell">{d.patient}</TableCell>
+                  <TableCell className="hidden text-sm lg:table-cell">{d.room}</TableCell>
+                  <TableCell className="hidden text-sm text-muted-foreground lg:table-cell">{d.treatment}</TableCell>
+                  <TableCell className="hidden text-sm text-muted-foreground md:table-cell">{formatDate(d.date)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

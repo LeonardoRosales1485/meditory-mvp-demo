@@ -111,7 +111,7 @@ function SalesPage() {
         title="Ventas — Mostrador"
         description="Ventas disponibles solo desde depósitos de tipo ventas."
       />
-      <div className="grid gap-6 lg:grid-cols-[400px_1fr]">
+      <div className="grid gap-4 sm:gap-6 lg:grid-cols-[400px_1fr]">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
@@ -216,7 +216,7 @@ function SalesPage() {
         </Card>
 
         <Card>
-          <CardHeader className="flex-row items-center justify-between">
+          <CardHeader className="flex-col items-start justify-between gap-2 sm:flex-row sm:items-center">
             <CardTitle className="flex items-center gap-2 text-base">
               <Receipt className="h-4 w-4 text-primary" /> Ventas recientes
             </CardTitle>
@@ -230,10 +230,10 @@ function SalesPage() {
                 <TableRow>
                   <TableHead>Medicamento</TableHead>
                   <TableHead className="text-right">Cantidad</TableHead>
-                  <TableHead>Receta</TableHead>
-                  <TableHead>Cajero</TableHead>
+                  <TableHead className="hidden md:table-cell">Receta</TableHead>
+                  <TableHead className="hidden md:table-cell">Cajero</TableHead>
                   <TableHead className="text-right">Importe</TableHead>
-                  <TableHead>Fecha</TableHead>
+                  <TableHead className="hidden md:table-cell">Fecha</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -241,12 +241,12 @@ function SalesPage() {
                   <TableRow key={s.id}>
                     <TableCell>{medName(s.medicationId)}</TableCell>
                     <TableCell className="text-right">{s.quantity}</TableCell>
-                    <TableCell className="font-mono text-xs">{s.prescription ?? "—"}</TableCell>
-                    <TableCell className="text-sm">{s.cashier}</TableCell>
+                    <TableCell className="hidden font-mono text-xs md:table-cell">{s.prescription ?? "—"}</TableCell>
+                    <TableCell className="hidden text-sm md:table-cell">{s.cashier}</TableCell>
                     <TableCell className="text-right font-semibold">
                       ${(s.price * s.quantity).toLocaleString("es-AR")}
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{formatDate(s.date)}</TableCell>
+                    <TableCell className="hidden text-sm text-muted-foreground md:table-cell">{formatDate(s.date)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

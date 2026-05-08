@@ -65,7 +65,7 @@ const controlItems: Item[] = [
 ];
 
 export function AppSidebar() {
-  const { state } = useSidebar();
+  const { state, isMobile, setOpen } = useSidebar();
   const collapsed = state === "collapsed";
   const path = useRouterState({ select: (r) => r.location.pathname });
   const session = useStore((s) => s.session);
@@ -83,6 +83,9 @@ export function AppSidebar() {
     });
   const isActive = (url: string, exact?: boolean) =>
     exact ? path === url : path === url || path.startsWith(url + "/");
+  const handleNav = () => {
+    if (isMobile) setOpen(false);
+  };
 
   return (
     <Sidebar collapsible="icon">
@@ -110,7 +113,7 @@ export function AppSidebar() {
                 {filter(operations).map((item) => (
                   <SidebarMenuItem key={item.url}>
                     <SidebarMenuButton asChild isActive={isActive(item.url, item.exact)}>
-                      <Link to={item.url}>
+                      <Link to={item.url} onClick={handleNav}>
                         <item.icon className="h-4 w-4" />
                         <span>{item.title}</span>
                       </Link>
@@ -129,7 +132,7 @@ export function AppSidebar() {
                 {filter(dispensingItems).map((item) => (
                   <SidebarMenuItem key={item.url}>
                     <SidebarMenuButton asChild isActive={isActive(item.url)}>
-                      <Link to={item.url}>
+                      <Link to={item.url} onClick={handleNav}>
                         <item.icon className="h-4 w-4" />
                         <span>{item.title}</span>
                       </Link>
@@ -148,7 +151,7 @@ export function AppSidebar() {
                 {filter(controlItems).map((item) => (
                   <SidebarMenuItem key={item.url}>
                     <SidebarMenuButton asChild isActive={isActive(item.url)}>
-                      <Link to={item.url}>
+                      <Link to={item.url} onClick={handleNav}>
                         <item.icon className="h-4 w-4" />
                         <span>{item.title}</span>
                       </Link>

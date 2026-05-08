@@ -9,12 +9,16 @@ const SIDEBAR_WIDTH_COLLAPSED = "3rem";
 
 type SidebarContextValue = {
   open: boolean;
+  state: "expanded" | "collapsed";
+  isMobile: boolean;
   setOpen: (open: boolean) => void;
   toggleSidebar: () => void;
 };
 
 const SidebarContext = React.createContext<SidebarContextValue>({
   open: true,
+  state: "expanded",
+  isMobile: false,
   setOpen: () => {},
   toggleSidebar: () => {},
 });
@@ -31,10 +35,29 @@ function SidebarProvider({
   ...props
 }: React.HTMLAttributes<HTMLDivElement> & { defaultOpen?: boolean }) {
   const [open, setOpen] = React.useState(defaultOpen);
+  const [isMobile, setIsMobile] = React.useState(false);
+
+  React.useEffect(() => {
+    const media = window.matchMedia("(max-width: 768px)");
+    const apply = () => {
+      const mobile = media.matches;
+      setIsMobile(mobile);
+      if (mobile) {
+        setOpen(false);
+      } else {
+        setOpen(true);
+      }
+    };
+    apply();
+    media.addEventListener("change", apply);
+    return () => media.removeEventListener("change", apply);
+  }, []);
+
+  const state = open ? "expanded" : "collapsed";
   const toggleSidebar = () => setOpen((v) => !v);
 
   return (
-    <SidebarContext.Provider value={{ open, setOpen, toggleSidebar }}>
+    <SidebarContext.Provider value={{ open, state, isMobile, setOpen, toggleSidebar }}>
       <div
         data-slot="sidebar-provider"
         style={
@@ -56,9 +79,38 @@ function SidebarProvider({
 function Sidebar({
   className,
   children,
+  collapsible,
   ...props
-}: React.HTMLAttributes<HTMLElement>) {
-  const { open } = useSidebar();
+}: React.HTMLAttributes<HTMLElement> & { collapsible?: "icon" | "offcanvas" | "none" }) {
+  const { open, isMobile, setOpen } = useSidebar();
+
+  if (isMobile) {
+    return (
+      <>
+        {open && (
+          <button
+            type="button"
+            aria-label="Cerrar menú"
+            className="fixed inset-0 z-40 bg-black/40"
+            onClick={() => setOpen(false)}
+          />
+        )}
+        <aside
+          data-slot="sidebar"
+          data-state={open ? "expanded" : "collapsed"}
+          className={cn(
+            "fixed inset-y-0 left-0 z-50 flex h-screen w-[var(--sidebar-width)] flex-col border-r bg-sidebar text-sidebar-foreground shadow-xl transition-transform duration-200",
+            open ? "translate-x-0" : "-translate-x-full",
+            className
+          )}
+          {...props}
+        >
+          {children}
+        </aside>
+      </>
+    );
+  }
+
   return (
     <aside
       data-slot="sidebar"

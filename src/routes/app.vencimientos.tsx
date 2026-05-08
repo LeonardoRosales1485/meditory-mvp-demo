@@ -24,6 +24,8 @@ import {
 import { daysUntil, expiryStatus, formatDate, medName, warehouseName } from "@/lib/domain-types";
 import { useStore } from "@/lib/store";
 import { useWarehouse } from "@/lib/warehouse-context";
+import { useMobileListView } from "@/lib/use-mobile-list-view";
+import { MobileViewToggle } from "@/components/mobile-view-toggle";
 
 export const Route = createFileRoute("/app/vencimientos")({
   component: ExpiryPage,
@@ -36,6 +38,7 @@ function ExpiryPage() {
   const [q, setQ] = useState("");
   const [whFilter, setWhFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState<string>("urgentes");
+  const { isMobile, viewMode, setViewMode } = useMobileListView("app-vencimientos");
 
   const rows = useMemo(() => {
     return batches
@@ -120,6 +123,37 @@ function ExpiryPage() {
             </Select>
           </div>
           <div className="overflow-x-auto">
+            {isMobile && (
+              <div className="mb-3">
+                <MobileViewToggle value={viewMode} onChange={setViewMode} />
+              </div>
+            )}
+            {isMobile && viewMode === "cards" ? (
+              <div className="space-y-3">
+                {rows.length === 0 && (
+                  <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
+                    <AlertTriangle className="mx-auto mb-2 h-5 w-5 opacity-40" />
+                    Sin lotes para los filtros seleccionados
+                  </div>
+                )}
+                {rows.map((r) => {
+                  const days = daysUntil(r.expiry);
+                  return (
+                    <Card key={r.id}>
+                      <CardContent className="space-y-1 p-4 text-xs text-muted-foreground">
+                        <p className="text-sm font-semibold text-foreground">{medName(r.medicationId)}</p>
+                        <p>Lote: {r.lot}</p>
+                        <p>Depósito: {warehouseName(r.warehouseId)}</p>
+                        <p>Vencimiento: {formatDate(r.expiry)}</p>
+                        <p>Días: {days < 0 ? `${Math.abs(days)} vencido` : `${days}d`}</p>
+                        <p>Cantidad: <span className="font-semibold text-foreground">{r.quantity} u</span></p>
+                        <ExpiryBadge expiry={r.expiry} />
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            ) : (
             <Table>
               <TableHeader>
                 <TableRow>
@@ -159,6 +193,7 @@ function ExpiryPage() {
                 })}
               </TableBody>
             </Table>
+            )}
           </div>
         </CardContent>
       </Card>

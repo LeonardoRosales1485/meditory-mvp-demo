@@ -30,6 +30,8 @@ import { expiryStatus, formatDate, medName, warehouseName, type Batch } from "@/
 import { useStore } from "@/lib/store";
 import { useWarehouse } from "@/lib/warehouse-context";
 import { WorkspaceLoadingPlaceholder } from "@/components/workspace-loading-placeholder";
+import { useMobileListView } from "@/lib/use-mobile-list-view";
+import { MobileViewToggle } from "@/components/mobile-view-toggle";
 
 export const Route = createFileRoute("/app/ajustes")({
   beforeLoad: requireAdmin,
@@ -49,6 +51,7 @@ function AdjustmentsPage() {
   const [reason, setReason] = useState("");
   const [submittingAdjust, setSubmittingAdjust] = useState(false);
   const [submittingDiscard, setSubmittingDiscard] = useState(false);
+  const { isMobile, viewMode, setViewMode } = useMobileListView("app-ajustes");
 
   const rows = useMemo(() => {
     return batches
@@ -120,11 +123,52 @@ function AdjustmentsPage() {
             />
           </div>
           <div className="overflow-x-auto">
+            {isMobile && (
+              <div className="mb-3">
+                <MobileViewToggle value={viewMode} onChange={setViewMode} />
+              </div>
+            )}
             {showLoading ? (
               <WorkspaceLoadingPlaceholder
                 title="Cargando lotes"
                 description="Obteniendo stock por depósito…"
               />
+            ) : isMobile && viewMode === "cards" ? (
+              <div className="space-y-3">
+                {showEmptyTable && (
+                  <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
+                    <Sliders className="mx-auto mb-2 h-8 w-8 opacity-35" />
+                    <p className="font-medium text-foreground">Sin lotes para ajustar</p>
+                  </div>
+                )}
+                {showNoResults && (
+                  <div className="rounded-lg border p-4 text-center text-sm text-muted-foreground">
+                    No hay lotes que coincidan con la búsqueda.
+                  </div>
+                )}
+                {rows.map((b) => (
+                  <Card key={b.id}>
+                    <CardContent className="space-y-2 p-4">
+                      <p className="text-sm font-semibold">{medName(b.medicationId)}</p>
+                      <div className="space-y-1 text-xs text-muted-foreground">
+                        <p>Lote: {b.lot}</p>
+                        <p>Depósito: {warehouseName(b.warehouseId)}</p>
+                        <p>Vencimiento: {formatDate(b.expiry)}</p>
+                        <p>Cantidad: <span className="font-semibold text-foreground">{b.quantity} u</span></p>
+                      </div>
+                      {expiryStatus(b.expiry) === "vencido" ? (
+                        <Button size="sm" variant="destructive" onClick={() => setDiscardTarget(b)}>
+                          Descartar lote
+                        </Button>
+                      ) : (
+                        <Button size="sm" variant="outline" onClick={() => { setTarget(b); setDelta(""); setReason(""); }}>
+                          Ajustar
+                        </Button>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
             ) : (
             <Table>
               <TableHeader>

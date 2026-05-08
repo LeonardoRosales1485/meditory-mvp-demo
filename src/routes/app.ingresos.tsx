@@ -36,6 +36,8 @@ import { type ConcentrationUnit, formatDate, warehouseName, medName } from "@/li
 import { useStore } from "@/lib/store";
 import { useWarehouse } from "@/lib/warehouse-context";
 import { cn } from "@/lib/utils";
+import { useMobileListView } from "@/lib/use-mobile-list-view";
+import { MobileViewToggle } from "@/components/mobile-view-toggle";
 
 const UNITS: ConcentrationUnit[] = ["mg", "mcg", "ml", "L", "g", "unidad"];
 
@@ -73,6 +75,7 @@ function Receipts() {
   const [medDialog, setMedDialog] = useState(false);
   const [medForm, setMedForm] = useState(EMPTY_MED);
   const [savingMed, setSavingMed] = useState(false);
+  const { isMobile, viewMode, setViewMode } = useMobileListView("app-ingresos");
 
   const recent = movements
     .filter((m) => m.type === "ingreso")
@@ -241,11 +244,40 @@ function Receipts() {
             <CardTitle className="text-base">Últimos ingresos</CardTitle>
           </CardHeader>
           <CardContent className="px-0">
+            {isMobile && (
+              <div className="px-3 pb-3">
+                <MobileViewToggle value={viewMode} onChange={setViewMode} />
+              </div>
+            )}
             {workspaceDataLoading && recent.length === 0 ? (
               <WorkspaceLoadingPlaceholder
                 title="Cargando ingresos"
                 description="Sincronizando movimientos con el servidor…"
               />
+            ) : isMobile && viewMode === "cards" ? (
+              <div className="space-y-3 p-3">
+                {recent.length === 0 ? (
+                  <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
+                    <Inbox className="mx-auto mb-2 h-8 w-8 opacity-35" />
+                    <p className="font-medium text-foreground">No hay ingresos registrados</p>
+                  </div>
+                ) : (
+                  recent.map((m) => (
+                    <Card key={m.id}>
+                      <CardContent className="space-y-2 p-4">
+                        <p className="text-sm font-semibold">{medName(m.medicationId)}</p>
+                        <div className="space-y-1 text-xs text-muted-foreground">
+                          <p>Depósito: {warehouseName(m.warehouseId)}</p>
+                          <p>Lote: {m.lot ?? "—"}</p>
+                          <p>Cantidad: <span className="font-semibold text-foreground">{m.quantity} u</span></p>
+                          <p>Motivo: {m.reason}</p>
+                          <p>Fecha: {formatDate(m.date)}</p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
+              </div>
             ) : (
               <Table>
                 <TableHeader>

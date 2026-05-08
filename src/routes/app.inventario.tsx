@@ -25,6 +25,8 @@ import { expiryStatus, formatDate, warehouseName } from "@/lib/domain-types";
 import { useStore } from "@/lib/store";
 import { useWarehouse } from "@/lib/warehouse-context";
 import { WorkspaceLoadingPlaceholder } from "@/components/workspace-loading-placeholder";
+import { useMobileListView } from "@/lib/use-mobile-list-view";
+import { MobileViewToggle } from "@/components/mobile-view-toggle";
 
 export const Route = createFileRoute("/app/inventario")({
   component: Inventory,
@@ -34,6 +36,7 @@ function Inventory() {
   const [q, setQ] = useState("");
   const [whFilter, setWhFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const { isMobile, viewMode, setViewMode } = useMobileListView("app-inventario");
   const { warehouses, warehouseIds } = useWarehouse();
   const batches = useStore((s) => s.batches);
   const medications = useStore((s) => s.medications);
@@ -107,11 +110,44 @@ function Inventory() {
             </Select>
           </div>
           <div className="overflow-x-auto">
+            {isMobile && (
+              <div className="mb-3">
+                <MobileViewToggle value={viewMode} onChange={setViewMode} />
+              </div>
+            )}
             {showLoading ? (
               <WorkspaceLoadingPlaceholder
                 title="Cargando inventario"
                 description="Sincronizando lotes y stock…"
               />
+            ) : isMobile && viewMode === "cards" ? (
+              <div className="space-y-3">
+                {showEmptyTable && (
+                  <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
+                    <PackageSearch className="mx-auto mb-2 h-8 w-8 opacity-35" />
+                    <p className="font-medium text-foreground">No hay lotes en inventario</p>
+                  </div>
+                )}
+                {showNoResults && (
+                  <div className="rounded-lg border p-4 text-center text-sm text-muted-foreground">
+                    No hay resultados con los filtros actuales.
+                  </div>
+                )}
+                {rows.map((r) => (
+                  <Card key={r.id}>
+                    <CardContent className="space-y-1 p-4 text-xs text-muted-foreground">
+                      <p className="text-sm font-semibold text-foreground">
+                        {r.med!.name} · {r.med!.concentrationValue}{r.med!.concentrationUnit}
+                      </p>
+                      <p>Lote: {r.lot}</p>
+                      <p>Depósito: {warehouseName(r.warehouseId)}</p>
+                      <p>Vencimiento: {formatDate(r.expiry)}</p>
+                      <p>Cantidad: <span className="font-semibold text-foreground">{r.quantity} u</span></p>
+                      <ExpiryBadge expiry={r.expiry} />
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
             ) : (
             <Table>
               <TableHeader>

@@ -240,6 +240,30 @@ Lineamientos base para mantener UI responsive en futuras pantallas:
 
 ---
 
-## 12) Documentación funcional
+## 12) Toggle mobile Tabla/Cards por pantalla
+
+Para vistas con listado en rutas `app.*`, se usa un patrón compartido:
+
+- Hook: `useMobileListView(routeKey)` en `src/lib/use-mobile-list-view.ts`
+  - detecta mobile (`max-width: 640px`),
+  - persiste preferencia en `localStorage` con clave `mobile-view:<routeKey>`,
+  - modos: `"table"` y `"cards"` (default mobile: `"cards"`).
+- UI: `MobileViewToggle` en `src/components/mobile-view-toggle.tsx`
+  - visible solo en mobile,
+  - alterna entre `Cards` y `Tabla`.
+
+Uso sugerido en cada ruta:
+
+1. crear estado con `const { isMobile, viewMode, setViewMode } = useMobileListView("app-ruta")`;
+2. renderizar `<MobileViewToggle ... />` solo si `isMobile`;
+3. mantener render dual:
+   - `isMobile && viewMode === "cards"` -> cards con mismas acciones,
+   - caso contrario -> tabla existente (desktop/tablet intacto).
+
+Regla importante: no modificar reglas de negocio ni handlers; solo cambia la presentación del listado.
+
+---
+
+## 13) Documentación funcional
 
 Documentos de este proyecto pueden ser consultados en este drive: https://drive.google.com/drive/folders/1otq1ulj76Yv3Cpwubhg5wMFSPumoD8AO?usp=drive_link

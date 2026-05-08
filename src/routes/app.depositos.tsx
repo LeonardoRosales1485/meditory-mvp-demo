@@ -34,6 +34,8 @@ import {
 import { formatDate, medName, type Warehouse } from "@/lib/domain-types";
 import { requireAdmin } from "@/lib/route-guards";
 import { useStore } from "@/lib/store";
+import { useMobileListView } from "@/lib/use-mobile-list-view";
+import { MobileViewToggle } from "@/components/mobile-view-toggle";
 
 export const Route = createFileRoute("/app/depositos")({
   beforeLoad: requireAdmin,
@@ -70,6 +72,7 @@ function WarehousesPage() {
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>("");
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const { isMobile, viewMode, setViewMode } = useMobileListView("app-depositos");
   const [form, setForm] = useState<WarehouseForm>(EMPTY_FORM);
 
   const selectedWarehouse = warehouses.find((w) => w.id === selectedWarehouseId) ?? null;
@@ -164,6 +167,11 @@ function WarehousesPage() {
           </Button>
         }
       />
+      {isMobile && (
+        <div className="mb-3">
+          <MobileViewToggle value={viewMode} onChange={setViewMode} />
+        </div>
+      )}
 
       <div className="grid gap-6 xl:grid-cols-[1.05fr_1fr]">
         <Card>
@@ -173,6 +181,37 @@ function WarehousesPage() {
                 title="Cargando depósitos"
                 description="Sincronizando depósitos del workspace…"
               />
+            ) : isMobile && viewMode === "cards" ? (
+              <div className="space-y-3 p-3">
+                {showEmpty && (
+                  <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
+                    <Building2 className="mx-auto mb-2 h-8 w-8 opacity-35" />
+                    <p className="font-medium text-foreground">No hay depósitos registrados</p>
+                  </div>
+                )}
+                {warehouses.map((warehouse) => {
+                  const stockTotal = batches
+                    .filter((b) => b.warehouseId === warehouse.id)
+                    .reduce((acc, b) => acc + b.quantity, 0);
+                  return (
+                    <Card key={warehouse.id}>
+                      <CardContent className="space-y-2 p-4">
+                        <button type="button" className="w-full text-left" onClick={() => setSelectedWarehouseId(warehouse.id)}>
+                          <p className="text-sm font-semibold">{warehouse.name}</p>
+                          <p className="text-xs text-muted-foreground">{TYPE_LABEL[warehouse.type]}</p>
+                        </button>
+                        <p className="text-xs text-muted-foreground">
+                          Stock total: <span className="font-semibold text-foreground">{stockTotal}</span>
+                        </p>
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="outline" onClick={() => openEdit(warehouse)}>Editar</Button>
+                          <Button size="sm" variant="destructive" onClick={() => setDeleteConfirm(warehouse.id)}>Eliminar</Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
             ) : (
               <Table>
                 <TableHeader>
@@ -246,6 +285,26 @@ function WarehousesPage() {
             {!selectedWarehouse ? (
               <div className="py-12 text-center text-sm text-muted-foreground">
                 Seleccioná un depósito para ver su stock completo.
+              </div>
+            ) : isMobile && viewMode === "cards" ? (
+              <div className="space-y-3 p-3">
+                {selectedStock.length === 0 ? (
+                  <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
+                    <PackageSearch className="mx-auto mb-2 h-8 w-8 opacity-35" />
+                    <p className="font-medium text-foreground">Sin stock en {selectedWarehouse.name}</p>
+                  </div>
+                ) : (
+                  selectedStock.map((batch) => (
+                    <Card key={batch.id}>
+                      <CardContent className="space-y-1 p-4 text-xs text-muted-foreground">
+                        <p className="text-sm font-semibold text-foreground">{medName(batch.medicationId)}</p>
+                        <p>Lote: {batch.lot}</p>
+                        <p>Vencimiento: {formatDate(batch.expiry)}</p>
+                        <p>Cantidad: <span className="font-semibold text-foreground">{batch.quantity} u</span></p>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
               </div>
             ) : (
               <Table>

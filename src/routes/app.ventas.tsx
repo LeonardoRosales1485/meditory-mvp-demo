@@ -25,6 +25,8 @@ import {
 } from "@/components/ui/table";
 import { formatDate, medName } from "@/lib/domain-types";
 import { stockFor, useStore } from "@/lib/store";
+import { useMobileListView } from "@/lib/use-mobile-list-view";
+import { MobileViewToggle } from "@/components/mobile-view-toggle";
 
 export const Route = createFileRoute("/app/ventas")({
   component: SalesPage,
@@ -55,6 +57,7 @@ function SalesPage() {
   const [rxFile, setRxFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const { isMobile, viewMode, setViewMode } = useMobileListView("app-ventas");
 
   const total = sales.reduce((acc, s) => acc + s.price * s.quantity, 0);
   const available = med ? stockFor(batches, med, salesWarehouseId) : 0;
@@ -225,6 +228,29 @@ function SalesPage() {
             </div>
           </CardHeader>
           <CardContent className="px-0">
+            {isMobile && (
+              <div className="px-3 pb-3">
+                <MobileViewToggle value={viewMode} onChange={setViewMode} />
+              </div>
+            )}
+            {isMobile && viewMode === "cards" ? (
+              <div className="space-y-3 p-3">
+                {sales.map((s) => (
+                  <Card key={s.id}>
+                    <CardContent className="space-y-2 p-4">
+                      <p className="text-sm font-semibold">{medName(s.medicationId)}</p>
+                      <div className="space-y-1 text-xs text-muted-foreground">
+                        <p>Cantidad: {s.quantity} u</p>
+                        <p>Importe: <span className="font-semibold text-foreground">${(s.price * s.quantity).toLocaleString("es-AR")}</span></p>
+                        <p>Cajero: {s.cashier}</p>
+                        <p>Receta: {s.prescription ?? "—"}</p>
+                        <p>Fecha: {formatDate(s.date)}</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
             <Table>
               <TableHeader>
                 <TableRow>
@@ -251,6 +277,7 @@ function SalesPage() {
                 ))}
               </TableBody>
             </Table>
+            )}
           </CardContent>
         </Card>
       </div>

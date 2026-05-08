@@ -20,6 +20,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useStore, ROLE_DISPLAY, type AppRole } from "@/lib/store";
 import { requireAdmin } from "@/lib/route-guards";
 import type { WorkspaceUser } from "@/lib/domain-types";
+import { useMobileListView } from "@/lib/use-mobile-list-view";
+import { MobileViewToggle } from "@/components/mobile-view-toggle";
 
 export const Route = createFileRoute("/app/usuarios")({
   beforeLoad: requireAdmin,
@@ -62,6 +64,7 @@ function UsuariosPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [savingUser, setSavingUser] = useState(false);
   const [deletingUser, setDeletingUser] = useState(false);
+  const { isMobile, viewMode, setViewMode } = useMobileListView("app-usuarios");
 
   const countByRole = (role: AppRole) => workspaceUsers.filter((u) => u.role === role).length;
 
@@ -175,6 +178,39 @@ function UsuariosPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
+          {isMobile && (
+            <div className="px-3 pb-3">
+              <MobileViewToggle value={viewMode} onChange={setViewMode} />
+            </div>
+          )}
+          {isMobile && viewMode === "cards" ? (
+            <div className="space-y-3 p-3">
+              {workspaceUsers.map((user) => {
+                const isSelf = user.email === session?.email;
+                return (
+                  <Card key={user.id}>
+                    <CardContent className="space-y-3 p-4">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-semibold">{user.name}{isSelf ? " (vos)" : ""}</p>
+                          <p className="font-mono text-[11px] text-muted-foreground">{user.email}</p>
+                        </div>
+                        <Badge variant={ROLE_BADGE_VARIANT[user.role]} className={ROLE_COLORS[user.role]}>
+                          {ROLE_DISPLAY[user.role]}
+                        </Badge>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline" onClick={() => openEdit(user)}>Editar</Button>
+                        <Button size="sm" variant="destructive" disabled={isSelf} onClick={() => setDeleteConfirm(user.id)}>
+                          Eliminar
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          ) : (
           <Table>
             <TableHeader>
               <TableRow>
@@ -231,6 +267,7 @@ function UsuariosPage() {
               })}
             </TableBody>
           </Table>
+          )}
         </CardContent>
       </Card>
 

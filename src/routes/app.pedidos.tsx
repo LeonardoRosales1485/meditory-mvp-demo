@@ -32,6 +32,8 @@ import { useStore, stockFor } from "@/lib/store";
 import { formatDate, medName, warehouseName } from "@/lib/domain-types";
 import { requireAuth } from "@/lib/route-guards";
 import { useWarehouse } from "@/lib/warehouse-context";
+import { useMobileListView } from "@/lib/use-mobile-list-view";
+import { MobileViewToggle } from "@/components/mobile-view-toggle";
 
 export const Route = createFileRoute("/app/pedidos")({
   beforeLoad: requireAuth,
@@ -90,6 +92,7 @@ function DoctorView() {
   const [incorrectOutcome, setIncorrectOutcome] = useState<"devolver_stock" | "descartar">("devolver_stock");
   const [incorrectMedicationId, setIncorrectMedicationId] = useState("");
   const [creatingOrder, setCreatingOrder] = useState(false);
+  const { isMobile, viewMode, setViewMode } = useMobileListView("app-pedidos-doctor");
 
   const requestWarehouses = doctorWarehouses.filter((w) => w.workspaceId === session?.workspaceId);
   const [selectedWarehouseId, setSelectedWarehouseId] = useState(requestWarehouses[0]?.id ?? "");
@@ -282,10 +285,59 @@ function DoctorView() {
           <CardTitle className="text-sm">Mis solicitudes</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
+          {isMobile && (
+            <div className="px-3 pb-3">
+              <MobileViewToggle value={viewMode} onChange={setViewMode} />
+            </div>
+          )}
           {myOrders.length === 0 ? (
             <p className="py-10 text-center text-sm text-muted-foreground">
               No hay solicitudes registradas aún.
             </p>
+          ) : isMobile && viewMode === "cards" ? (
+            <div className="space-y-3 p-3">
+              {myOrders.map((o) => (
+                <Card key={o.id}>
+                  <CardContent className="space-y-3 p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-sm font-semibold">{medName(o.medicationId)}</p>
+                      <StatusBadge status={o.status} />
+                    </div>
+                    <div className="space-y-1 text-xs text-muted-foreground">
+                      <p>Paciente: {o.patient}</p>
+                      <p>Sala: {o.room}</p>
+                      <p>Cantidad: <span className="font-semibold text-foreground">{o.quantity} u</span></p>
+                      <p>Fecha: {formatDate(o.requestedAt)}</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {o.status === "despachado" && (
+                        <>
+                          <Button size="sm" variant="outline" onClick={() => setConfirmAcceptOrderId(o.id)}>
+                            Aceptar
+                          </Button>
+                          <Button size="sm" variant="destructive" onClick={() => setRejectOrderId(o.id)}>
+                            Rechazar
+                          </Button>
+                        </>
+                      )}
+                      {o.status === "recibido" && (
+                        <>
+                          <Button size="sm" variant="outline" onClick={() => administrate(o.id)}>
+                            Administrado
+                          </Button>
+                          <Button size="sm" variant="secondary" onClick={() => setReturnReceivedOrderId(o.id)}>
+                            Devolver
+                          </Button>
+                        </>
+                      )}
+                      {o.status === "administrado" && (
+                        <span className="text-xs text-muted-foreground">Finalizado</span>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
           ) : (
             <Table>
               <TableHeader>
@@ -645,6 +697,7 @@ function AdminView() {
   }>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [creatingAssistedOrder, setCreatingAssistedOrder] = useState(false);
+  const { isMobile, viewMode, setViewMode } = useMobileListView("app-pedidos-admin");
   const availableLots = batches
     .filter(
       (b) =>
@@ -775,10 +828,58 @@ function AdminView() {
           <CardTitle className="text-sm">Todos los pedidos</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
+          {isMobile && (
+            <div className="px-3 pb-3">
+              <MobileViewToggle value={viewMode} onChange={setViewMode} />
+            </div>
+          )}
           {workspaceOrders.length === 0 ? (
             <p className="py-10 text-center text-sm text-muted-foreground">
               No hay pedidos registrados aún.
             </p>
+          ) : isMobile && viewMode === "cards" ? (
+            <div className="space-y-3 p-3">
+              {workspaceOrders.map((o) => {
+                const stock = stockFor(batches, o.medicationId, o.warehouseId);
+                const canDispatch = o.status === "aprobado" && stock >= o.quantity;
+                return (
+                  <Card key={o.id}>
+                    <CardContent className="space-y-3 p-4">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-sm font-semibold">{medName(o.medicationId)}</p>
+                        <StatusBadge status={o.status} />
+                      </div>
+                      <div className="space-y-1 text-xs text-muted-foreground">
+                        <p>Médico: {o.doctor}</p>
+                        <p>Paciente: {o.patient}</p>
+                        <p>Depósito: {warehouseName(o.warehouseId)}</p>
+                        <p>Cantidad: <span className="font-semibold text-foreground">{o.quantity} u</span></p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {o.status === "pendiente" && (
+                          <>
+                            <Button size="sm" variant="default" onClick={() => setConfirmAction({ orderId: o.id, action: "aprobar", title: "Aprobar pedido", description: "Confirmá que el pedido es válido para continuar el flujo." })}>Aprobar</Button>
+                            <Button size="sm" variant="destructive" onClick={() => setConfirmAction({ orderId: o.id, action: "rechazar", title: "Rechazar pedido", description: "Confirmá rechazo de este pedido." })}>Rechazar</Button>
+                          </>
+                        )}
+                        {o.status === "aprobado" && (
+                          <Button size="sm" variant="default" disabled={!canDispatch} onClick={() => setConfirmAction({ orderId: o.id, action: "despachar", title: "Despachar pedido", description: `Vas a descontar ${o.quantity}u del stock del depósito.` })}>Despachar</Button>
+                        )}
+                        {o.status === "despachado" && (
+                          <Button size="sm" variant="outline" onClick={() => setConfirmAction({ orderId: o.id, action: "marcar_recibir", title: "Pasar a recibir", description: "Se marca el pedido listo para recepción clínica." })}>Marcar recibir</Button>
+                        )}
+                        {o.status === "recibir" && (
+                          <Button size="sm" variant="outline" onClick={() => setConfirmAction({ orderId: o.id, action: "confirmar_recepcion", title: "Confirmar recepción", description: "Confirmás que el medicamento fue recibido por el área clínica." })}>Confirmar recepción</Button>
+                        )}
+                        {o.status === "recibido" && (
+                          <Button size="sm" variant="outline" onClick={() => setConfirmAction({ orderId: o.id, action: "administrar", title: "Marcar administrado", description: "Se registrará como medicamento administrado al paciente." })}>Administrado</Button>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
           ) : (
             <Table>
               <TableHeader>

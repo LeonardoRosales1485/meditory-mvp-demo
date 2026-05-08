@@ -18,6 +18,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useMobileListView } from "@/lib/use-mobile-list-view";
+import { MobileViewToggle } from "@/components/mobile-view-toggle";
 
 export const Route = createFileRoute("/app/pacientes")({
   beforeLoad: requireAuth,
@@ -43,6 +45,7 @@ function PacientesPage() {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY);
+  const { isMobile, viewMode, setViewMode } = useMobileListView("app-pacientes");
 
   const rows = useMemo(
     () => [...patients].sort((a, b) => a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName)),
@@ -115,6 +118,32 @@ function PacientesPage() {
           <CardTitle className="text-sm">{rows.length} paciente{rows.length === 1 ? "" : "s"} registrado{rows.length === 1 ? "" : "s"}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
+          {isMobile && (
+            <div className="px-3 pb-3">
+              <MobileViewToggle value={viewMode} onChange={setViewMode} />
+            </div>
+          )}
+          {isMobile && viewMode === "cards" ? (
+            <div className="space-y-3 p-3">
+              {rows.map((p) => (
+                <Card key={p.id}>
+                  <CardContent className="space-y-2 p-4">
+                    <p className="text-sm font-semibold">{p.lastName}, {p.firstName}</p>
+                    <div className="space-y-1 text-xs text-muted-foreground">
+                      <p>Obra social: {p.insurance || "—"}</p>
+                      <p>Diagnóstico: {p.diagnosis || "—"}</p>
+                      <p>Médico asignado: {p.assignedDoctor}</p>
+                      <p>Sala: {p.room || "—"}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" onClick={() => startEdit(p.id)}>Editar</Button>
+                      <Button size="sm" variant="destructive" onClick={() => remove(p.id)}>Eliminar</Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
           <Table>
             <TableHeader>
               <TableRow>
@@ -146,6 +175,7 @@ function PacientesPage() {
               ))}
             </TableBody>
           </Table>
+          )}
         </CardContent>
       </Card>
 

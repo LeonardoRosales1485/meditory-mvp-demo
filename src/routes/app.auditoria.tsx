@@ -16,6 +16,8 @@ import {
 } from "@/components/ui/table";
 import { formatDate } from "@/lib/domain-types";
 import { useStore } from "@/lib/store";
+import { useMobileListView } from "@/lib/use-mobile-list-view";
+import { MobileViewToggle } from "@/components/mobile-view-toggle";
 
 export const Route = createFileRoute("/app/auditoria")({
   beforeLoad: requireAdmin,
@@ -30,6 +32,7 @@ function AuditPage() {
   const orders = useStore((s) => s.orders);
   const transfers = useStore((s) => s.transfers);
   const [q, setQ] = useState("");
+  const { isMobile, viewMode, setViewMode } = useMobileListView("app-auditoria");
 
   const isUuidLike = (value: string) =>
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim());
@@ -161,6 +164,31 @@ function AuditPage() {
             />
           </div>
           <div className="overflow-x-auto">
+            {isMobile && (
+              <div className="mb-3">
+                <MobileViewToggle value={viewMode} onChange={setViewMode} />
+              </div>
+            )}
+            {isMobile && viewMode === "cards" ? (
+              <div className="space-y-3">
+                {rows.length === 0 && (
+                  <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
+                    <ScrollText className="mx-auto mb-2 h-5 w-5 opacity-40" />
+                    Sin registros
+                  </div>
+                )}
+                {rows.map((r) => (
+                  <Card key={r.id}>
+                    <CardContent className="space-y-1 p-4 text-xs text-muted-foreground">
+                      <p className="text-sm font-semibold text-foreground">{r.actionLabel}</p>
+                      <p>Fecha: {formatDate(r.date)}</p>
+                      <p>Usuario: {r.user}</p>
+                      <p>Detalle: {r.detailLabel}</p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
             <Table>
               <TableHeader>
                 <TableRow>
@@ -189,6 +217,7 @@ function AuditPage() {
                 ))}
               </TableBody>
             </Table>
+            )}
           </div>
         </CardContent>
       </Card>

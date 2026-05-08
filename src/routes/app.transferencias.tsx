@@ -39,6 +39,8 @@ import { stockFor, useStore } from "@/lib/store";
 import { useWarehouse } from "@/lib/warehouse-context";
 import { WorkspaceLoadingPlaceholder } from "@/components/workspace-loading-placeholder";
 import { cn } from "@/lib/utils";
+import { useMobileListView } from "@/lib/use-mobile-list-view";
+import { MobileViewToggle } from "@/components/mobile-view-toggle";
 
 export const Route = createFileRoute("/app/transferencias")({
   beforeLoad: requireAdminOrTecnico,
@@ -97,6 +99,7 @@ function Transfers() {
   const [advancing, setAdvancing] = useState(false);
   const [ackReceiveOnBehalf, setAckReceiveOnBehalf] = useState(false);
   const [creating, setCreating] = useState(false);
+  const { isMobile, viewMode, setViewMode } = useMobileListView("app-transferencias");
 
   const transfers = allTransfers.filter(
     (t) => warehouseIds.includes(t.fromWarehouseId) || warehouseIds.includes(t.toWarehouseId),
@@ -211,6 +214,7 @@ function Transfers() {
         )
         .sort((a, b) => +new Date(a.date) - +new Date(b.date))
     : [];
+  const showCards = isMobile && viewMode === "cards";
   const historyTone = (action: string) => {
     const normalized = action.toLowerCase();
     if (normalized.includes("solicitada")) return "border-muted bg-muted/40";
@@ -325,6 +329,11 @@ function Transfers() {
           </Dialog>
         }
       />
+      {isMobile && (
+        <div className="mb-3">
+          <MobileViewToggle value={viewMode} onChange={setViewMode} />
+        </div>
+      )}
       <Card>
         <CardContent className="px-0">
           {showTransferTableLoading ? (
@@ -332,6 +341,82 @@ function Transfers() {
               title="Cargando transferencias"
               description="Sincronizando solicitudes y estados…"
             />
+          ) : showCards ? (
+            <div className="space-y-3 p-3">
+              {showEmptyTransfers && (
+                <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
+                  <ArrowLeftRight className="mx-auto mb-2 h-8 w-8 opacity-35" />
+                  <p className="font-medium text-foreground">No hay transferencias</p>
+                  <p className="mt-1 text-xs">
+                    Creá una solicitud para mover stock entre depósitos.
+                  </p>
+                </div>
+              )}
+              {transfers.map((t) => (
+                <Card key={t.id}>
+                  <CardContent className="space-y-3 p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold">{medName(t.medicationId)}</p>
+                        <p className="font-mono text-[11px] text-muted-foreground">{t.transferCode ?? t.id}</p>
+                      </div>
+                      <StatusBadge status={t.status} />
+                    </div>
+                    <div className="space-y-1 text-xs text-muted-foreground">
+                      <p>Ruta: {warehouseName(t.fromWarehouseId)} → {warehouseName(t.toWarehouseId)}</p>
+                      <p>Solicitante: {t.requestedBy}</p>
+                      <p>Fecha: {formatDate(t.date)}</p>
+                      <p>Cantidad: <span className="font-semibold text-foreground">{t.quantity} u</span></p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="sm" variant="ghost" onClick={() => setSelectedTransferId(t.id)}>
+                        <History className="h-3.5 w-3.5" />
+                      </Button>
+                      {labels[t.status] &&
+                        (session?.role === "admin" ||
+                          warehouseIds.includes(t.fromWarehouseId) ||
+                          t.status === "despachado" ||
+                          t.status === "recibir" ||
+                          t.status === "recibido") && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              setConfirmAdvance({
+                                id: t.id,
+                                status: t.status,
+                                qty: t.quantity,
+                                fromId: t.fromWarehouseId,
+                                medId: t.medicationId,
+                                requestedBy: t.requestedBy,
+                              })
+                            }
+                          >
+                            {labels[t.status]}
+                          </Button>
+                        )}
+                      {t.status === "recibido" && (
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() =>
+                            setConfirmReject({
+                              id: t.id,
+                              medId: t.medicationId,
+                              fromId: t.fromWarehouseId,
+                              toId: t.toWarehouseId,
+                              qty: t.quantity,
+                            })
+                          }
+                        >
+                          Rechazar
+                        </Button>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
           ) : (
           <Table>
             <TableHeader>

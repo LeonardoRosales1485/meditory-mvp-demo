@@ -35,6 +35,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useMobileListView } from "@/lib/use-mobile-list-view";
+import { MobileViewToggle } from "@/components/mobile-view-toggle";
 
 const UNITS: ConcentrationUnit[] = ["mg", "mcg", "ml", "L", "g", "unidad"];
 
@@ -53,6 +55,7 @@ function CatalogPage() {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState<Medication | null>(null);
+  const { isMobile, viewMode, setViewMode } = useMobileListView("app-catalogo");
   const [form, setForm] = useState<Omit<Medication, "id">>({
     name: "",
     activeIngredient: "",
@@ -109,11 +112,39 @@ function CatalogPage() {
       />
       <Card>
         <CardContent className="px-0">
+          {isMobile && (
+            <div className="px-3 pb-3">
+              <MobileViewToggle value={viewMode} onChange={setViewMode} />
+            </div>
+          )}
           {workspaceDataLoading && medications.length === 0 ? (
             <WorkspaceLoadingPlaceholder
               title="Cargando catálogo"
               description="Sincronizando medicamentos con el servidor…"
             />
+          ) : isMobile && viewMode === "cards" ? (
+            <div className="space-y-3 p-3">
+              {medications.length === 0 ? (
+                <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
+                  <BookOpen className="mx-auto mb-2 h-5 w-5 opacity-40" />
+                  Catálogo vacío
+                </div>
+              ) : (
+                medications.map((m) => (
+                  <Card key={m.id}>
+                    <CardContent className="space-y-2 p-4">
+                      <p className="text-sm font-semibold">{m.name}</p>
+                      <p className="text-xs text-muted-foreground">{m.activeIngredient}</p>
+                      <p className="text-xs">{m.concentrationValue}{m.concentrationUnit} · {m.form}</p>
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={() => startEdit(m)}>Editar</Button>
+                        <Button variant="destructive" size="sm" onClick={() => remove(m)}>Eliminar</Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
+              )}
+            </div>
           ) : (
           <Table>
             <TableHeader>

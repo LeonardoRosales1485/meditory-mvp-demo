@@ -37,6 +37,8 @@ import {
 import { formatDate, medName } from "@/lib/domain-types";
 import { stockFor, useStore } from "@/lib/store";
 import { useWarehouse } from "@/lib/warehouse-context";
+import { useMobileListView } from "@/lib/use-mobile-list-view";
+import { MobileViewToggle } from "@/components/mobile-view-toggle";
 
 export const Route = createFileRoute("/app/dispensacion")({
   beforeLoad: () => {
@@ -60,6 +62,7 @@ function Dispensing() {
   const [room, setRoom] = useState("");
   const [treatment, setTreatment] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const { isMobile, viewMode, setViewMode } = useMobileListView("app-dispensacion");
 
   const available = med ? stockFor(batches, med, warehouse.id) : 0;
 
@@ -183,6 +186,28 @@ function Dispensing() {
       />
       <Card>
         <CardContent className="px-0">
+          {isMobile && (
+            <div className="px-3 pb-3">
+              <MobileViewToggle value={viewMode} onChange={setViewMode} />
+            </div>
+          )}
+          {isMobile && viewMode === "cards" ? (
+            <div className="space-y-3 p-3">
+              {dispensations.map((d) => (
+                <Card key={d.id}>
+                  <CardContent className="space-y-1 p-4 text-xs text-muted-foreground">
+                    <p className="text-sm font-semibold text-foreground">{medName(d.medicationId)}</p>
+                    <p>Cantidad: {d.quantity} u</p>
+                    <p>Doctor: {d.doctor}</p>
+                    <p>Paciente: {d.patient}</p>
+                    <p>Sala: {d.room}</p>
+                    <p>Tratamiento: {d.treatment}</p>
+                    <p>Fecha: {formatDate(d.date)}</p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
           <Table>
             <TableHeader>
               <TableRow>
@@ -209,6 +234,7 @@ function Dispensing() {
               ))}
             </TableBody>
           </Table>
+          )}
         </CardContent>
       </Card>
     </div>

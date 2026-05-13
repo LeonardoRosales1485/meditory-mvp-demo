@@ -45,6 +45,25 @@ function ListaPrecioRow({
 }) {
   const updateMedication = useStore((s) => s.updateMedication);
   const [saving, setSaving] = useState(false);
+  const [togglingSale, setTogglingSale] = useState(false);
+
+  async function toggleSaleEnabled(next: boolean) {
+    if (!canEdit || togglingSale) return;
+    setTogglingSale(true);
+    try {
+      await updateMedication(m.id, { saleEnabled: next });
+      toast.success(next ? "Venta en mostrador habilitada" : "Venta en mostrador deshabilitada", {
+        description: next
+          ? "El medicamento vuelve a mostrarse en Ventas cuando haya stock."
+          : "El medicamento ya no aparece en Ventas hasta que lo reactives.",
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "No se pudo actualizar.";
+      toast.error("No se pudo cambiar la venta en mostrador", { description: msg });
+    } finally {
+      setTogglingSale(false);
+    }
+  }
 
   async function save() {
     const n = parseFloat(inputValue.replace(",", ".").trim());
@@ -65,11 +84,31 @@ function ListaPrecioRow({
     }
   }
 
+  const saleOn = m.saleEnabled !== false;
+
   return (
     <TableRow>
       <TableCell className="font-medium">{m.name}</TableCell>
       <TableCell className="hidden text-sm text-muted-foreground sm:table-cell">{medConc(m)}</TableCell>
       <TableCell className="hidden text-sm text-muted-foreground md:table-cell">{m.form}</TableCell>
+      <TableCell>
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            className="h-4 w-4 shrink-0 rounded border border-input accent-primary disabled:cursor-not-allowed disabled:opacity-50"
+            checked={saleOn}
+            onChange={(e) => void toggleSaleEnabled(e.target.checked)}
+            disabled={!canEdit || togglingSale}
+            aria-label={`Venta en mostrador: ${m.name}`}
+            title={
+              canEdit
+                ? "Si está desmarcado, el medicamento no aparece en Ventas y no se puede vender."
+                : "Solo administración puede cambiar esta opción."
+            }
+          />
+          <span className="text-xs text-muted-foreground sm:text-sm">{saleOn ? "Sí" : "No"}</span>
+        </div>
+      </TableCell>
       <TableCell className="text-right">
         {canEdit ? (
           <div className="flex flex-wrap items-center justify-end gap-2">
@@ -101,7 +140,10 @@ function ListaPreciosPage() {
   const [listaPrecioDraftByMedId, setListaPrecioDraftByMedId] = useState<Record<string, string>>({});
 
   const medicationsSorted = useMemo(
-    () => [...medications].sort((a, b) => a.name.localeCompare(b.name, "es")),
+    () =>
+      [...medications]
+        .filter((m) => !m.deletedAt)
+        .sort((a, b) => a.name.localeCompare(b.name, "es")),
     [medications],
   );
 
@@ -111,7 +153,7 @@ function ListaPreciosPage() {
     <div className="space-y-4 sm:space-y-6">
       <PageHeader
         title="Listas de precios"
-        description="Precio unitario de mostrador por medicamento del catálogo. Las ventas guardan el valor vigente al registrar cada operación."
+        description="Precio unitario de mostrador por medicamento del catálogo. La columna «Venta mostrador» indica si el ítem aparece en Ventas; cada venta guarda el precio vigente al registrarla."
       />
 
       {showLoading ? (
@@ -124,9 +166,10 @@ function ListaPreciosPage() {
           <CardHeader>
             <CardTitle className="text-base">Catálogo y precios</CardTitle>
             <p className="text-sm text-muted-foreground">
-              Administración puede editar y guardar por fila. El perfil ventas ve la lista de referencia. Desde{" "}
-              <span className="font-medium text-foreground">Ventas</span> se usa el precio guardado aquí al registrar
-              una venta.
+              Administración puede editar precios, habilitar o deshabilitar la venta en mostrador por medicamento, y
+              guardar precios por fila. El perfil ventas ve la lista de referencia. Desde{" "}
+              <span className="font-medium text-foreground">Ventas</span> solo aparecen medicamentos con venta
+              habilitada y stock en el depósito; el precio es el guardado aquí al registrar cada venta.
             </p>
           </CardHeader>
           <CardContent className="px-0">
@@ -137,13 +180,14 @@ function ListaPreciosPage() {
                     <TableHead>Medicamento</TableHead>
                     <TableHead className="hidden sm:table-cell">Concentración</TableHead>
                     <TableHead className="hidden md:table-cell">Forma</TableHead>
+                    <TableHead className="w-[140px]">Venta mostrador</TableHead>
                     <TableHead className="text-right">Precio venta ($)</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {medicationsSorted.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={4} className="py-8 text-center text-sm text-muted-foreground">
+                      <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
                         No hay medicamentos en el catálogo de este workspace.
                       </TableCell>
                     </TableRow>

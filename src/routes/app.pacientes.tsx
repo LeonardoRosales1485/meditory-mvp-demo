@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { BedDouble, Loader2, LogOut, Pencil, Trash2, UserRoundPlus } from "lucide-react";
+import { BedDouble, Loader2, LogOut, Pencil, Search, Trash2, UserRoundPlus } from "lucide-react";
 import { toast } from "sonner";
 
 import { requireAdminOrDoctor } from "@/lib/route-guards";
@@ -61,6 +61,7 @@ function PacientesPage() {
   const [form, setForm] = useState(EMPTY);
   const [dischargingId, setDischargingId] = useState<string | null>(null);
   const [internmentOpen, setInternmentOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const { isMobile, viewMode, setViewMode } = useMobileListView("app-pacientes");
 
   const workspaceWings = useMemo(
@@ -96,10 +97,35 @@ function PacientesPage() {
     return m;
   }, [rooms]);
 
-  const rows = useMemo(
+  const sortedPatients = useMemo(
     () => [...patients].sort((a, b) => a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName)),
     [patients],
   );
+
+  const filteredRows = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return sortedPatients;
+    return sortedPatients.filter((p) => {
+      const bed = patientToBed.get(p.id);
+      const locationBits = bed
+        ? [`sala ${bed.fullNumber}`, `cama ${bed.position}`, `${bed.fullNumber}`, `${bed.position}`]
+        : p.room.trim()
+          ? [`sala ${p.room}`, p.room]
+          : [];
+      const haystack = [
+        p.lastName,
+        p.firstName,
+        p.insurance,
+        p.diagnosis,
+        p.assignedDoctor,
+        p.room,
+        ...locationBits,
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [sortedPatients, searchQuery, patientToBed]);
   const workspaceDoctors = useMemo(
     () =>
       users.filter((u) => u.workspaceId === session?.workspaceId && u.role === "doctor"),
@@ -255,152 +281,191 @@ function PacientesPage() {
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">
-            {rows.length} paciente{rows.length === 1 ? "" : "s"} registrado{rows.length === 1 ? "" : "s"}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
+        <CardHeader className="space-y-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle className="text-base">Listado</CardTitle>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {searchQuery.trim()
+                  ? `${filteredRows.length} de ${sortedPatients.length} paciente${sortedPatients.length === 1 ? "" : "s"} con la búsqueda actual`
+                  : `${sortedPatients.length} paciente${sortedPatients.length === 1 ? "" : "s"} registrado${sortedPatients.length === 1 ? "" : "s"}`}
+              </p>
+            </div>
+            <div className="relative w-full sm:max-w-sm">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                className="pl-9"
+                placeholder="Buscar por nombre, apellido, obra social, médico, sala…"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                aria-label="Filtrar pacientes"
+              />
+            </div>
+          </div>
           {isMobile && (
-            <div className="px-3 pb-3">
+            <div>
               <MobileViewToggle value={viewMode} onChange={setViewMode} />
             </div>
           )}
+        </CardHeader>
+        <CardContent className="p-0">
           {isMobile && viewMode === "cards" ? (
             <div className="space-y-3 p-3">
-              {rows.map((p) => {
-                const bed = patientToBed.get(p.id) ?? null;
-                const admission = getAdmissionDisplayStatus(p.id, patientToBed, p.room);
-                return (
-                  <Card key={p.id}>
-                    <CardContent className="space-y-2 p-4">
-                      <div className="flex flex-wrap items-start justify-between gap-2">
-                        <p className="text-sm font-semibold">{p.lastName}, {p.firstName}</p>
-                        <PatientAdmissionBadge status={admission} />
-                      </div>
-                      <div className="space-y-1 text-xs text-muted-foreground">
-                        <p>Obra social: {p.insurance || "—"}</p>
-                        <p>Diagnóstico: {p.diagnosis || "—"}</p>
-                        <p>Médico asignado: {p.assignedDoctor}</p>
-                        <p>
-                          Ubicación:{" "}
-                          {bed ? (
-                            <span className="font-medium text-foreground">
-                              Sala {bed.fullNumber} · Cama {bed.position}
-                            </span>
-                          ) : p.room.trim() ? (
-                            <span className="font-medium text-foreground">Sala {p.room} (sin cama en sistema)</span>
-                          ) : (
-                            <span className="italic">—</span>
-                          )}
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <Button size="sm" variant="outline" onClick={() => startEdit(p.id)}>
-                          Editar
-                        </Button>
-                        {bed && (
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            disabled={dischargingId === p.id}
-                            onClick={() => discharge(p.id)}
-                          >
-                            {dischargingId === p.id ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <>
-                                <LogOut className="mr-1.5 h-3.5 w-3.5" />
-                                Dar de alta
-                              </>
-                            )}
-                          </Button>
-                        )}
-                        <Button size="sm" variant="destructive" onClick={() => remove(p.id)}>
-                          Eliminar
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nombre</TableHead>
-                  <TableHead className="hidden sm:table-cell">Estado</TableHead>
-                  <TableHead className="hidden md:table-cell">Obra social</TableHead>
-                  <TableHead className="hidden lg:table-cell">Diagnóstico</TableHead>
-                  <TableHead className="hidden md:table-cell">Médico asignado</TableHead>
-                  <TableHead className="hidden lg:table-cell">Ubicación</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((p) => {
+              {filteredRows.length === 0 ? (
+                <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+                  {sortedPatients.length === 0
+                    ? "Todavía no hay pacientes registrados en este workspace."
+                    : "Ningún paciente coincide con la búsqueda. Probá con otro texto o limpiá el filtro."}
+                </div>
+              ) : (
+                filteredRows.map((p) => {
                   const bed = patientToBed.get(p.id) ?? null;
                   const admission = getAdmissionDisplayStatus(p.id, patientToBed, p.room);
                   return (
-                    <TableRow key={p.id}>
-                      <TableCell className="font-medium">
-                        {p.lastName}, {p.firstName}
-                      </TableCell>
-                      <TableCell className="hidden sm:table-cell">
-                        <PatientAdmissionBadge status={admission} />
-                      </TableCell>
-                      <TableCell className="hidden md:table-cell">{p.insurance || "—"}</TableCell>
-                      <TableCell className="hidden lg:table-cell">{p.diagnosis || "—"}</TableCell>
-                      <TableCell className="hidden md:table-cell">{p.assignedDoctor}</TableCell>
-                      <TableCell className="hidden lg:table-cell text-xs">
-                        {bed ? (
-                          <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700">
-                            <BedDouble className="h-3 w-3" />
-                            Sala {bed.fullNumber} · Cama {bed.position}
-                          </span>
-                        ) : p.room.trim() ? (
-                          <span className="text-muted-foreground">Sala {p.room}</span>
-                        ) : (
-                          <span className="italic text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-1">
+                    <Card key={p.id}>
+                      <CardContent className="space-y-2 p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <p className="text-sm font-semibold">
+                            {p.lastName}, {p.firstName}
+                          </p>
+                          <PatientAdmissionBadge status={admission} />
+                        </div>
+                        <div className="space-y-1 text-xs text-muted-foreground">
+                          <p>Obra social: {p.insurance || "—"}</p>
+                          <p>Diagnóstico: {p.diagnosis || "—"}</p>
+                          <p>Médico asignado: {p.assignedDoctor}</p>
+                          <p>
+                            Ubicación:{" "}
+                            {bed ? (
+                              <span className="font-medium text-foreground">
+                                Sala {bed.fullNumber} · Cama {bed.position}
+                              </span>
+                            ) : p.room.trim() ? (
+                              <span className="font-medium text-foreground">Sala {p.room} (sin cama en sistema)</span>
+                            ) : (
+                              <span className="italic">—</span>
+                            )}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Button size="sm" variant="outline" onClick={() => startEdit(p.id)}>
+                            Editar
+                          </Button>
                           {bed && (
                             <Button
                               size="sm"
-                              variant="ghost"
+                              variant="secondary"
                               disabled={dischargingId === p.id}
                               onClick={() => discharge(p.id)}
-                              title="Dar de alta y liberar la cama"
-                              className="text-emerald-700 hover:text-emerald-800"
                             >
                               {dischargingId === p.id ? (
                                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                               ) : (
-                                <LogOut className="h-3.5 w-3.5" />
+                                <>
+                                  <LogOut className="mr-1.5 h-3.5 w-3.5" />
+                                  Dar de alta
+                                </>
                               )}
                             </Button>
                           )}
-                          <Button size="sm" variant="ghost" onClick={() => startEdit(p.id)}>
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="text-destructive hover:text-destructive"
-                            onClick={() => remove(p.id)}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
+                          <Button size="sm" variant="destructive" onClick={() => remove(p.id)}>
+                            Eliminar
                           </Button>
                         </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })
+              )}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nombre</TableHead>
+                    <TableHead className="hidden sm:table-cell">Estado</TableHead>
+                    <TableHead className="hidden md:table-cell">Obra social</TableHead>
+                    <TableHead className="hidden lg:table-cell">Diagnóstico</TableHead>
+                    <TableHead className="hidden md:table-cell">Médico asignado</TableHead>
+                    <TableHead className="hidden lg:table-cell">Ubicación</TableHead>
+                    <TableHead className="text-right">Acciones</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredRows.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="h-28 text-center text-sm text-muted-foreground">
+                        {sortedPatients.length === 0
+                          ? "Todavía no hay pacientes registrados en este workspace."
+                          : "Ningún paciente coincide con la búsqueda."}
                       </TableCell>
                     </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+                  ) : (
+                    filteredRows.map((p) => {
+                      const bed = patientToBed.get(p.id) ?? null;
+                      const admission = getAdmissionDisplayStatus(p.id, patientToBed, p.room);
+                      return (
+                        <TableRow key={p.id}>
+                          <TableCell className="font-medium">
+                            {p.lastName}, {p.firstName}
+                          </TableCell>
+                          <TableCell className="hidden sm:table-cell">
+                            <PatientAdmissionBadge status={admission} />
+                          </TableCell>
+                          <TableCell className="hidden md:table-cell">{p.insurance || "—"}</TableCell>
+                          <TableCell className="hidden lg:table-cell">{p.diagnosis || "—"}</TableCell>
+                          <TableCell className="hidden md:table-cell">{p.assignedDoctor}</TableCell>
+                          <TableCell className="hidden lg:table-cell text-xs">
+                            {bed ? (
+                              <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700">
+                                <BedDouble className="h-3 w-3" />
+                                Sala {bed.fullNumber} · Cama {bed.position}
+                              </span>
+                            ) : p.room.trim() ? (
+                              <span className="text-muted-foreground">Sala {p.room}</span>
+                            ) : (
+                              <span className="italic text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-1">
+                              {bed && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  disabled={dischargingId === p.id}
+                                  onClick={() => discharge(p.id)}
+                                  title="Dar de alta y liberar la cama"
+                                  className="text-emerald-700 hover:text-emerald-800"
+                                >
+                                  {dischargingId === p.id ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <LogOut className="h-3.5 w-3.5" />
+                                  )}
+                                </Button>
+                              )}
+                              <Button size="sm" variant="ghost" onClick={() => startEdit(p.id)}>
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="text-destructive hover:text-destructive"
+                                onClick={() => remove(p.id)}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </div>
           )}
         </CardContent>
       </Card>

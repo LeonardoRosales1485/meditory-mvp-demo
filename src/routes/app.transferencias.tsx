@@ -34,7 +34,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatDate, medName, warehouseName } from "@/lib/domain-types";
+import { formatDate, medName, warehouseName, type TransferRequest } from "@/lib/domain-types";
 import { stockFor, useStore } from "@/lib/store";
 import { useWarehouse } from "@/lib/warehouse-context";
 import { WorkspaceLoadingPlaceholder } from "@/components/workspace-loading-placeholder";
@@ -55,12 +55,65 @@ const labels: Record<string, string> = {
   recibido: "Aceptar recepción",
 };
 
+type TransferStatusFilter = "default" | "all" | TransferRequest["status"];
+
+const TRANSFER_STATUSES: TransferRequest["status"][] = [
+  "solicitado",
+  "autorizado",
+  "despachado",
+  "recibir",
+  "recibido",
+  "aceptado",
+  "rechazado",
+];
+
+const TRANSFER_STATUS_LABEL: Record<TransferRequest["status"], string> = {
+  solicitado: "Solicitado",
+  autorizado: "Autorizado",
+  despachado: "Despachado",
+  recibir: "En recepción",
+  recibido: "Recibido",
+  aceptado: "Aceptado",
+  rechazado: "Rechazado",
+};
+
+function TransferStatusFilterSelect({
+  id,
+  value,
+  onChange,
+}: {
+  id: string;
+  value: TransferStatusFilter;
+  onChange: (v: TransferStatusFilter) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id}>Estado</Label>
+      <Select value={value} onValueChange={(v) => onChange(v as TransferStatusFilter)}>
+        <SelectTrigger id={id} className="w-full sm:w-[min(100%,280px)]">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="default">Todas excepto aceptadas</SelectItem>
+          <SelectItem value="all">Todas (incluye aceptadas)</SelectItem>
+          {TRANSFER_STATUSES.map((s) => (
+            <SelectItem key={s} value={s}>
+              Solo {TRANSFER_STATUS_LABEL[s]}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
 function Transfers() {
   const { warehouses, warehouseIds } = useWarehouse();
   const session = useStore((s) => s.session);
   const storeWarehouses = useStore((s) => s.warehouses);
   const allTransfers = useStore((s) => s.transfers);
   const medications = useStore((s) => s.medications);
+  const catalogMedications = useMemo(() => medications.filter((m) => !m.deletedAt), [medications]);
   const batches = useStore((s) => s.batches);
   const audit = useStore((s) => s.audit);
   const workspaceDataLoading = useStore((s) => s.workspaceDataLoading);
@@ -101,6 +154,7 @@ function Transfers() {
   const [advancing, setAdvancing] = useState(false);
   const [ackReceiveOnBehalf, setAckReceiveOnBehalf] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<TransferStatusFilter>("default");
   const { isMobile, viewMode, setViewMode } = useMobileListView("app-transferencias");
 
   const workspaceWarehouses = useMemo(
@@ -136,6 +190,11 @@ function Transfers() {
   const transfers = allTransfers.filter(
     (t) => warehouseIds.includes(t.fromWarehouseId) || warehouseIds.includes(t.toWarehouseId),
   );
+  const filteredTransfers = useMemo(() => {
+    if (statusFilter === "default") return transfers.filter((t) => t.status !== "aceptado");
+    if (statusFilter === "all") return transfers;
+    return transfers.filter((t) => t.status === statusFilter);
+  }, [transfers, statusFilter]);
   const availableBatches = batches
     .filter(
       (b) =>
@@ -154,7 +213,9 @@ function Transfers() {
 
   const showTransferTableLoading = workspaceDataLoading && transfers.length === 0;
   const showEmptyTransfers = !workspaceDataLoading && transfers.length === 0;
-  const formDisabled = workspaceDataLoading && (medications.length === 0 || warehouses.length === 0);
+  const showNoFilterResults =
+    !workspaceDataLoading && transfers.length > 0 && filteredTransfers.length === 0;
+  const formDisabled = workspaceDataLoading && (catalogMedications.length === 0 || warehouses.length === 0);
   const cannotCreateTransfer =
     formDisabled ||
     (!isAdmin && !centralWarehouse) ||
@@ -311,7 +372,7 @@ function Transfers() {
                   >
                     <SelectTrigger><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
                     <SelectContent>
-                      {medications.map((m) => (
+                      {catalogMedications.map((m) => (
                         <SelectItem key={m.id} value={m.id}>
                           {m.name} {m.concentrationValue}{m.concentrationUnit}
                         </SelectItem>
@@ -427,6 +488,15 @@ function Transfers() {
             />
           ) : showCards ? (
             <div className="space-y-3 p-3">
+              {!showEmptyTransfers && (
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                  <TransferStatusFilterSelect
+                    id="transfer-status-filter"
+                    value={statusFilter}
+                    onChange={setStatusFilter}
+                  />
+                </div>
+              )}
               {showEmptyTransfers && (
                 <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
                   <ArrowLeftRight className="mx-auto mb-2 h-8 w-8 opacity-35" />
@@ -436,7 +506,13 @@ function Transfers() {
                   </p>
                 </div>
               )}
-              {transfers.map((t) => (
+              {showNoFilterResults && (
+                <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+                  <p className="font-medium text-foreground">Ninguna transferencia coincide con el filtro</p>
+                  <p className="mt-1 text-xs">Probá con otra opción de estado o elegí «Todas (incluye aceptadas)».</p>
+                </div>
+              )}
+              {filteredTransfers.map((t) => (
                 <Card key={t.id}>
                   <CardContent className="space-y-3 p-4">
                     <div className="flex items-start justify-between gap-2">
@@ -502,6 +578,16 @@ function Transfers() {
               ))}
             </div>
           ) : (
+          <div>
+            {!showEmptyTransfers && (
+              <div className="flex flex-col gap-2 border-b px-4 py-3 sm:flex-row sm:items-end sm:justify-between">
+                <TransferStatusFilterSelect
+                  id="transfer-status-filter-table"
+                  value={statusFilter}
+                  onChange={setStatusFilter}
+                />
+              </div>
+            )}
           <Table>
             <TableHeader>
               <TableRow>
@@ -527,7 +613,17 @@ function Transfers() {
                   </TableCell>
                 </TableRow>
               )}
-              {transfers.map((t) => (
+              {showNoFilterResults && (
+                <TableRow>
+                  <TableCell colSpan={8} className="py-10 text-center text-sm text-muted-foreground">
+                    <p className="font-medium text-foreground">Ninguna transferencia coincide con el filtro</p>
+                    <p className="mt-1 max-w-md mx-auto text-xs">
+                      Probá con otra opción de estado o elegí «Todas (incluye aceptadas)».
+                    </p>
+                  </TableCell>
+                </TableRow>
+              )}
+              {filteredTransfers.map((t) => (
                 <TableRow key={t.id}>
                   <TableCell className="hidden font-mono text-xs md:table-cell">{t.transferCode ?? t.id}</TableCell>
                   <TableCell className="font-medium">
@@ -607,6 +703,7 @@ function Transfers() {
               ))}
             </TableBody>
           </Table>
+          </div>
           )}
         </CardContent>
       </Card>

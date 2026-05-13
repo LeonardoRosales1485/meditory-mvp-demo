@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { requireAdmin } from "@/lib/route-guards";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Barcode, FlaskConical, Inbox, Loader2, Plus } from "lucide-react";
 import { toast } from "sonner";
 
@@ -52,6 +52,7 @@ function Receipts() {
   const { warehouses } = useWarehouse();
   const movements = useStore((s) => s.movements);
   const medications = useStore((s) => s.medications);
+  const catalogMedications = useMemo(() => medications.filter((m) => !m.deletedAt), [medications]);
   const workspaceDataLoading = useStore((s) => s.workspaceDataLoading);
   const addReceipt = useStore((s) => s.addReceipt);
   const addMedication = useStore((s) => s.addMedication);
@@ -152,7 +153,7 @@ function Receipts() {
         title="Ingreso de mercadería"
         description={`Registrar nuevas compras. Workspace: ${session?.workspaceName ?? "—"}`}
         action={
-          <Button variant="outline" onClick={() => setMedDialog(true)} disabled={workspaceDataLoading && medications.length === 0}>
+          <Button variant="outline" onClick={() => setMedDialog(true)} disabled={workspaceDataLoading && catalogMedications.length === 0}>
             <FlaskConical className="mr-2 h-4 w-4" />
             Registrar nuevo medicamento
           </Button>
@@ -171,12 +172,12 @@ function Receipts() {
             <form onSubmit={submit} className="space-y-4">
               <div className="space-y-2">
                 <Label>Medicamento</Label>
-                <Select value={med} onValueChange={setMed} disabled={workspaceDataLoading && medications.length === 0}>
+                <Select value={med} onValueChange={setMed} disabled={workspaceDataLoading && catalogMedications.length === 0}>
                   <SelectTrigger>
                     <SelectValue placeholder="Seleccionar..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {medications.map((m) => (
+                    {catalogMedications.map((m) => (
                       <SelectItem key={m.id} value={m.id}>
                         {m.name} {m.concentrationValue}{m.concentrationUnit}
                       </SelectItem>
@@ -230,7 +231,7 @@ function Receipts() {
                 <Button
                   type="submit"
                   className={cn("flex-1", submitting && "bg-muted text-muted-foreground hover:bg-muted")}
-                  disabled={(workspaceDataLoading && medications.length === 0) || submitting}
+                  disabled={(workspaceDataLoading && catalogMedications.length === 0) || submitting}
                 >
                   {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Registrar ingreso"}
                 </Button>

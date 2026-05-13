@@ -46,6 +46,8 @@ const mapMed = (r: any): Medication => ({
   concentrationUnit: r.concentration_unit ?? "mg",
   form: r.form,
   salePrice: Number(r.sale_price ?? 0),
+  saleEnabled: r.sale_enabled !== false,
+  deletedAt: r.deleted_at ?? null,
 });
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mapWH = (r: any): Warehouse => ({

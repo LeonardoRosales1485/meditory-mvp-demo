@@ -1,6 +1,6 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { requireAdmin } from "@/lib/route-guards";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -52,6 +52,7 @@ function Dispensing() {
   const dispensations = useStore((s) => s.dispensations);
   const batches = useStore((s) => s.batches);
   const medications = useStore((s) => s.medications);
+  const catalogMedications = useMemo(() => medications.filter((m) => !m.deletedAt), [medications]);
   const addDispensation = useStore((s) => s.addDispensation);
 
   const [open, setOpen] = useState(false);
@@ -136,7 +137,7 @@ function Dispensing() {
                   <Select value={med} onValueChange={setMed}>
                     <SelectTrigger><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
                     <SelectContent>
-                      {medications.map((m) => (
+                      {catalogMedications.map((m) => (
                         <SelectItem key={m.id} value={m.id}>
                           {m.name} {m.concentrationValue}{m.concentrationUnit}
                         </SelectItem>

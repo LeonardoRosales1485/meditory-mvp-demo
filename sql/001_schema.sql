@@ -42,7 +42,9 @@ create table if not exists medications (
   concentration_value numeric(12,3) not null check (concentration_value > 0),
   concentration_unit text not null check (concentration_unit in ('mg', 'mcg', 'ml', 'L', 'g', 'unidad')),
   form text not null,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  deleted_at timestamptz null,
+  sale_enabled boolean not null default true
 );
 
 create table if not exists batches (

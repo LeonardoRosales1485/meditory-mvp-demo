@@ -25,6 +25,32 @@ type DbWarehouseRow = {
   deleted_at: string | null;
 };
 
+type DbMedicationRow = {
+  workspace_id: string;
+  deleted_at: string | null;
+  sale_enabled: boolean | null;
+};
+
+async function getMedicationRow(medicationId: string): Promise<DbMedicationRow | null> {
+  const { data, error } = await supabaseAdmin
+    .from("medications")
+    .select("workspace_id, deleted_at, sale_enabled")
+    .eq("id", medicationId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data as DbMedicationRow | null;
+}
+
+async function assertMedicationActiveForWorkspace(workspaceId: string, medicationId: string) {
+  const med = await getMedicationRow(medicationId);
+  if (!med || med.workspace_id !== workspaceId) {
+    throw new Error("Medicamento no encontrado en el workspace actual.");
+  }
+  if (med.deleted_at) {
+    throw new Error("El medicamento fue dado de baja del catálogo.");
+  }
+}
+
 type ActionPayloadMap = {
   addMedication: {
     workspaceId: string;
@@ -36,6 +62,7 @@ type ActionPayloadMap = {
       concentrationUnit: string;
       form: string;
       salePrice?: number;
+      saleEnabled?: boolean;
     };
   };
   updateMedication: {
@@ -49,6 +76,7 @@ type ActionPayloadMap = {
       concentrationUnit: string;
       form: string;
       salePrice: number;
+      saleEnabled: boolean;
     }>;
   };
   deleteMedication: { workspaceId: string; actor: string; id: string };
@@ -553,6 +581,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
         concentration_unit: payload.medication.concentrationUnit,
         form: payload.medication.form,
         sale_price: Math.max(0, Number(payload.medication.salePrice ?? 0)),
+        sale_enabled: payload.medication.saleEnabled !== false,
       }),
     );
     await logAudit(payload.workspaceId, payload.actor, "Alta de medicamento", payload.medication.name);
@@ -560,6 +589,13 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
   }
 
   if (action === "updateMedication") {
+    const medRow = await getMedicationRow(payload.id);
+    if (!medRow || medRow.workspace_id !== payload.workspaceId) {
+      throw new Error("Medicamento no encontrado en el workspace actual.");
+    }
+    if (medRow.deleted_at) {
+      throw new Error("No se puede editar un medicamento dado de baja del catálogo.");
+    }
     const dbPatch: Record<string, unknown> = {};
     if (payload.patch.name !== undefined) dbPatch.name = payload.patch.name;
     if (payload.patch.activeIngredient !== undefined) dbPatch.active_ingredient = payload.patch.activeIngredient;
@@ -575,15 +611,76 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
       if (Number.isNaN(sp) || sp < 0) throw new Error("Precio de venta inválido.");
       dbPatch.sale_price = sp;
     }
+    if (payload.patch.saleEnabled !== undefined) {
+      const actorUser = await resolveActorUser(payload.workspaceId, payload.actor);
+      if (actorUser.role !== "admin") {
+        throw new Error("Solo administración puede habilitar o deshabilitar la venta en mostrador.");
+      }
+      dbPatch.sale_enabled = Boolean(payload.patch.saleEnabled);
+    }
     await db(supabaseAdmin.from("medications").update(dbPatch).eq("id", payload.id));
     await logAudit(payload.workspaceId, payload.actor, "Editó medicamento", await medicationDetailById(payload.id));
     return;
   }
 
   if (action === "deleteMedication") {
+    const { data: med, error: medErr } = await supabaseAdmin
+      .from("medications")
+      .select("id, workspace_id, deleted_at")
+      .eq("id", payload.id)
+      .maybeSingle();
+    if (medErr) throw new Error(medErr.message);
+    if (!med || (med as { workspace_id: string }).workspace_id !== payload.workspaceId) {
+      throw new Error("Medicamento no encontrado en el workspace actual.");
+    }
+    if ((med as { deleted_at: string | null }).deleted_at) {
+      throw new Error("Este medicamento ya fue dado de baja del catálogo.");
+    }
+    const { data: batchRows, error: batchErr } = await supabaseAdmin
+      .from("batches")
+      .select("quantity")
+      .eq("medication_id", payload.id);
+    if (batchErr) throw new Error(batchErr.message);
+    const stockTotal = (batchRows ?? []).reduce(
+      (s, r) => s + Number((r as { quantity: number }).quantity ?? 0),
+      0,
+    );
+    if (stockTotal > 0) {
+      throw new Error(
+        "No se puede dar de baja el medicamento: aún hay stock en depósitos (suma de lotes distinta de cero). Transferí, dispensá, vendé o ajustá hasta dejar saldo cero.",
+      );
+    }
+    const transferTerminal = new Set(["aceptado", "rechazado"]);
+    const { data: trRows, error: trErr } = await supabaseAdmin
+      .from("transfer_requests")
+      .select("id, status")
+      .eq("workspace_id", payload.workspaceId)
+      .eq("medication_id", payload.id);
+    if (trErr) throw new Error(trErr.message);
+    const activeTransfers = (trRows ?? []).filter((t) => !transferTerminal.has((t as { status: string }).status));
+    if (activeTransfers.length > 0) {
+      throw new Error(
+        "No se puede dar de baja el medicamento: hay transferencias de stock activas que lo involucran. Finalizalas o cancelalas antes.",
+      );
+    }
+    const orderTerminal = new Set(["administrado", "rechazado", "devuelto", "devolucion_rechazada"]);
+    const { data: ordRows, error: ordErr } = await supabaseAdmin
+      .from("medication_orders")
+      .select("id, status")
+      .eq("workspace_id", payload.workspaceId)
+      .eq("medication_id", payload.id);
+    if (ordErr) throw new Error(ordErr.message);
+    const activeOrders = (ordRows ?? []).filter((o) => !orderTerminal.has((o as { status: string }).status));
+    if (activeOrders.length > 0) {
+      throw new Error(
+        "No se puede dar de baja el medicamento: hay pedidos médicos en curso que lo referencian. Completá o rechazá esos pedidos antes.",
+      );
+    }
     const detail = await medicationDetailById(payload.id);
-    await db(supabaseAdmin.from("medications").delete().eq("id", payload.id));
-    await logAudit(payload.workspaceId, payload.actor, "Eliminó medicamento", detail);
+    await db(
+      supabaseAdmin.from("medications").update({ deleted_at: new Date().toISOString() }).eq("id", payload.id),
+    );
+    await logAudit(payload.workspaceId, payload.actor, "Baja de medicamento (catálogo)", detail);
     return;
   }
 
@@ -598,6 +695,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
     if (warehouse.deleted_at) {
       throw new Error("El depósito central fue dado de baja.");
     }
+    await assertMedicationActiveForWorkspace(payload.workspaceId, payload.medicationId);
     const expiryDate = new Date(payload.expiry);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -691,6 +789,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
     if (payload.fromWarehouseId === payload.toWarehouseId) {
       throw new Error("Origen y destino deben ser distintos.");
     }
+    await assertMedicationActiveForWorkspace(payload.workspaceId, payload.medicationId);
     const actorUser = await resolveActorUser(payload.workspaceId, payload.actor);
     if (fromWarehouse.type !== "central") {
       if (actorUser.role !== "admin") {
@@ -899,6 +998,18 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
       throw new Error("Solo administración o ventas pueden registrar ventas en mostrador.");
     }
     await assertWarehouseAccess(payload.workspaceId, payload.actor, payload.warehouseId);
+    const medForSale = await getMedicationRow(payload.medicationId);
+    if (!medForSale || medForSale.workspace_id !== payload.workspaceId) {
+      throw new Error("Medicamento no encontrado en el workspace actual.");
+    }
+    if (medForSale.deleted_at) {
+      throw new Error("El medicamento fue dado de baja del catálogo.");
+    }
+    if (medForSale.sale_enabled === false) {
+      throw new Error(
+        "Este medicamento no está habilitado para venta en mostrador. Un administrador puede activarlo en Listas de precios.",
+      );
+    }
     await consumeStock(payload.medicationId, payload.warehouseId, payload.quantity);
     await db(
       supabaseAdmin.from("sales").insert({
@@ -935,6 +1046,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
     if (!dispWh || dispWh.workspace_id !== payload.workspaceId || dispWh.deleted_at) {
       throw new Error("Depósito inválido para el workspace actual o dado de baja.");
     }
+    await assertMedicationActiveForWorkspace(payload.workspaceId, payload.medicationId);
     await consumeStock(payload.medicationId, payload.warehouseId, payload.quantity);
     await db(
       supabaseAdmin.from("dispensations").insert({
@@ -984,6 +1096,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
     if (!orderWarehouse || orderWarehouse.workspace_id !== payload.workspaceId || orderWarehouse.deleted_at) {
       throw new Error("El depósito del pedido no es válido o fue dado de baja.");
     }
+    await assertMedicationActiveForWorkspace(payload.workspaceId, payload.medicationId);
     const requestedDoctor = payload.doctorName?.trim() || payload.actor;
     await db(
       supabaseAdmin.from("medication_orders").insert({

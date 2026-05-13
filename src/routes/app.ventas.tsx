@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { Plus, Receipt, Paperclip, X, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -66,7 +66,18 @@ function SalesPage() {
   const available = med ? stockFor(batches, med, salesWarehouseId) : 0;
   const medObj = medications.find((m) => m.id === med);
   const unitPrice = medObj ? medObj.salePrice : 0;
-  const medicationsForSelectedWarehouse = medications.filter((m) => stockFor(batches, m.id, salesWarehouseId) > 0);
+  const medicationsForSelectedWarehouse = medications.filter(
+    (m) =>
+      !m.deletedAt &&
+      m.saleEnabled !== false &&
+      stockFor(batches, m.id, salesWarehouseId) > 0,
+  );
+
+  useEffect(() => {
+    if (med && !medicationsForSelectedWarehouse.some((m) => m.id === med)) {
+      setMed("");
+    }
+  }, [med, medicationsForSelectedWarehouse]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -189,7 +200,8 @@ function SalesPage() {
                 </Select>
                 {salesWarehouseId && medicationsForSelectedWarehouse.length === 0 && (
                   <p className="text-xs text-muted-foreground">
-                    No hay medicamentos con stock en este depósito. Transferí o ingresá mercadería al mostrador.
+                    No hay medicamentos con stock en este depósito y venta habilitada en Listas de precios. Transferí
+                    stock, habilitá la venta del medicamento o revisá el catálogo.
                   </p>
                 )}
                 {med && (

@@ -19,6 +19,10 @@ export interface Medication {
   form: string;
   /** Precio unitario de venta en mostrador (lista de precios actual; cada venta guarda su propio precio al momento). */
   salePrice: number;
+  /** Si es false, no se ofrece en Ventas (mostrador) y no se puede registrar una venta nueva. */
+  saleEnabled?: boolean;
+  /** Baja lógica del ítem de catálogo; la fila se conserva para historial y FKs. */
+  deletedAt?: string | null;
 }
 
 export interface Batch {
@@ -209,7 +213,9 @@ export function medConc(m: Medication): string {
 export function medName(id: string): string {
   const list = nameProvider?.medications ?? [];
   const med = list.find((item) => item.id === id);
-  return med ? `${med.name} ${medConc(med)}` : id;
+  if (!med) return id;
+  const label = `${med.name} ${medConc(med)}`;
+  return med.deletedAt ? `${label} (baja)` : label;
 }
 
 export function warehouseName(id: string): string {

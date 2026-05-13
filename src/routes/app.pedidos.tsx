@@ -89,6 +89,8 @@ const EMPTY_FORM = {
   wingId: "",
   roomId: "",
   bedId: "",
+  /** Paciente elegido desde «Pacientes internados»; permite habilitar la cama ocupada aunque aún no resuelva `bed.patientId` en el picker. */
+  internedPatientId: "",
 };
 
 function patientOrderLabel(p: Patient) {
@@ -279,11 +281,13 @@ function InternmentPickerForOrder({
 
   function handleWingChange(v: string) {
     const next = v === NONE_VALUE ? "" : v;
+    if (next === wingId) return;
     onChange({ wingId: next, roomId: "", bedId: "", patientName: "", room: "" });
   }
 
   function handleRoomChange(v: string) {
     const next = v === NONE_VALUE ? "" : v;
+    if (next === roomId) return;
     const r = rooms.find((x) => x.id === next);
     onChange({
       wingId,
@@ -296,6 +300,7 @@ function InternmentPickerForOrder({
 
   function handleBedChange(v: string) {
     const next = v === NONE_VALUE ? "" : v;
+    if (next === bedId) return;
     const bed = selectedRoom?.beds.find((b) => b.id === next) ?? null;
     const patientName = bed?.patientId ? patientNameById.get(bed.patientId) ?? "" : "";
     onChange({
@@ -406,6 +411,7 @@ function InternmentPickerForOrder({
 function DoctorView() {
   const session = useStore((s) => s.session);
   const medications = useStore((s) => s.medications);
+  const catalogMedications = useMemo(() => medications.filter((m) => !m.deletedAt), [medications]);
   const batches = useStore((s) => s.batches);
   const orders = useStore((s) => s.orders);
   const patients = useStore((s) => s.patients);
@@ -432,8 +438,8 @@ function DoctorView() {
   const linkedPatientIdForPicker = useMemo(() => {
     const r = workspaceRooms.find((x) => x.id === form.roomId);
     const b = r?.beds.find((x) => x.id === form.bedId);
-    return b?.patientId ?? undefined;
-  }, [form.roomId, form.bedId, workspaceRooms]);
+    return b?.patientId ?? (form.internedPatientId ? form.internedPatientId : undefined);
+  }, [form.roomId, form.bedId, form.internedPatientId, workspaceRooms]);
   const [returnOrderId, setReturnOrderId] = useState<string | null>(null);
   const [confirmAcceptOrderId, setConfirmAcceptOrderId] = useState<string | null>(null);
   const [rejectOrderId, setRejectOrderId] = useState<string | null>(null);
@@ -767,7 +773,7 @@ function DoctorView() {
                   <SelectValue placeholder="Seleccioná un medicamento" />
                 </SelectTrigger>
                 <SelectContent>
-                  {medications.map((m) => (
+                  {catalogMedications.map((m) => (
                     <SelectItem key={m.id} value={m.id}>
                       {m.name} {m.concentrationValue}{m.concentrationUnit} — {m.form}
                     </SelectItem>
@@ -845,7 +851,9 @@ function DoctorView() {
                   setForm((f) => ({
                     ...f,
                     patient: v,
-                    ...(v.trim() === "" ? { wingId: "", roomId: "", bedId: "", room: "" } : {}),
+                    ...(v.trim() === ""
+                      ? { wingId: "", roomId: "", bedId: "", room: "", internedPatientId: "" }
+                      : {}),
                   }))
                 }
                 onPickPatient={(p) => {
@@ -858,6 +866,7 @@ function DoctorView() {
                     roomId: pl.roomId,
                     bedId: pl.bedId,
                     room: String(pl.fullNumber),
+                    internedPatientId: p.id,
                   }));
                 }}
                 patientsInterned={internedPatients}
@@ -885,6 +894,7 @@ function DoctorView() {
                     bedId,
                     patient: patientName,
                     room,
+                    internedPatientId: patientName === "" ? "" : f.internedPatientId,
                   }))
                 }
               />
@@ -976,7 +986,7 @@ function DoctorView() {
                 <Select value={incorrectMedicationId} onValueChange={setIncorrectMedicationId}>
                   <SelectTrigger><SelectValue placeholder="Seleccionar medicamento..." /></SelectTrigger>
                   <SelectContent>
-                    {medications.map((m) => (
+                    {catalogMedications.map((m) => (
                       <SelectItem key={m.id} value={m.id}>
                         {m.name} {m.concentrationValue}{m.concentrationUnit}
                       </SelectItem>
@@ -1026,6 +1036,7 @@ function AdminView() {
   const orders = useStore((s) => s.orders);
   const batches = useStore((s) => s.batches);
   const medications = useStore((s) => s.medications);
+  const catalogMedications = useMemo(() => medications.filter((m) => !m.deletedAt), [medications]);
   const patients = useStore((s) => s.patients);
   const users = useStore((s) => s.users);
   const userWarehouseAccesses = useStore((s) => s.userWarehouseAccesses);
@@ -1097,6 +1108,7 @@ function AdminView() {
     wingId: "",
     roomId: "",
     bedId: "",
+    internedPatientId: "",
   });
   const patientPlacement = useMemo(() => patientBedPlacementMap(workspaceRooms), [workspaceRooms]);
   const internedPatients = useMemo(
@@ -1106,8 +1118,8 @@ function AdminView() {
   const linkedPatientIdForPicker = useMemo(() => {
     const r = workspaceRooms.find((x) => x.id === newOrder.roomId);
     const b = r?.beds.find((x) => x.id === newOrder.bedId);
-    return b?.patientId ?? undefined;
-  }, [newOrder.roomId, newOrder.bedId, workspaceRooms]);
+    return b?.patientId ?? (newOrder.internedPatientId ? newOrder.internedPatientId : undefined);
+  }, [newOrder.roomId, newOrder.bedId, newOrder.internedPatientId, workspaceRooms]);
 
   const [confirmAction, setConfirmAction] = useState<null | {
     orderId: string;
@@ -1199,6 +1211,7 @@ function AdminView() {
         wingId: "",
         roomId: "",
         bedId: "",
+        internedPatientId: "",
       });
     } finally {
       setCreatingAssistedOrder(false);
@@ -1251,7 +1264,7 @@ function AdminView() {
             <PackageCheck className="h-8 w-8 text-green-600" />
             <div>
               <p className="text-2xl font-bold">{dispensed}</p>
-              <p className="text-xs text-muted-foreground">Dispensados</p>
+              <p className="text-xs text-muted-foreground">Administrados</p>
             </div>
           </CardContent>
         </Card>
@@ -1572,7 +1585,7 @@ function AdminView() {
               >
                 <SelectTrigger><SelectValue placeholder="Seleccioná medicamento..." /></SelectTrigger>
                 <SelectContent>
-                  {medications.map((m) => (
+                  {catalogMedications.map((m) => (
                     <SelectItem key={m.id} value={m.id}>
                       {m.name} {m.concentrationValue}{m.concentrationUnit}
                     </SelectItem>
@@ -1639,7 +1652,9 @@ function AdminView() {
                   setNewOrder((s) => ({
                     ...s,
                     patient: v,
-                    ...(v.trim() === "" ? { wingId: "", roomId: "", bedId: "", room: "" } : {}),
+                    ...(v.trim() === ""
+                      ? { wingId: "", roomId: "", bedId: "", room: "", internedPatientId: "" }
+                      : {}),
                   }))
                 }
                 onPickPatient={(p) => {
@@ -1652,6 +1667,7 @@ function AdminView() {
                     roomId: pl.roomId,
                     bedId: pl.bedId,
                     room: String(pl.fullNumber),
+                    internedPatientId: p.id,
                   }));
                 }}
                 patientsInterned={internedPatients}
@@ -1679,6 +1695,7 @@ function AdminView() {
                     bedId,
                     patient: patientName,
                     room,
+                    internedPatientId: patientName === "" ? "" : s.internedPatientId,
                   }))
                 }
               />

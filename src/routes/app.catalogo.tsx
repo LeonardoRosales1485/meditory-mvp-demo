@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { requireAdmin } from "@/lib/route-guards";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Plus, Pencil, Trash2, BookOpen, Eye } from "lucide-react";
 import { toast } from "sonner";
 
@@ -25,7 +25,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { type ConcentrationUnit, type Medication } from "@/lib/domain-types";
+import {
+  type ConcentrationUnit,
+  type Medication,
+  type MedicationOrder,
+  type TransferRequest,
+} from "@/lib/domain-types";
 import { useStore } from "@/lib/store";
 import { WorkspaceLoadingPlaceholder } from "@/components/workspace-loading-placeholder";
 import {
@@ -40,22 +45,77 @@ import { MobileViewToggle } from "@/components/mobile-view-toggle";
 
 const UNITS: ConcentrationUnit[] = ["mg", "mcg", "ml", "L", "g", "unidad"];
 
+const TERMINAL_TRANSFER_STATUS = new Set<TransferRequest["status"]>(["aceptado", "rechazado"]);
+const TERMINAL_ORDER_STATUS = new Set<MedicationOrder["status"]>([
+  "administrado",
+  "rechazado",
+  "devuelto",
+  "devolucion_rechazada",
+]);
+
+function medicationDeleteGuard(
+  medicationId: string,
+  batchesList: { medicationId: string; quantity: number }[],
+  transfersList: TransferRequest[],
+  ordersList: MedicationOrder[],
+) {
+  const stockTotal = batchesList
+    .filter((b) => b.medicationId === medicationId)
+    .reduce((acc, b) => acc + b.quantity, 0);
+  const activeTransfers = transfersList.filter(
+    (t) => t.medicationId === medicationId && !TERMINAL_TRANSFER_STATUS.has(t.status),
+  );
+  const activeOrders = ordersList.filter(
+    (o) => o.medicationId === medicationId && !TERMINAL_ORDER_STATUS.has(o.status),
+  );
+  const reasons: string[] = [];
+  if (stockTotal > 0) {
+    reasons.push(
+      `Hay stock asociado: ${stockTotal.toLocaleString("es-AR")} u en total (suma de lotes de este medicamento en todos los depósitos).`,
+    );
+  }
+  if (activeTransfers.length > 0) {
+    reasons.push(
+      `Hay ${activeTransfers.length} transferencia${activeTransfers.length === 1 ? "" : "s"} de stock activa${activeTransfers.length === 1 ? "" : "s"} (estado distinto de aceptada o rechazada).`,
+    );
+  }
+  if (activeOrders.length > 0) {
+    reasons.push(
+      `Hay ${activeOrders.length} pedido${activeOrders.length === 1 ? "" : "s"} médico${activeOrders.length === 1 ? "" : "s"} en curso (no finalizado en administrado, rechazado, devuelto o devolución rechazada).`,
+    );
+  }
+  return { ok: reasons.length === 0, reasons, stockTotal };
+}
+
 export const Route = createFileRoute("/app/catalogo")({
   beforeLoad: requireAdmin,
   component: CatalogPage,
 });
 
 function CatalogPage() {
-  const medications = useStore((s) => s.medications);
+  const medicationsAll = useStore((s) => s.medications);
+  const batches = useStore((s) => s.batches);
+  const transfers = useStore((s) => s.transfers);
+  const orders = useStore((s) => s.orders);
+  const medications = useMemo(
+    () => medicationsAll.filter((m) => !m.deletedAt),
+    [medicationsAll],
+  );
   const workspaceDataLoading = useStore((s) => s.workspaceDataLoading);
   const addMedication = useStore((s) => s.addMedication);
   const updateMedication = useStore((s) => s.updateMedication);
   const deleteMedication = useStore((s) => s.deleteMedication);
 
   const [open, setOpen] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [editing, setEditing] = useState<Medication | null>(null);
   const { isMobile, viewMode, setViewMode } = useMobileListView("app-catalogo");
+  const pendingDeleteGuard = useMemo(
+    () => (deleteConfirm ? medicationDeleteGuard(deleteConfirm, batches, transfers, orders) : null),
+    [deleteConfirm, batches, transfers, orders],
+  );
   const [form, setForm] = useState<Omit<Medication, "id">>({
     name: "",
     activeIngredient: "",
@@ -110,9 +170,19 @@ function CatalogPage() {
       setSaving(false);
     }
   }
-  async function remove(m: Medication) {
-    await deleteMedication(m.id);
-    toast.success(`Eliminado: ${m.name}`);
+  async function confirmDeleteMedication() {
+    if (!deleteConfirm) return;
+    setDeleting(true);
+    try {
+      await deleteMedication(deleteConfirm);
+      setDeleteConfirm(null);
+      toast.success("Medicamento dado de baja del catálogo.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo completar la baja.";
+      toast.error("No se pudo dar de baja", { description: message });
+    } finally {
+      setDeleting(false);
+    }
   }
 
   return (
@@ -162,7 +232,9 @@ function CatalogPage() {
                           </Link>
                         </Button>
                         <Button variant="outline" size="sm" onClick={() => startEdit(m)}>Editar</Button>
-                        <Button variant="destructive" size="sm" onClick={() => remove(m)}>Eliminar</Button>
+                        <Button variant="destructive" size="sm" onClick={() => setDeleteConfirm(m.id)}>
+                          Dar de baja
+                        </Button>
                       </div>
                     </CardContent>
                   </Card>
@@ -206,7 +278,12 @@ function CatalogPage() {
                     <Button variant="ghost" size="icon" onClick={() => startEdit(m)} aria-label="Editar">
                       <Pencil className="h-4 w-4" />
                     </Button>
-                    <Button variant="ghost" size="icon" onClick={() => remove(m)} aria-label="Eliminar">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setDeleteConfirm(m.id)}
+                      aria-label="Dar de baja medicamento"
+                    >
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
                   </TableCell>
@@ -279,6 +356,62 @@ function CatalogPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteConfirm !== null} onOpenChange={(isOpen) => !isOpen && setDeleteConfirm(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Dar de baja medicamento</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 text-sm text-muted-foreground">
+            <p>
+              Vas a dar de baja{" "}
+              <span className="font-medium text-foreground">
+                {deleteConfirm ? medications.find((x) => x.id === deleteConfirm)?.name ?? "este ítem" : ""}
+              </span>{" "}
+              del catálogo operativo. Para poder confirmar, deben cumplirse todas estas condiciones:
+            </p>
+            <ul className="list-disc space-y-2 pl-5">
+              <li>
+                <span className="font-medium text-foreground">Sin stock:</span> la suma de unidades en todos los
+                lotes de ese medicamento (en cualquier depósito) debe ser{" "}
+                <strong className="text-foreground">cero</strong>.
+              </li>
+              <li>
+                <span className="font-medium text-foreground">Sin stock en movimiento:</span> no debe haber
+                transferencias activas ni pedidos médicos en curso que referencien ese medicamento (transferencias
+                finalizadas solo en estado aceptada o rechazada; pedidos cerrados en administrado, rechazado, devuelto
+                o devolución rechazada).
+              </li>
+              <li>
+                <span className="font-medium text-foreground">Baja lógica:</span> el registro no se borra de la base
+                de datos: deja de mostrarse en el catálogo para operaciones nuevas y permanece vinculado al historial.
+              </li>
+            </ul>
+            {pendingDeleteGuard && !pendingDeleteGuard.ok ? (
+              <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-destructive">
+                <p className="font-medium text-foreground">Aún no se cumplen las condiciones:</p>
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  {pendingDeleteGuard.reasons.map((r, i) => (
+                    <li key={i}>{r}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteConfirm(null)}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => void confirmDeleteMedication()}
+              disabled={deleting || (pendingDeleteGuard !== null && !pendingDeleteGuard.ok)}
+            >
+              {deleting ? "Procesando…" : "Confirmar baja"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

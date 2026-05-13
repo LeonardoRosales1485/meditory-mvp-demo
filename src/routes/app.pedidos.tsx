@@ -240,8 +240,8 @@ function InternedPatientOrderField({
 const NONE_VALUE = "__none__";
 
 /** Selector en cascada Ala → Sala → Cama para pedidos.
- *  Salas sin camas libres quedan deshabilitadas salvo que incluyan la cama del paciente vinculado (`linkedPatientId`).
- *  Camas libres o la cama ocupada por ese paciente son seleccionables. */
+ *  Si `placementLocked` (paciente elegido en Pacientes internados), ala/sala/cama quedan fijas.
+ *  Si no, cualquier cama es seleccionable (libre u ocupada) para poder armar la ubicación o elegir por cama. */
 function InternmentPickerForOrder({
   wings,
   rooms,
@@ -249,7 +249,7 @@ function InternmentPickerForOrder({
   wingId,
   roomId,
   bedId,
-  linkedPatientId,
+  placementLocked,
   onChange,
   disabled,
 }: {
@@ -259,7 +259,7 @@ function InternmentPickerForOrder({
   wingId: string;
   roomId: string;
   bedId: string;
-  linkedPatientId?: string;
+  placementLocked?: boolean;
   onChange: (next: { wingId: string; roomId: string; bedId: string; patientName: string; room: string }) => void;
   disabled?: boolean;
 }) {
@@ -275,9 +275,8 @@ function InternmentPickerForOrder({
     return m;
   }, [patients]);
 
-  const isBedSelectable = (b: { patientId: string | null }) =>
-    !b.patientId || (!!linkedPatientId && b.patientId === linkedPatientId);
-  const roomHasSelectableBed = (r: Room) => r.beds.some((b) => isBedSelectable(b));
+  const roomHasSelectableBed = (r: Room) =>
+    placementLocked ? r.beds.some((b) => !!b.patientId) : r.beds.length > 0;
 
   function handleWingChange(v: string) {
     const next = v === NONE_VALUE ? "" : v;
@@ -317,7 +316,9 @@ function InternmentPickerForOrder({
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-sm font-medium">Internación</p>
         <span className="text-[11px] text-muted-foreground">
-          Salas sin camas libres quedan deshabilitadas (salvo la del paciente elegido en Pacientes internados).
+          {placementLocked
+            ? "Fijada al paciente elegido en Pacientes internados. Limpiá el buscador para cambiar ala, sala o cama."
+            : "Podés elegir cualquier cama (libre u ocupada); al elegir una ocupada se completa el nombre. Salas sin camas quedan deshabilitadas."}
         </span>
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -325,7 +326,7 @@ function InternmentPickerForOrder({
           <Label className="text-xs">Ala</Label>
           <Select
             value={wingId || NONE_VALUE}
-            disabled={disabled || sortedWings.length === 0}
+            disabled={disabled || sortedWings.length === 0 || placementLocked}
             onValueChange={handleWingChange}
           >
             <SelectTrigger>
@@ -345,7 +346,7 @@ function InternmentPickerForOrder({
           <Label className="text-xs">Sala</Label>
           <Select
             value={roomId || NONE_VALUE}
-            disabled={disabled || !wingId || filteredRooms.length === 0}
+            disabled={disabled || !wingId || filteredRooms.length === 0 || placementLocked}
             onValueChange={handleRoomChange}
           >
             <SelectTrigger>
@@ -368,7 +369,7 @@ function InternmentPickerForOrder({
                   <SelectItem key={r.id} value={r.id} disabled={!available}>
                     <span className={!available ? "opacity-50" : undefined}>
                       Sala {r.fullNumber} · {free}/{r.bedCount} libre{free === 1 ? "" : "s"}
-                      {!available ? " · sin camas libres" : ""}
+                      {!available ? (placementLocked ? " · solo camas libres" : " · sin camas") : ""}
                     </span>
                   </SelectItem>
                 );
@@ -380,7 +381,7 @@ function InternmentPickerForOrder({
           <Label className="text-xs">Cama</Label>
           <Select
             value={bedId || NONE_VALUE}
-            disabled={disabled || !roomId}
+            disabled={disabled || !roomId || placementLocked}
             onValueChange={handleBedChange}
           >
             <SelectTrigger>
@@ -389,14 +390,11 @@ function InternmentPickerForOrder({
             <SelectContent>
               <SelectItem value={NONE_VALUE}>Sin cama</SelectItem>
               {selectedRoom?.beds.map((b) => {
-                const available = isBedSelectable(b);
                 const occupantName = b.patientId ? patientNameById.get(b.patientId) : null;
                 return (
-                  <SelectItem key={b.id} value={b.id} disabled={!available}>
-                    <span className={!available ? "opacity-50" : undefined}>
-                      Cama {b.position}
-                      {occupantName ? ` · ${occupantName}` : " · libre"}
-                    </span>
+                  <SelectItem key={b.id} value={b.id}>
+                    Cama {b.position}
+                    {occupantName ? ` · ${occupantName}` : " · libre"}
                   </SelectItem>
                 );
               })}
@@ -435,11 +433,6 @@ function DoctorView() {
     () => patientsInternedInRooms(patients, workspaceRooms),
     [patients, workspaceRooms],
   );
-  const linkedPatientIdForPicker = useMemo(() => {
-    const r = workspaceRooms.find((x) => x.id === form.roomId);
-    const b = r?.beds.find((x) => x.id === form.bedId);
-    return b?.patientId ?? (form.internedPatientId ? form.internedPatientId : undefined);
-  }, [form.roomId, form.bedId, form.internedPatientId, workspaceRooms]);
   const [returnOrderId, setReturnOrderId] = useState<string | null>(null);
   const [confirmAcceptOrderId, setConfirmAcceptOrderId] = useState<string | null>(null);
   const [rejectOrderId, setRejectOrderId] = useState<string | null>(null);
@@ -885,17 +878,21 @@ function DoctorView() {
                 wingId={form.wingId}
                 roomId={form.roomId}
                 bedId={form.bedId}
-                linkedPatientId={linkedPatientIdForPicker}
-                onChange={({ wingId, roomId, bedId, patientName, room }) =>
+                placementLocked={!!form.internedPatientId}
+                onChange={(next) =>
                   setForm((f) => {
-                    const placementCleared = !wingId && !roomId && !bedId;
+                    // Con paciente desde la búsqueda, Radix puede disparar onValueChange al pasar los Select a
+                    // `disabled` y borrar `bedId` justo después de `onPickPatient`. La ubicación solo se edita
+                    // limpiando el buscador o desde `onPickPatient`.
+                    if (f.internedPatientId) return f;
+                    const placementCleared = !next.wingId && !next.roomId && !next.bedId;
                     return {
                       ...f,
-                      wingId,
-                      roomId,
-                      bedId,
-                      room,
-                      patient: placementCleared ? "" : patientName !== "" ? patientName : f.patient,
+                      wingId: next.wingId,
+                      roomId: next.roomId,
+                      bedId: next.bedId,
+                      room: next.room,
+                      patient: placementCleared ? "" : next.patientName !== "" ? next.patientName : f.patient,
                       internedPatientId: placementCleared ? "" : f.internedPatientId,
                     };
                   })
@@ -1118,12 +1115,6 @@ function AdminView() {
     () => patientsInternedInRooms(patients, workspaceRooms),
     [patients, workspaceRooms],
   );
-  const linkedPatientIdForPicker = useMemo(() => {
-    const r = workspaceRooms.find((x) => x.id === newOrder.roomId);
-    const b = r?.beds.find((x) => x.id === newOrder.bedId);
-    return b?.patientId ?? (newOrder.internedPatientId ? newOrder.internedPatientId : undefined);
-  }, [newOrder.roomId, newOrder.bedId, newOrder.internedPatientId, workspaceRooms]);
-
   const [confirmAction, setConfirmAction] = useState<null | {
     orderId: string;
     action:
@@ -1689,17 +1680,18 @@ function AdminView() {
                 wingId={newOrder.wingId}
                 roomId={newOrder.roomId}
                 bedId={newOrder.bedId}
-                linkedPatientId={linkedPatientIdForPicker}
-                onChange={({ wingId, roomId, bedId, patientName, room }) =>
+                placementLocked={!!newOrder.internedPatientId}
+                onChange={(next) =>
                   setNewOrder((s) => {
-                    const placementCleared = !wingId && !roomId && !bedId;
+                    if (s.internedPatientId) return s;
+                    const placementCleared = !next.wingId && !next.roomId && !next.bedId;
                     return {
                       ...s,
-                      wingId,
-                      roomId,
-                      bedId,
-                      room,
-                      patient: placementCleared ? "" : patientName !== "" ? patientName : s.patient,
+                      wingId: next.wingId,
+                      roomId: next.roomId,
+                      bedId: next.bedId,
+                      room: next.room,
+                      patient: placementCleared ? "" : next.patientName !== "" ? next.patientName : s.patient,
                       internedPatientId: placementCleared ? "" : s.internedPatientId,
                     };
                   })

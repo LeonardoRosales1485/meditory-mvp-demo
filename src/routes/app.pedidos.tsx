@@ -887,15 +887,18 @@ function DoctorView() {
                 bedId={form.bedId}
                 linkedPatientId={linkedPatientIdForPicker}
                 onChange={({ wingId, roomId, bedId, patientName, room }) =>
-                  setForm((f) => ({
-                    ...f,
-                    wingId,
-                    roomId,
-                    bedId,
-                    patient: patientName,
-                    room,
-                    internedPatientId: patientName === "" ? "" : f.internedPatientId,
-                  }))
+                  setForm((f) => {
+                    const placementCleared = !wingId && !roomId && !bedId;
+                    return {
+                      ...f,
+                      wingId,
+                      roomId,
+                      bedId,
+                      room,
+                      patient: placementCleared ? "" : patientName !== "" ? patientName : f.patient,
+                      internedPatientId: placementCleared ? "" : f.internedPatientId,
+                    };
+                  })
                 }
               />
             </div>
@@ -1688,15 +1691,18 @@ function AdminView() {
                 bedId={newOrder.bedId}
                 linkedPatientId={linkedPatientIdForPicker}
                 onChange={({ wingId, roomId, bedId, patientName, room }) =>
-                  setNewOrder((s) => ({
-                    ...s,
-                    wingId,
-                    roomId,
-                    bedId,
-                    patient: patientName,
-                    room,
-                    internedPatientId: patientName === "" ? "" : s.internedPatientId,
-                  }))
+                  setNewOrder((s) => {
+                    const placementCleared = !wingId && !roomId && !bedId;
+                    return {
+                      ...s,
+                      wingId,
+                      roomId,
+                      bedId,
+                      room,
+                      patient: placementCleared ? "" : patientName !== "" ? patientName : s.patient,
+                      internedPatientId: placementCleared ? "" : s.internedPatientId,
+                    };
+                  })
                 }
               />
             </div>

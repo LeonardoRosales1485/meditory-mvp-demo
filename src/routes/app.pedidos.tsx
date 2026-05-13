@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ClipboardList,
   CheckCircle,
@@ -29,7 +30,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useStore, stockFor } from "@/lib/store";
-import { formatDate, medName, warehouseName } from "@/lib/domain-types";
+import {
+  formatDate,
+  medName,
+  warehouseName,
+  WING_TYPE_LABEL,
+  type Patient,
+  type Room,
+  type Wing,
+} from "@/lib/domain-types";
 import { requireAuth } from "@/lib/route-guards";
 import { useWarehouse } from "@/lib/warehouse-context";
 import { useMobileListView } from "@/lib/use-mobile-list-view";
@@ -70,7 +79,329 @@ function StatusBadge({ status }: { status: OrderStatus }) {
   return <Badge variant="outline" className={className}>{label}</Badge>;
 }
 
-const EMPTY_FORM = { medicationId: "", sourceBatchId: "", patient: "", room: "", quantity: 1, reason: "" };
+const EMPTY_FORM = {
+  medicationId: "",
+  sourceBatchId: "",
+  patient: "",
+  room: "",
+  quantity: 1,
+  reason: "",
+  wingId: "",
+  roomId: "",
+  bedId: "",
+};
+
+function patientOrderLabel(p: Patient) {
+  return `${p.lastName}, ${p.firstName}`;
+}
+
+/** Lista de pacientes con cama asignada en el workspace (internados). */
+function patientsInternedInRooms(patients: Patient[], workspaceRooms: Room[]): Patient[] {
+  const ids = new Set<string>();
+  for (const r of workspaceRooms) {
+    for (const b of r.beds) {
+      if (b.patientId) ids.add(b.patientId);
+    }
+  }
+  return patients.filter((p) => ids.has(p.id));
+}
+
+/** Mapa paciente → ubicación de su cama actual. */
+function patientBedPlacementMap(workspaceRooms: Room[]) {
+  const m = new Map<string, { wingId: string; roomId: string; bedId: string; fullNumber: number }>();
+  for (const r of workspaceRooms) {
+    for (const b of r.beds) {
+      if (b.patientId) {
+        m.set(b.patientId, {
+          wingId: r.wingId,
+          roomId: r.id,
+          bedId: b.id,
+          fullNumber: r.fullNumber,
+        });
+      }
+    }
+  }
+  return m;
+}
+
+/** Autocompletado solo para pacientes internados; al elegir uno rellena ala/sala/cama en el padre. */
+function InternedPatientOrderField({
+  value,
+  onChangeText,
+  onPickPatient,
+  patientsInterned,
+  placementByPatientId,
+  placeholder,
+}: {
+  value: string;
+  onChangeText: (v: string) => void;
+  onPickPatient: (p: Patient) => void;
+  patientsInterned: Patient[];
+  placementByPatientId: Map<string, { wingId: string; roomId: string; bedId: string; fullNumber: number }>;
+  placeholder: string;
+}) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number; width: number } | null>(null);
+
+  const updateMenuPos = useCallback(() => {
+    const input = wrapRef.current?.querySelector("input");
+    if (!input) return;
+    const r = input.getBoundingClientRect();
+    setMenuPos({ top: r.bottom + 4, left: r.left, width: r.width });
+  }, []);
+
+  const filtered = useMemo(() => {
+    const q = value.trim().toLowerCase();
+    if (!q) return [...patientsInterned].slice(0, 12);
+    return patientsInterned
+      .filter((p) => {
+        const full = patientOrderLabel(p).toLowerCase();
+        return full.includes(q) || p.firstName.toLowerCase().includes(q) || p.lastName.toLowerCase().includes(q);
+      })
+      .slice(0, 25);
+  }, [patientsInterned, value]);
+
+  useLayoutEffect(() => {
+    if (!open || patientsInterned.length === 0) {
+      setMenuPos(null);
+      return;
+    }
+    updateMenuPos();
+    window.addEventListener("scroll", updateMenuPos, true);
+    window.addEventListener("resize", updateMenuPos);
+    return () => {
+      window.removeEventListener("scroll", updateMenuPos, true);
+      window.removeEventListener("resize", updateMenuPos);
+    };
+  }, [open, patientsInterned.length, updateMenuPos, filtered.length, value]);
+
+  const list =
+    open && patientsInterned.length > 0 && menuPos ? (
+      <ul
+        className="pointer-events-auto max-h-52 overflow-auto rounded-md border border-border bg-background shadow-md"
+        style={{
+          position: "fixed",
+          top: menuPos.top,
+          left: menuPos.left,
+          width: menuPos.width,
+          zIndex: 10_050,
+        }}
+        role="listbox"
+      >
+        {filtered.length === 0 ? (
+          <li className="px-3 py-2 text-sm text-muted-foreground">Sin coincidencias</li>
+        ) : (
+          filtered.map((p) => (
+            <li key={p.id} className="border-b border-border last:border-0">
+              <button
+                type="button"
+                className="w-full px-3 py-2 text-left text-sm hover:bg-accent"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  if (!placementByPatientId.has(p.id)) return;
+                  onPickPatient(p);
+                  setOpen(false);
+                }}
+              >
+                {patientOrderLabel(p)}
+              </button>
+            </li>
+          ))
+        )}
+      </ul>
+    ) : null;
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <Input
+        value={value}
+        onChange={(e) => {
+          onChangeText(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => {
+          setOpen(true);
+          queueMicrotask(updateMenuPos);
+        }}
+        onBlur={() => {
+          window.setTimeout(() => setOpen(false), 120);
+        }}
+        placeholder={placeholder}
+        autoComplete="off"
+      />
+      {typeof document !== "undefined" && list ? createPortal(list, document.body) : null}
+    </div>
+  );
+}
+
+const NONE_VALUE = "__none__";
+
+/** Selector en cascada Ala → Sala → Cama para pedidos.
+ *  Salas sin camas libres quedan deshabilitadas salvo que incluyan la cama del paciente vinculado (`linkedPatientId`).
+ *  Camas libres o la cama ocupada por ese paciente son seleccionables. */
+function InternmentPickerForOrder({
+  wings,
+  rooms,
+  patients,
+  wingId,
+  roomId,
+  bedId,
+  linkedPatientId,
+  onChange,
+  disabled,
+}: {
+  wings: Wing[];
+  rooms: Room[];
+  patients: Patient[];
+  wingId: string;
+  roomId: string;
+  bedId: string;
+  linkedPatientId?: string;
+  onChange: (next: { wingId: string; roomId: string; bedId: string; patientName: string; room: string }) => void;
+  disabled?: boolean;
+}) {
+  const sortedWings = useMemo(() => [...wings].sort((a, b) => a.prefix - b.prefix), [wings]);
+  const filteredRooms = useMemo(
+    () => rooms.filter((r) => r.wingId === wingId).sort((a, b) => a.fullNumber - b.fullNumber),
+    [rooms, wingId],
+  );
+  const selectedRoom = rooms.find((r) => r.id === roomId) ?? null;
+  const patientNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    patients.forEach((p) => m.set(p.id, `${p.lastName}, ${p.firstName}`));
+    return m;
+  }, [patients]);
+
+  const isBedSelectable = (b: { patientId: string | null }) =>
+    !b.patientId || (!!linkedPatientId && b.patientId === linkedPatientId);
+  const roomHasSelectableBed = (r: Room) => r.beds.some((b) => isBedSelectable(b));
+
+  function handleWingChange(v: string) {
+    const next = v === NONE_VALUE ? "" : v;
+    onChange({ wingId: next, roomId: "", bedId: "", patientName: "", room: "" });
+  }
+
+  function handleRoomChange(v: string) {
+    const next = v === NONE_VALUE ? "" : v;
+    const r = rooms.find((x) => x.id === next);
+    onChange({
+      wingId,
+      roomId: next,
+      bedId: "",
+      patientName: "",
+      room: r ? String(r.fullNumber) : "",
+    });
+  }
+
+  function handleBedChange(v: string) {
+    const next = v === NONE_VALUE ? "" : v;
+    const bed = selectedRoom?.beds.find((b) => b.id === next) ?? null;
+    const patientName = bed?.patientId ? patientNameById.get(bed.patientId) ?? "" : "";
+    onChange({
+      wingId,
+      roomId,
+      bedId: next,
+      patientName,
+      room: selectedRoom ? String(selectedRoom.fullNumber) : "",
+    });
+  }
+
+  return (
+    <div className="rounded-md border bg-muted/30 p-3 space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-sm font-medium">Internación</p>
+        <span className="text-[11px] text-muted-foreground">
+          Salas sin camas libres quedan deshabilitadas (salvo la del paciente elegido en Pacientes internados).
+        </span>
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="space-y-1.5">
+          <Label className="text-xs">Ala</Label>
+          <Select
+            value={wingId || NONE_VALUE}
+            disabled={disabled || sortedWings.length === 0}
+            onValueChange={handleWingChange}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder={sortedWings.length === 0 ? "Sin alas" : "Sin asignar"} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE_VALUE}>Sin asignar</SelectItem>
+              {sortedWings.map((w) => (
+                <SelectItem key={w.id} value={w.id}>
+                  {w.name} · {w.prefix}xx ({WING_TYPE_LABEL[w.type]})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Sala</Label>
+          <Select
+            value={roomId || NONE_VALUE}
+            disabled={disabled || !wingId || filteredRooms.length === 0}
+            onValueChange={handleRoomChange}
+          >
+            <SelectTrigger>
+              <SelectValue
+                placeholder={
+                  !wingId
+                    ? "Elegí un ala primero"
+                    : filteredRooms.length === 0
+                    ? "Sin salas"
+                    : "Sin sala"
+                }
+              />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE_VALUE}>Sin sala</SelectItem>
+              {filteredRooms.map((r) => {
+                const free = r.beds.filter((b) => !b.patientId).length;
+                const available = roomHasSelectableBed(r);
+                return (
+                  <SelectItem key={r.id} value={r.id} disabled={!available}>
+                    <span className={!available ? "opacity-50" : undefined}>
+                      Sala {r.fullNumber} · {free}/{r.bedCount} libre{free === 1 ? "" : "s"}
+                      {!available ? " · sin camas libres" : ""}
+                    </span>
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Cama</Label>
+          <Select
+            value={bedId || NONE_VALUE}
+            disabled={disabled || !roomId}
+            onValueChange={handleBedChange}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder={!roomId ? "Elegí una sala primero" : "Sin cama"} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE_VALUE}>Sin cama</SelectItem>
+              {selectedRoom?.beds.map((b) => {
+                const available = isBedSelectable(b);
+                const occupantName = b.patientId ? patientNameById.get(b.patientId) : null;
+                return (
+                  <SelectItem key={b.id} value={b.id} disabled={!available}>
+                    <span className={!available ? "opacity-50" : undefined}>
+                      Cama {b.position}
+                      {occupantName ? ` · ${occupantName}` : " · libre"}
+                    </span>
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function DoctorView() {
   const session = useStore((s) => s.session);
@@ -78,11 +409,31 @@ function DoctorView() {
   const batches = useStore((s) => s.batches);
   const orders = useStore((s) => s.orders);
   const patients = useStore((s) => s.patients);
+  const wings = useStore((s) => s.wings);
+  const rooms = useStore((s) => s.rooms);
   const createOrder = useStore((s) => s.createOrder);
   const processOrder = useStore((s) => s.processOrder);
   const { warehouses: doctorWarehouses } = useWarehouse();
+  const workspaceWings = useMemo(
+    () => wings.filter((w) => w.workspaceId === session?.workspaceId),
+    [wings, session?.workspaceId],
+  );
+  const workspaceRooms = useMemo(
+    () => rooms.filter((r) => r.workspaceId === session?.workspaceId),
+    [rooms, session?.workspaceId],
+  );
 
   const [form, setForm] = useState(EMPTY_FORM);
+  const patientPlacement = useMemo(() => patientBedPlacementMap(workspaceRooms), [workspaceRooms]);
+  const internedPatients = useMemo(
+    () => patientsInternedInRooms(patients, workspaceRooms),
+    [patients, workspaceRooms],
+  );
+  const linkedPatientIdForPicker = useMemo(() => {
+    const r = workspaceRooms.find((x) => x.id === form.roomId);
+    const b = r?.beds.find((x) => x.id === form.bedId);
+    return b?.patientId ?? undefined;
+  }, [form.roomId, form.bedId, workspaceRooms]);
   const [returnOrderId, setReturnOrderId] = useState<string | null>(null);
   const [confirmAcceptOrderId, setConfirmAcceptOrderId] = useState<string | null>(null);
   const [rejectOrderId, setRejectOrderId] = useState<string | null>(null);
@@ -129,7 +480,7 @@ function DoctorView() {
     e.preventDefault();
     if (creatingOrder) return;
     if (!form.medicationId || !form.patient.trim() || !form.room.trim() || !form.reason.trim()) {
-      toast.error("Completá todos los campos obligatorios.");
+      toast.error("Completá medicamento, paciente, internación (ala y sala) e indicación.");
       return;
     }
     if (!internaWarehouse) {
@@ -486,26 +837,56 @@ function DoctorView() {
                 </p>
               )}
             </div>
-            <div className="space-y-1.5">
-              <Label>Paciente</Label>
-              <Input
-                list="patients-suggestions"
-                placeholder="Buscar paciente por coincidencia..."
+            <div className="space-y-1.5 md:col-span-2">
+              <Label>Pacientes internados</Label>
+              <InternedPatientOrderField
                 value={form.patient}
-                onChange={(e) => setForm((f) => ({ ...f, patient: e.target.value }))}
+                onChangeText={(v) =>
+                  setForm((f) => ({
+                    ...f,
+                    patient: v,
+                    ...(v.trim() === "" ? { wingId: "", roomId: "", bedId: "", room: "" } : {}),
+                  }))
+                }
+                onPickPatient={(p) => {
+                  const pl = patientPlacement.get(p.id);
+                  if (!pl) return;
+                  setForm((f) => ({
+                    ...f,
+                    patient: patientOrderLabel(p),
+                    wingId: pl.wingId,
+                    roomId: pl.roomId,
+                    bedId: pl.bedId,
+                    room: String(pl.fullNumber),
+                  }));
+                }}
+                patientsInterned={internedPatients}
+                placementByPatientId={patientPlacement}
+                placeholder="Buscar internado por apellido o nombre…"
               />
-              <datalist id="patients-suggestions">
-                {patients.map((p) => (
-                  <option key={p.id} value={`${p.lastName}, ${p.firstName}`} />
-                ))}
-              </datalist>
+              <p className="text-[11px] text-muted-foreground">
+                Solo aparecen pacientes con cama asignada. Al elegir uno se completan ala, sala y cama.
+              </p>
             </div>
-            <div className="space-y-1.5">
-              <Label>Habitación / Sala</Label>
-              <Input
-                placeholder="Ej: Sala 7, UCI, Guardia"
-                value={form.room}
-                onChange={(e) => setForm((f) => ({ ...f, room: e.target.value }))}
+            <div className="space-y-1.5 md:col-span-2">
+              <InternmentPickerForOrder
+                wings={workspaceWings}
+                rooms={workspaceRooms}
+                patients={patients}
+                wingId={form.wingId}
+                roomId={form.roomId}
+                bedId={form.bedId}
+                linkedPatientId={linkedPatientIdForPicker}
+                onChange={({ wingId, roomId, bedId, patientName, room }) =>
+                  setForm((f) => ({
+                    ...f,
+                    wingId,
+                    roomId,
+                    bedId,
+                    patient: patientName,
+                    room,
+                  }))
+                }
               />
             </div>
             <div className="space-y-1.5">
@@ -647,23 +1028,56 @@ function AdminView() {
   const medications = useStore((s) => s.medications);
   const patients = useStore((s) => s.patients);
   const users = useStore((s) => s.users);
+  const userWarehouseAccesses = useStore((s) => s.userWarehouseAccesses);
+  const wings = useStore((s) => s.wings);
+  const rooms = useStore((s) => s.rooms);
   const session = useStore((s) => s.session);
   const processOrder = useStore((s) => s.processOrder);
   const createOrder = useStore((s) => s.createOrder);
+  const workspaceWings = useMemo(
+    () => wings.filter((w) => w.workspaceId === session?.workspaceId),
+    [wings, session?.workspaceId],
+  );
+  const workspaceRooms = useMemo(
+    () => rooms.filter((r) => r.workspaceId === session?.workspaceId),
+    [rooms, session?.workspaceId],
+  );
 
   const storeWarehouses = useStore((s) => s.warehouses);
   const allWarehouses = storeWarehouses;
   const internaWarehouseIds = new Set(
     allWarehouses
-      .filter((w) => (w.type === "interna" || w.type === "central") && w.workspaceId === session?.workspaceId)
-      .map((w) => w.id)
+      .filter(
+        (w) =>
+          (w.type === "interna" || w.type === "central") &&
+          w.workspaceId === session?.workspaceId &&
+          !w.deletedAt,
+      )
+      .map((w) => w.id),
   );
 
-  const workspaceOrders = orders
+  const meUser =
+    users.find(
+      (u) =>
+        u.workspaceId === session?.workspaceId &&
+        u.email.toLowerCase() === (session?.email ?? "").toLowerCase(),
+    ) ?? users.find((u) => u.workspaceId === session?.workspaceId && u.name === session?.name);
+  const myWarehouseIds = new Set(
+    userWarehouseAccesses.filter((a) => a.userId === meUser?.id).map((a) => a.warehouseId),
+  );
+  const isTecnico = session?.role === "tecnico";
+
+  const internaOrdersSorted = orders
     .filter((o) => internaWarehouseIds.has(o.warehouseId))
     .sort((a, b) => new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime());
+  const workspaceOrders = isTecnico
+    ? internaOrdersSorted.filter((o) => myWarehouseIds.has(o.warehouseId))
+    : internaOrdersSorted;
   const requestWarehouses = allWarehouses.filter(
-    (w) => (w.type === "interna" || w.type === "central") && w.workspaceId === session?.workspaceId,
+    (w) =>
+      (w.type === "interna" || w.type === "central") &&
+      w.workspaceId === session?.workspaceId &&
+      !w.deletedAt,
   );
   const doctors = users.filter((u) => u.workspaceId === session?.workspaceId && u.role === "doctor");
 
@@ -680,7 +1094,21 @@ function AdminView() {
     room: "",
     quantity: 1,
     reason: "",
+    wingId: "",
+    roomId: "",
+    bedId: "",
   });
+  const patientPlacement = useMemo(() => patientBedPlacementMap(workspaceRooms), [workspaceRooms]);
+  const internedPatients = useMemo(
+    () => patientsInternedInRooms(patients, workspaceRooms),
+    [patients, workspaceRooms],
+  );
+  const linkedPatientIdForPicker = useMemo(() => {
+    const r = workspaceRooms.find((x) => x.id === newOrder.roomId);
+    const b = r?.beds.find((x) => x.id === newOrder.bedId);
+    return b?.patientId ?? undefined;
+  }, [newOrder.roomId, newOrder.bedId, workspaceRooms]);
+
   const [confirmAction, setConfirmAction] = useState<null | {
     orderId: string;
     action:
@@ -730,7 +1158,7 @@ function AdminView() {
       return;
     }
     if (!newOrder.patient.trim() || !newOrder.room.trim() || !newOrder.reason.trim()) {
-      toast.error("Completá paciente, sala e indicación clínica.");
+      toast.error("Completá paciente, internación (ala y sala) e indicación clínica.");
       return;
     }
     if (newOrder.quantity < 1) {
@@ -768,6 +1196,9 @@ function AdminView() {
         room: "",
         quantity: 1,
         reason: "",
+        wingId: "",
+        roomId: "",
+        bedId: "",
       });
     } finally {
       setCreatingAssistedOrder(false);
@@ -781,13 +1212,17 @@ function AdminView() {
           <div>
             <h1 className="text-xl font-semibold">Pedidos médicos</h1>
             <p className="text-sm text-muted-foreground">
-              Solicitudes recibidas en Farmacia Interna
+              {isTecnico
+                ? "Pedidos en depósitos internos o centrales donde tenés acceso: podés despachar y registrar recepción."
+                : "Solicitudes recibidas en Farmacia Interna"}
             </p>
           </div>
-          <Button onClick={() => setOpenCreate(true)} className="w-full sm:w-auto">
-            <Plus className="mr-1 h-4 w-4" />
-            Nuevo pedido asistido
-          </Button>
+          {!isTecnico && (
+            <Button onClick={() => setOpenCreate(true)} className="w-full sm:w-auto">
+              <Plus className="mr-1 h-4 w-4" />
+              Nuevo pedido asistido
+            </Button>
+          )}
         </div>
       </div>
 
@@ -835,7 +1270,9 @@ function AdminView() {
           )}
           {workspaceOrders.length === 0 ? (
             <p className="py-10 text-center text-sm text-muted-foreground">
-              No hay pedidos registrados aún.
+              {isTecnico && myWarehouseIds.size === 0
+                ? "No tenés depósitos asignados para gestionar pedidos médicos. Pedí acceso a un administrador."
+                : "No hay pedidos registrados aún."}
             </p>
           ) : isMobile && viewMode === "cards" ? (
             <div className="space-y-3 p-3">
@@ -856,7 +1293,7 @@ function AdminView() {
                         <p>Cantidad: <span className="font-semibold text-foreground">{o.quantity} u</span></p>
                       </div>
                       <div className="flex flex-wrap gap-2">
-                        {o.status === "pendiente" && (
+                        {o.status === "pendiente" && !isTecnico && (
                           <>
                             <Button size="sm" variant="default" onClick={() => setConfirmAction({ orderId: o.id, action: "aprobar", title: "Aprobar pedido", description: "Confirmá que el pedido es válido para continuar el flujo." })}>Aprobar</Button>
                             <Button size="sm" variant="destructive" onClick={() => setConfirmAction({ orderId: o.id, action: "rechazar", title: "Rechazar pedido", description: "Confirmá rechazo de este pedido." })}>Rechazar</Button>
@@ -871,7 +1308,7 @@ function AdminView() {
                         {o.status === "recibir" && (
                           <Button size="sm" variant="outline" onClick={() => setConfirmAction({ orderId: o.id, action: "confirmar_recepcion", title: "Confirmar recepción", description: "Confirmás que el medicamento fue recibido por el área clínica." })}>Confirmar recepción</Button>
                         )}
-                        {o.status === "recibido" && (
+                        {o.status === "recibido" && !isTecnico && (
                           <Button size="sm" variant="outline" onClick={() => setConfirmAction({ orderId: o.id, action: "administrar", title: "Marcar administrado", description: "Se registrará como medicamento administrado al paciente." })}>Administrado</Button>
                         )}
                       </div>
@@ -927,7 +1364,7 @@ function AdminView() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
-                          {o.status === "pendiente" && (
+                          {o.status === "pendiente" && !isTecnico && (
                             <>
                               <Button
                                 size="sm"
@@ -1002,7 +1439,7 @@ function AdminView() {
                               Confirmar recepción
                             </Button>
                           )}
-                          {o.status === "recibido" && (
+                          {o.status === "recibido" && !isTecnico && (
                             <Button
                               size="sm"
                               variant="outline"
@@ -1016,7 +1453,7 @@ function AdminView() {
                               Administrado
                             </Button>
                           )}
-                          {o.status === "devolucion_solicitada" && (
+                          {o.status === "devolucion_solicitada" && !isTecnico && (
                             <div className="flex gap-1">
                               <Button
                                 size="sm"
@@ -1194,26 +1631,56 @@ function AdminView() {
                 </p>
               )}
             </div>
-            <div className="space-y-1.5">
-              <Label>Paciente</Label>
-              <Input
-                list="patients-suggestions-admin"
+            <div className="space-y-1.5 md:col-span-2">
+              <Label>Pacientes internados</Label>
+              <InternedPatientOrderField
                 value={newOrder.patient}
-                onChange={(e) => setNewOrder((s) => ({ ...s, patient: e.target.value }))}
-                placeholder="Buscar paciente por coincidencia..."
+                onChangeText={(v) =>
+                  setNewOrder((s) => ({
+                    ...s,
+                    patient: v,
+                    ...(v.trim() === "" ? { wingId: "", roomId: "", bedId: "", room: "" } : {}),
+                  }))
+                }
+                onPickPatient={(p) => {
+                  const pl = patientPlacement.get(p.id);
+                  if (!pl) return;
+                  setNewOrder((s) => ({
+                    ...s,
+                    patient: patientOrderLabel(p),
+                    wingId: pl.wingId,
+                    roomId: pl.roomId,
+                    bedId: pl.bedId,
+                    room: String(pl.fullNumber),
+                  }));
+                }}
+                patientsInterned={internedPatients}
+                placementByPatientId={patientPlacement}
+                placeholder="Buscar internado por apellido o nombre…"
               />
-              <datalist id="patients-suggestions-admin">
-                {patients.map((p) => (
-                  <option key={p.id} value={`${p.lastName}, ${p.firstName}`} />
-                ))}
-              </datalist>
+              <p className="text-[11px] text-muted-foreground">
+                Solo aparecen pacientes con cama asignada. Al elegir uno se completan ala, sala y cama.
+              </p>
             </div>
-            <div className="space-y-1.5">
-              <Label>Sala / Habitación</Label>
-              <Input
-                value={newOrder.room}
-                onChange={(e) => setNewOrder((s) => ({ ...s, room: e.target.value }))}
-                placeholder="Ej: Sala 7"
+            <div className="space-y-1.5 md:col-span-2">
+              <InternmentPickerForOrder
+                wings={workspaceWings}
+                rooms={workspaceRooms}
+                patients={patients}
+                wingId={newOrder.wingId}
+                roomId={newOrder.roomId}
+                bedId={newOrder.bedId}
+                linkedPatientId={linkedPatientIdForPicker}
+                onChange={({ wingId, roomId, bedId, patientName, room }) =>
+                  setNewOrder((s) => ({
+                    ...s,
+                    wingId,
+                    roomId,
+                    bedId,
+                    patient: patientName,
+                    room,
+                  }))
+                }
               />
             </div>
             <div className="space-y-1.5">

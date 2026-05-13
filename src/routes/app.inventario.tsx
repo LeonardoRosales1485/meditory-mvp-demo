@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PackageSearch, Search } from "lucide-react";
 
 import { PageHeader } from "@/components/page-header";
@@ -21,19 +21,35 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { expiryStatus, formatDate, warehouseName } from "@/lib/domain-types";
+import { daysUntil, expiryStatus, formatDate, medConc, warehouseName } from "@/lib/domain-types";
 import { useStore } from "@/lib/store";
 import { useWarehouse } from "@/lib/warehouse-context";
 import { WorkspaceLoadingPlaceholder } from "@/components/workspace-loading-placeholder";
 import { useMobileListView } from "@/lib/use-mobile-list-view";
 import { MobileViewToggle } from "@/components/mobile-view-toggle";
 
+export type InventarioSearch = {
+  /** Id de medicamento del catálogo para filtrar lotes */
+  medicamento?: string;
+};
+
 export const Route = createFileRoute("/app/inventario")({
+  validateSearch: (raw: Record<string, unknown>): InventarioSearch => {
+    const medicamento = raw.medicamento;
+    return {
+      medicamento:
+        typeof medicamento === "string" && medicamento.trim().length > 0
+          ? medicamento.trim()
+          : undefined,
+    };
+  },
   component: Inventory,
 });
 
 function Inventory() {
+  const search = Route.useSearch();
   const [q, setQ] = useState("");
+  const [medicationFilter, setMedicationFilter] = useState<string>("all");
   const [whFilter, setWhFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const { isMobile, viewMode, setViewMode } = useMobileListView("app-inventario");
@@ -42,10 +58,49 @@ function Inventory() {
   const medications = useStore((s) => s.medications);
   const workspaceDataLoading = useStore((s) => s.workspaceDataLoading);
 
+  const medicationIdsInScope = useMemo(() => {
+    const ids = new Set<string>();
+    for (const b of batches) {
+      if (!warehouseIds.includes(b.warehouseId)) continue;
+      if (whFilter !== "all" && b.warehouseId !== whFilter) continue;
+      if (medications.some((m) => m.id === b.medicationId)) ids.add(b.medicationId);
+    }
+    return ids;
+  }, [batches, warehouseIds, whFilter, medications]);
+
+  const medicationsInInventory = useMemo(() => {
+    return medications
+      .filter((m) => medicationIdsInScope.has(m.id))
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name, "es"));
+  }, [medications, medicationIdsInScope]);
+
+  /** Incluye el medicamento del filtro aunque aún no tenga lotes en depósitos visibles (p. ej. enlace desde catálogo). */
+  const medicationsForSelect = useMemo(() => {
+    const byId = new Map(medicationsInInventory.map((m) => [m.id, m]));
+    if (medicationFilter !== "all") {
+      const extra = medications.find((m) => m.id === medicationFilter);
+      if (extra && !byId.has(extra.id)) byId.set(extra.id, extra);
+    }
+    return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name, "es"));
+  }, [medicationsInInventory, medicationFilter, medications]);
+
+  useEffect(() => {
+    const id = search.medicamento;
+    if (!id || !medications.some((m) => m.id === id)) return;
+    setMedicationFilter(id);
+  }, [search.medicamento, medications]);
+
+  useEffect(() => {
+    if (medicationFilter === "all") return;
+    if (!medications.some((m) => m.id === medicationFilter)) setMedicationFilter("all");
+  }, [medicationFilter, medications]);
+
   const rows = useMemo(() => {
     return batches
       .filter((b) => warehouseIds.includes(b.warehouseId))
       .filter((b) => whFilter === "all" || b.warehouseId === whFilter)
+      .filter((b) => medicationFilter === "all" || b.medicationId === medicationFilter)
       .filter((b) => statusFilter === "all" || expiryStatus(b.expiry) === statusFilter)
       .map((b) => {
         const m = medications.find((x) => x.id === b.medicationId);
@@ -59,16 +114,36 @@ function Inventory() {
           r.lot.toLowerCase().includes(q.toLowerCase()),
       )
       .sort((a, b) => +new Date(a.expiry) - +new Date(b.expiry));
-  }, [q, whFilter, statusFilter, batches, medications, warehouseIds]);
+  }, [q, whFilter, statusFilter, medicationFilter, batches, medications, warehouseIds]);
 
   const batchesInScope = useMemo(
     () => batches.filter((b) => warehouseIds.includes(b.warehouseId)),
     [batches, warehouseIds],
   );
   const showLoading = workspaceDataLoading && batchesInScope.length === 0;
-  const filtersActive = q !== "" || whFilter !== "all" || statusFilter !== "all";
+  const filtersActive =
+    q !== "" || medicationFilter !== "all" || whFilter !== "all" || statusFilter !== "all";
   const showEmptyTable = !workspaceDataLoading && rows.length === 0 && !filtersActive;
   const showNoResults = !workspaceDataLoading && rows.length === 0 && filtersActive;
+
+  const filterSummary = useMemo(() => {
+    let totalQty = 0;
+    for (const r of rows) {
+      totalQty += r.quantity;
+    }
+    /** Stock del lote con vencimiento más cercano (solo no vencidos); si hay varios con la misma fecha, se suman. */
+    let nearExpiryQty = 0;
+    const futureRows = rows.filter((r) => daysUntil(r.expiry) >= 0);
+    if (futureRows.length > 0) {
+      const sorted = [...futureRows].sort((a, b) => +new Date(a.expiry) - +new Date(b.expiry));
+      const earliestMs = +new Date(sorted[0]!.expiry);
+      for (const r of sorted) {
+        if (+new Date(r.expiry) === earliestMs) nearExpiryQty += r.quantity;
+        else break;
+      }
+    }
+    return { totalQty, nearExpiryQty, lotCount: rows.length };
+  }, [rows]);
 
   return (
     <div>
@@ -89,6 +164,25 @@ function Inventory() {
                 disabled={showLoading}
               />
             </div>
+            <Select
+              value={medicationFilter}
+              onValueChange={setMedicationFilter}
+              disabled={showLoading}
+            >
+              <SelectTrigger className="w-full min-w-[200px] sm:w-[260px]">
+                <SelectValue placeholder="Medicamento en inventario" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos los medicamentos</SelectItem>
+                {medicationsForSelect.map((m) => (
+                  <SelectItem key={m.id} value={m.id} className="max-w-[min(90vw,360px)]">
+                    <span className="line-clamp-2">
+                      {m.name} · {medConc(m)}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Select value={whFilter} onValueChange={setWhFilter} disabled={showLoading}>
               <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -109,6 +203,28 @@ function Inventory() {
               </SelectContent>
             </Select>
           </div>
+          {filtersActive && !showLoading && (
+            <div className="mb-3 flex flex-wrap gap-x-6 gap-y-2 rounded-md border bg-muted/40 px-3 py-2.5 text-sm">
+              <p>
+                <span className="text-muted-foreground">Cantidad total: </span>
+                <span className="font-semibold tabular-nums text-foreground">
+                  {filterSummary.totalQty.toLocaleString("es-AR")} u
+                </span>
+              </p>
+              <p>
+                <span className="text-muted-foreground">Cantidad próxima a vencer: </span>
+                <span className="font-semibold tabular-nums text-foreground">
+                  {filterSummary.nearExpiryQty.toLocaleString("es-AR")} u
+                </span>
+              </p>
+              <p>
+                <span className="text-muted-foreground">Lotes involucrados: </span>
+                <span className="font-semibold tabular-nums text-foreground">
+                  {filterSummary.lotCount.toLocaleString("es-AR")}
+                </span>
+              </p>
+            </div>
+          )}
           <div className="overflow-x-auto">
             {isMobile && (
               <div className="mb-3">

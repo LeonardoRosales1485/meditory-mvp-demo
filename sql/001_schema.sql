@@ -24,7 +24,7 @@ create table if not exists warehouses (
   type text not null check (type in ('central', 'interna', 'ventas')),
   unit text not null,
   created_at timestamptz not null default now(),
-  unique (workspace_id, name, type)
+  deleted_at timestamptz null
 );
 
 create table if not exists workspace_user_warehouses (
@@ -159,9 +159,12 @@ alter table medication_orders add column if not exists workspace_id text;
 alter table audit_log add column if not exists workspace_id text;
 
 create index if not exists idx_warehouses_workspace on warehouses(workspace_id);
+create unique index if not exists idx_warehouses_unique_name_type_active
+  on warehouses (workspace_id, name, type)
+  where deleted_at is null;
 create unique index if not exists idx_warehouses_one_central_per_workspace
-  on warehouses(workspace_id)
-  where type = 'central';
+  on warehouses (workspace_id)
+  where type = 'central' and deleted_at is null;
 create unique index if not exists idx_transfer_requests_workspace_code
   on transfer_requests(workspace_id, transfer_code)
   where transfer_code is not null;
@@ -184,9 +187,14 @@ create table if not exists transfer_code_counters (
   primary key (workspace_id, period_yyyymm)
 );
 
+-- Una sola firma (text): PostgREST envía strings sin ambigüedad; sirve con columnas uuid
+-- (comparando vía ::text) y con seeds demo tipo "m3".
+drop function if exists public.consume_stock(uuid, uuid, integer);
+drop function if exists public.consume_stock(text, text, integer);
+
 create or replace function consume_stock(
-  p_medication_id uuid,
-  p_warehouse_id uuid,
+  p_medication_id text,
+  p_warehouse_id text,
   p_quantity integer
 )
 returns void
@@ -204,10 +212,10 @@ begin
   for row_record in
     select id, quantity
     from batches
-    where medication_id = p_medication_id
-      and warehouse_id = p_warehouse_id
+    where medication_id::text = p_medication_id
+      and warehouse_id::text = p_warehouse_id
       and quantity > 0
-    order by expiry asc, created_at asc
+    order by expiry asc, id asc
     for update
   loop
     exit when remaining <= 0;

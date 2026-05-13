@@ -136,6 +136,7 @@ function Receipts() {
         concentrationValue: medForm.concentrationValue,
         concentrationUnit: medForm.concentrationUnit,
         form: medForm.form.trim(),
+        salePrice: 0,
       });
       toast.success(`Medicamento "${medForm.name}" creado.`);
       setMedForm(EMPTY_MED);

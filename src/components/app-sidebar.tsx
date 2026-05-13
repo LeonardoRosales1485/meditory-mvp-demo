@@ -11,10 +11,12 @@ import {
   BookOpen,
   Sliders,
   ClipboardList,
+  ListOrdered,
   UserRound,
   Users,
   Warehouse,
   Wrench,
+  BedDouble,
 } from "lucide-react";
 
 import {
@@ -52,9 +54,14 @@ const operations: Item[] = [
 ];
 
 const dispensingItems: Item[] = [
-  { title: "Ventas",              url: "/app/ventas",      icon: ShoppingCart, roles: ADMIN_VENTAS },
+  { title: "Listas de precios", url: "/app/lista-precios", icon: ListOrdered, roles: ADMIN_VENTAS },
+  { title: "Ventas", url: "/app/ventas", icon: ShoppingCart, roles: ADMIN_VENTAS },
+  { title: "Pedidos médicos", url: "/app/pedidos", icon: ClipboardList, roles: ADMIN_OR_DOCTOR },
+];
+
+const internmentItems: Item[] = [
+  { title: "Salas",               url: "/app/salas",       icon: BedDouble, roles: ADMIN_DOCTOR },
   { title: "Pacientes",           url: "/app/pacientes",   icon: UserRound, roles: ADMIN_DOCTOR },
-  { title: "Pedidos médicos",     url: "/app/pedidos",     icon: ClipboardList, roles: ADMIN_OR_DOCTOR },
 ];
 
 const controlItems: Item[] = [
@@ -72,7 +79,7 @@ export function AppSidebar() {
   const warehouses = useStore((s) => s.warehouses);
   const role: AppRole = session?.role ?? "admin";
   const hasSalesWarehouse = warehouses.some(
-    (w) => w.workspaceId === session?.workspaceId && w.type === "ventas",
+    (w) => w.workspaceId === session?.workspaceId && w.type === "ventas" && !w.deletedAt,
   );
 
   const filter = (items: Item[]) =>
@@ -130,6 +137,25 @@ export function AppSidebar() {
             <SidebarGroupContent>
               <SidebarMenu>
                 {filter(dispensingItems).map((item) => (
+                  <SidebarMenuItem key={item.url}>
+                    <SidebarMenuButton asChild isActive={isActive(item.url)}>
+                      <Link to={item.url} onClick={handleNav}>
+                        <item.icon className="h-4 w-4" />
+                        <span>{item.title}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+        {filter(internmentItems).length > 0 && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Internación</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {filter(internmentItems).map((item) => (
                   <SidebarMenuItem key={item.url}>
                     <SidebarMenuButton asChild isActive={isActive(item.url)}>
                       <Link to={item.url} onClick={handleNav}>

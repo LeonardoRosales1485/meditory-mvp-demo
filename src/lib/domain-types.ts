@@ -4,6 +4,8 @@ export interface Warehouse {
   type: "central" | "interna" | "ventas";
   unit: string;
   workspaceId: string;
+  /** Baja lógica: si hay fecha ISO, el depósito no está operativo pero se conserva en DB. */
+  deletedAt?: string | null;
 }
 
 export type ConcentrationUnit = "mg" | "mcg" | "ml" | "L" | "g" | "unidad";
@@ -15,6 +17,8 @@ export interface Medication {
   concentrationValue: number;
   concentrationUnit: ConcentrationUnit;
   form: string;
+  /** Precio unitario de venta en mostrador (lista de precios actual; cada venta guarda su propio precio al momento). */
+  salePrice: number;
 }
 
 export interface Batch {
@@ -131,6 +135,46 @@ export interface Patient {
   room: string;
 }
 
+export type WingType =
+  | "urgencias"
+  | "quirofanos"
+  | "cuidados_intensivos"
+  | "hospitalizacion"
+  | "ambulatoria";
+
+export const WING_TYPE_LABEL: Record<WingType, string> = {
+  urgencias: "Urgencias",
+  quirofanos: "Quirófanos",
+  cuidados_intensivos: "Cuidados Intensivos",
+  hospitalizacion: "Hospitalización",
+  ambulatoria: "Ambulatoria",
+};
+
+export interface Wing {
+  id: string;
+  workspaceId: string;
+  name: string;
+  type: WingType;
+  prefix: number;
+}
+
+export interface Bed {
+  id: string;
+  roomId: string;
+  position: number;
+  patientId: string | null;
+}
+
+export interface Room {
+  id: string;
+  workspaceId: string;
+  wingId: string;
+  number: number;
+  fullNumber: number;
+  bedCount: number;
+  beds: Bed[];
+}
+
 type NameProvider = { medications: Medication[]; warehouses: Warehouse[] };
 let nameProvider: NameProvider | null = null;
 
@@ -170,5 +214,7 @@ export function medName(id: string): string {
 
 export function warehouseName(id: string): string {
   const list = nameProvider?.warehouses ?? [];
-  return list.find((item) => item.id === id)?.name ?? id;
+  const w = list.find((item) => item.id === id);
+  if (!w) return id;
+  return w.deletedAt ? `${w.name} (baja)` : w.name;
 }

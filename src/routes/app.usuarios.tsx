@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { UserPlus, Pencil, Trash2, Users, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -49,7 +49,8 @@ const EMPTY_FORM: UserForm = { name: "", email: "", role: "ventas" };
 function UsuariosPage() {
   const session = useStore((s) => s.session);
   const users = useStore((s) => s.users);
-  const warehouses = useStore((s) => s.warehouses);
+  const warehousesAll = useStore((s) => s.warehouses);
+  const warehouses = useMemo(() => warehousesAll.filter((w) => !w.deletedAt), [warehousesAll]);
   const userWarehouseAccesses = useStore((s) => s.userWarehouseAccesses);
   const addUser = useStore((s) => s.addUser);
   const updateUser = useStore((s) => s.updateUser);

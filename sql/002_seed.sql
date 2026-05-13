@@ -91,6 +91,18 @@ where not exists (
     and b.warehouse_id = w.id
 );
 
+-- Stock inicial en farmacias tipo ventas (mostrador operativo sin transferir primero)
+insert into batches (id, medication_id, warehouse_id, lot, expiry, quantity)
+select gen_random_uuid(), m.id, w.id, concat('VN-', substr(replace(m.id::text, '-', ''), 1, 12)), current_date + interval '120 days', 48
+from medications m
+join warehouses w on w.workspace_id = m.workspace_id and w.type = 'ventas'
+where not exists (
+  select 1
+  from batches b
+  where b.medication_id = m.id
+    and b.warehouse_id = w.id
+);
+
 insert into workspace_user_warehouses (user_id, warehouse_id)
 select u.id, w.id
 from workspace_users u

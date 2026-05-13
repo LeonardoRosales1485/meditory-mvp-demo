@@ -31,7 +31,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatDate, medName, type Warehouse } from "@/lib/domain-types";
+import { formatDate, medName, type TransferRequest, type Warehouse } from "@/lib/domain-types";
 import { requireAdmin } from "@/lib/route-guards";
 import { useStore } from "@/lib/store";
 import { useMobileListView } from "@/lib/use-mobile-list-view";
@@ -52,6 +52,36 @@ const EMPTY_FORM: WarehouseForm = {
   type: "central",
 };
 
+const TERMINAL_TRANSFER_STATUS = new Set<TransferRequest["status"]>(["aceptado", "rechazado"]);
+
+/** Reglas de negocio: no eliminar si hay stock o transferencias activas. */
+function warehouseDeleteGuard(
+  warehouseId: string,
+  batchesList: { warehouseId: string; quantity: number }[],
+  transfersList: TransferRequest[],
+) {
+  const stockTotal = batchesList
+    .filter((b) => b.warehouseId === warehouseId)
+    .reduce((acc, b) => acc + b.quantity, 0);
+  const activeTransfers = transfersList.filter(
+    (t) =>
+      (t.fromWarehouseId === warehouseId || t.toWarehouseId === warehouseId) &&
+      !TERMINAL_TRANSFER_STATUS.has(t.status),
+  );
+  const reasons: string[] = [];
+  if (stockTotal > 0) {
+    reasons.push(
+      `Hay stock asociado: ${stockTotal.toLocaleString("es-AR")} u en total (suma de todos los lotes en este depósito).`,
+    );
+  }
+  if (activeTransfers.length > 0) {
+    reasons.push(
+      `Hay ${activeTransfers.length} transferencia${activeTransfers.length === 1 ? "" : "s"} de stock activa${activeTransfers.length === 1 ? "" : "s"} (estado distinto de aceptada o rechazada) que incluye${activeTransfers.length === 1 ? "" : "n"} este depósito como origen o destino.`,
+    );
+  }
+  return { ok: reasons.length === 0, reasons, stockTotal, activeCount: activeTransfers.length };
+}
+
 const TYPE_LABEL: Record<Warehouse["type"], string> = {
   central: "Central",
   interna: "Interna",
@@ -60,8 +90,13 @@ const TYPE_LABEL: Record<Warehouse["type"], string> = {
 
 function WarehousesPage() {
   const session = useStore((s) => s.session);
-  const warehouses = useStore((s) => s.warehouses);
+  const warehousesFromStore = useStore((s) => s.warehouses);
+  const warehouses = useMemo(
+    () => warehousesFromStore.filter((w) => !w.deletedAt),
+    [warehousesFromStore],
+  );
   const batches = useStore((s) => s.batches);
+  const transfers = useStore((s) => s.transfers);
   const workspaceDataLoading = useStore((s) => s.workspaceDataLoading);
   const addWarehouse = useStore((s) => s.addWarehouse);
   const updateWarehouse = useStore((s) => s.updateWarehouse);
@@ -95,6 +130,11 @@ function WarehousesPage() {
             .sort((a, b) => +new Date(a.expiry) - +new Date(b.expiry))
         : [],
     [batches, selectedWarehouse],
+  );
+
+  const pendingDeleteGuard = useMemo(
+    () => (deleteConfirm ? warehouseDeleteGuard(deleteConfirm, batches, transfers) : null),
+    [deleteConfirm, batches, transfers],
   );
 
   const showLoading = workspaceDataLoading && warehouses.length === 0;
@@ -205,7 +245,9 @@ function WarehousesPage() {
                         </p>
                         <div className="flex gap-2">
                           <Button size="sm" variant="outline" onClick={() => openEdit(warehouse)}>Editar</Button>
-                          <Button size="sm" variant="destructive" onClick={() => setDeleteConfirm(warehouse.id)}>Eliminar</Button>
+                          <Button size="sm" variant="destructive" onClick={() => setDeleteConfirm(warehouse.id)}>
+                            Eliminar
+                          </Button>
                         </div>
                       </CardContent>
                     </Card>
@@ -398,14 +440,41 @@ function WarehousesPage() {
           <DialogHeader>
             <DialogTitle>Eliminar depósito</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            Esta acción elimina el depósito seleccionado. Si tiene movimientos o stock asociado, la base puede rechazar la eliminación.
-          </p>
+          <div className="space-y-4 text-sm text-muted-foreground">
+            <p>Solo podés eliminar un depósito si cumple todas estas condiciones:</p>
+            <ul className="list-disc space-y-2 pl-5">
+              <li>
+                <span className="text-foreground font-medium">Sin stock:</span> la suma de unidades de todos los
+                lotes en ese depósito debe ser <strong className="text-foreground">cero</strong>.
+              </li>
+              <li>
+                <span className="text-foreground font-medium">Sin transferencias activas:</span> no debe figurar
+                como origen o destino en ninguna transferencia cuyo estado sea distinto de{" "}
+                <strong className="text-foreground">aceptada</strong> o{" "}
+                <strong className="text-foreground">rechazada</strong> (incluye solicitadas, autorizadas, despachadas,
+                en recepción, etc.).
+              </li>
+            </ul>
+            {pendingDeleteGuard && !pendingDeleteGuard.ok ? (
+              <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-destructive">
+                <p className="font-medium text-foreground">Este depósito no cumple las condiciones:</p>
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  {pendingDeleteGuard.reasons.map((r, i) => (
+                    <li key={i}>{r}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteConfirm(null)}>
               Cancelar
             </Button>
-            <Button variant="destructive" onClick={confirmDelete}>
+            <Button
+              variant="destructive"
+              onClick={confirmDelete}
+              disabled={pendingDeleteGuard !== null && !pendingDeleteGuard.ok}
+            >
               Eliminar
             </Button>
           </DialogFooter>

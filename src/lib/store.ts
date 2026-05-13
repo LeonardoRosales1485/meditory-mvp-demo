@@ -4,13 +4,17 @@ import {
   registerNameProvider,
   type AuditEntry,
   type Batch,
+  type Bed,
   type Dispensation,
   type Medication,
   type MedicationOrder,
   type Movement,
+  type Room,
   type Sale,
   type TransferRequest,
   type Warehouse,
+  type Wing,
+  type WingType,
   type WorkspaceUserWarehouseAccess,
   type WorkspaceUser,
   type Patient,
@@ -34,9 +38,24 @@ interface CurrentUser {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const mapMed = (r: any): Medication => ({ id: r.id, name: r.name, activeIngredient: r.active_ingredient, concentrationValue: Number(r.concentration_value ?? 0), concentrationUnit: r.concentration_unit ?? "mg", form: r.form });
+const mapMed = (r: any): Medication => ({
+  id: r.id,
+  name: r.name,
+  activeIngredient: r.active_ingredient,
+  concentrationValue: Number(r.concentration_value ?? 0),
+  concentrationUnit: r.concentration_unit ?? "mg",
+  form: r.form,
+  salePrice: Number(r.sale_price ?? 0),
+});
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const mapWH = (r: any): Warehouse => ({ id: r.id, name: r.name, type: r.type, unit: r.unit, workspaceId: r.workspace_id });
+const mapWH = (r: any): Warehouse => ({
+  id: r.id,
+  name: r.name,
+  type: r.type,
+  unit: r.unit,
+  workspaceId: r.workspace_id,
+  deletedAt: r.deleted_at ?? null,
+});
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mapBatch = (r: any): Batch => ({ id: r.id, medicationId: r.medication_id, warehouseId: r.warehouse_id, lot: r.lot, expiry: r.expiry, quantity: r.quantity });
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -66,6 +85,33 @@ const mapPatient = (r: any): Patient => ({
 });
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mapAudit = (r: any): AuditEntry => ({ id: r.id, user: r.user_name, action: r.action, entity: r.entity, date: r.date });
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mapWing = (r: any): Wing => ({
+  id: r.id,
+  workspaceId: r.workspace_id,
+  name: r.name,
+  type: r.type as WingType,
+  prefix: Number(r.prefix),
+});
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mapBed = (r: any): Bed => ({
+  id: r.id,
+  roomId: r.room_id,
+  position: Number(r.position),
+  patientId: r.patient_id ?? null,
+});
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mapRoom = (r: any, beds: Bed[]): Room => ({
+  id: r.id,
+  workspaceId: r.workspace_id,
+  wingId: r.wing_id,
+  number: Number(r.number),
+  fullNumber: Number(r.full_number),
+  bedCount: Number(r.bed_count),
+  beds: beds
+    .filter((b) => b.roomId === r.id)
+    .sort((a, b) => a.position - b.position),
+});
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 interface State {
@@ -86,6 +132,8 @@ interface State {
   patients: Patient[];
   userWarehouseAccesses: WorkspaceUserWarehouseAccess[];
   audit: AuditEntry[];
+  wings: Wing[];
+  rooms: Room[];
 
   login: (email: string) => Promise<Session | null>;
   logout: () => void;
@@ -153,9 +201,19 @@ interface State {
   updateWarehouse: (id: string, patch: { name?: string; type?: Warehouse["type"] }) => Promise<void>;
   deleteWarehouse: (id: string) => Promise<void>;
   resetWorkspaceDemo: () => Promise<void>;
-  addPatient: (input: Omit<Patient, "id" | "workspaceId">) => Promise<void>;
+  addPatient: (input: Omit<Patient, "id" | "workspaceId"> & { bedId?: string | null }) => Promise<void>;
   updatePatient: (id: string, patch: Partial<Omit<Patient, "id" | "workspaceId">>) => Promise<void>;
   deletePatient: (id: string) => Promise<void>;
+
+  addWing: (input: { name: string; type: WingType; prefix: number }) => Promise<void>;
+  updateWing: (id: string, patch: Partial<{ name: string; type: WingType; prefix: number }>) => Promise<void>;
+  deleteWing: (id: string) => Promise<void>;
+
+  addRoom: (input: { wingId: string; number: number; bedCount: number }) => Promise<void>;
+  updateRoom: (id: string, patch: Partial<{ wingId: string; number: number; bedCount: number }>) => Promise<void>;
+  deleteRoom: (id: string) => Promise<void>;
+
+  assignBed: (bedId: string, patientId: string | null) => Promise<void>;
 }
 
 const ROLE_LABELS: Record<AppRole, string> = {
@@ -203,6 +261,8 @@ export const useStore = create<State>()(
       patients: [],
       userWarehouseAccesses: [],
       audit: [],
+      wings: [],
+      rooms: [],
 
       login: async (email) => {
         if (isSupabaseConfigured()) {
@@ -252,7 +312,13 @@ export const useStore = create<State>()(
             patients: object[];
             userWarehouseAccesses: object[];
             audit: object[];
+            wings: object[];
+            rooms: object[];
+            beds: object[];
           };
+
+          const beds = (data.beds ?? []).map(mapBed);
+          const rooms = (data.rooms ?? []).map((r) => mapRoom(r, beds));
 
           set({
             warehouses: data.warehouses.map(mapWH),
@@ -267,6 +333,8 @@ export const useStore = create<State>()(
             patients: data.patients.map(mapPatient),
             userWarehouseAccesses: data.userWarehouseAccesses.map(mapUserWarehouseAccess),
             audit: data.audit.map(mapAudit),
+            wings: (data.wings ?? []).map(mapWing),
+            rooms,
           });
         } finally {
           set({ workspaceDataLoading: false });
@@ -278,6 +346,7 @@ export const useStore = create<State>()(
         batches: [], medications: [], movements: [],
         transfers: [], sales: [], dispensations: [],
         orders: [], users: [], patients: [], userWarehouseAccesses: [], audit: [], warehouses: [],
+        wings: [], rooms: [],
       }),
 
       addMedication: async (m) => {
@@ -436,7 +505,13 @@ export const useStore = create<State>()(
       addPatient: async (input) => {
         const { session, user } = get();
         if (!session) return;
-        await apiPost("addPatient", { workspaceId: session.workspaceId, actor: user.name, patient: input });
+        const { bedId, ...patient } = input;
+        await apiPost("addPatient", {
+          workspaceId: session.workspaceId,
+          actor: user.name,
+          patient,
+          bedId: bedId ?? null,
+        });
         await get().fetchWorkspaceData(session.workspaceId);
       },
 
@@ -451,6 +526,55 @@ export const useStore = create<State>()(
         const { session, user } = get();
         if (!session) return;
         await apiPost("deletePatient", { workspaceId: session.workspaceId, actor: user.name, id });
+        await get().fetchWorkspaceData(session.workspaceId);
+      },
+
+      addWing: async (input) => {
+        const { session, user } = get();
+        if (!session) return;
+        await apiPost("addWing", { workspaceId: session.workspaceId, actor: user.name, wing: input });
+        await get().fetchWorkspaceData(session.workspaceId);
+      },
+
+      updateWing: async (id, patch) => {
+        const { session, user } = get();
+        if (!session) return;
+        await apiPost("updateWing", { workspaceId: session.workspaceId, actor: user.name, id, patch });
+        await get().fetchWorkspaceData(session.workspaceId);
+      },
+
+      deleteWing: async (id) => {
+        const { session, user } = get();
+        if (!session) return;
+        await apiPost("deleteWing", { workspaceId: session.workspaceId, actor: user.name, id });
+        await get().fetchWorkspaceData(session.workspaceId);
+      },
+
+      addRoom: async (input) => {
+        const { session, user } = get();
+        if (!session) return;
+        await apiPost("addRoom", { workspaceId: session.workspaceId, actor: user.name, room: input });
+        await get().fetchWorkspaceData(session.workspaceId);
+      },
+
+      updateRoom: async (id, patch) => {
+        const { session, user } = get();
+        if (!session) return;
+        await apiPost("updateRoom", { workspaceId: session.workspaceId, actor: user.name, id, patch });
+        await get().fetchWorkspaceData(session.workspaceId);
+      },
+
+      deleteRoom: async (id) => {
+        const { session, user } = get();
+        if (!session) return;
+        await apiPost("deleteRoom", { workspaceId: session.workspaceId, actor: user.name, id });
+        await get().fetchWorkspaceData(session.workspaceId);
+      },
+
+      assignBed: async (bedId, patientId) => {
+        const { session, user } = get();
+        if (!session) return;
+        await apiPost("assignBed", { workspaceId: session.workspaceId, actor: user.name, bedId, patientId });
         await get().fetchWorkspaceData(session.workspaceId);
       },
     }),

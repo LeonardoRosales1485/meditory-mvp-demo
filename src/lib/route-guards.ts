@@ -41,3 +41,21 @@ export function requireAdminOrTecnico() {
     throw redirect({ to: "/app" });
   }
 }
+
+export function requireAdminOrDoctor() {
+  if (typeof window === "undefined") return;
+  const session = readSession();
+  if (!session) throw redirect({ to: "/login" });
+  if (session.role !== "admin" && session.role !== "doctor") {
+    throw redirect({ to: "/app" });
+  }
+}
+
+export function requireAdminOrVentas() {
+  if (typeof window === "undefined") return;
+  const session = readSession();
+  if (!session) throw redirect({ to: "/login" });
+  if (session.role !== "admin" && session.role !== "ventas") {
+    throw redirect({ to: "/app" });
+  }
+}

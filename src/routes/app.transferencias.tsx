@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { requireAdminOrTecnico } from "@/lib/route-guards";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, ArrowLeftRight, History, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -71,8 +71,10 @@ function Transfers() {
   const [open, setOpen] = useState(false);
   const [med, setMed] = useState("");
   const [sourceBatchId, setSourceBatchId] = useState("");
+  const [fromWarehouseId, setFromWarehouseId] = useState("");
+  const isAdmin = session?.role === "admin";
   const centralWarehouse = storeWarehouses.find(
-    (w) => w.workspaceId === session?.workspaceId && w.type === "central",
+    (w) => w.workspaceId === session?.workspaceId && w.type === "central" && !w.deletedAt,
   );
   const destinationWarehouses = warehouses.filter((w) => w.type !== "central");
   const [to, setTo] = useState(destinationWarehouses[0]?.id ?? "");
@@ -101,6 +103,36 @@ function Transfers() {
   const [creating, setCreating] = useState(false);
   const { isMobile, viewMode, setViewMode } = useMobileListView("app-transferencias");
 
+  const workspaceWarehouses = useMemo(
+    () =>
+      storeWarehouses
+        .filter((w) => w.workspaceId === session?.workspaceId && !w.deletedAt)
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name, "es")),
+    [storeWarehouses, session?.workspaceId],
+  );
+  const adminOriginOptions = useMemo(
+    () => workspaceWarehouses.filter((w) => w.id !== to),
+    [workspaceWarehouses, to],
+  );
+  const originWarehouseId = isAdmin ? fromWarehouseId : centralWarehouse?.id ?? "";
+
+  useEffect(() => {
+    if (!isAdmin || !open) return;
+    if (fromWarehouseId && to && fromWarehouseId === to) {
+      const next = adminOriginOptions[0]?.id;
+      if (next) setFromWarehouseId(next);
+    }
+  }, [isAdmin, open, to, fromWarehouseId, adminOriginOptions]);
+
+  useEffect(() => {
+    if (!isAdmin || !open) return;
+    if (fromWarehouseId && !adminOriginOptions.some((w) => w.id === fromWarehouseId)) {
+      const next = adminOriginOptions[0]?.id ?? "";
+      setFromWarehouseId(next);
+    }
+  }, [isAdmin, open, adminOriginOptions, fromWarehouseId]);
+
   const transfers = allTransfers.filter(
     (t) => warehouseIds.includes(t.fromWarehouseId) || warehouseIds.includes(t.toWarehouseId),
   );
@@ -108,7 +140,7 @@ function Transfers() {
     .filter(
       (b) =>
         b.medicationId === med &&
-        b.warehouseId === (centralWarehouse?.id ?? "") &&
+        b.warehouseId === originWarehouseId &&
         b.quantity > 0,
     )
     .sort((a, b) => +new Date(a.expiry) - +new Date(b.expiry));
@@ -124,7 +156,12 @@ function Transfers() {
   const showEmptyTransfers = !workspaceDataLoading && transfers.length === 0;
   const formDisabled = workspaceDataLoading && (medications.length === 0 || warehouses.length === 0);
   const cannotCreateTransfer =
-    formDisabled || !centralWarehouse || destinationWarehouses.length === 0 || !selectedBatch;
+    formDisabled ||
+    (!isAdmin && !centralWarehouse) ||
+    (isAdmin && (!fromWarehouseId || adminOriginOptions.length === 0)) ||
+    destinationWarehouses.length === 0 ||
+    !selectedBatch ||
+    originWarehouseId === to;
 
   async function handleAdvance(id: string, status: string, qtyNeeded: number, fromId: string, medId: string) {
     if (advancing) return;
@@ -155,10 +192,13 @@ function Transfers() {
     e.preventDefault();
     if (creating) return;
     if (!med || !qty) return toast.error("Completá medicamento y cantidad");
-    if (!centralWarehouse) return toast.error("No hay depósito central configurado");
+    if (!isAdmin && !centralWarehouse) return toast.error("No hay depósito central configurado");
+    if (isAdmin && !originWarehouseId) return toast.error("Seleccioná un depósito de origen.");
     const selectedTarget = to || destinationWarehouses[0]?.id || "";
     if (!selectedTarget) return toast.error("No hay depósitos destino disponibles");
-    if (centralWarehouse.id === selectedTarget) return toast.error("El destino no puede ser el depósito central");
+    if (originWarehouseId === selectedTarget) {
+      return toast.error("El destino no puede ser el mismo depósito que el origen.");
+    }
     const quantity = parseInt(qty, 10);
     if (Number.isNaN(quantity) || quantity <= 0) return toast.error("Cantidad inválida");
     if (!selectedBatch) return toast.error("Seleccioná un lote con stock disponible.");
@@ -170,7 +210,7 @@ function Transfers() {
       await create({
         medicationId: med,
         sourceBatchId: selectedBatch.id,
-        fromWarehouseId: centralWarehouse.id,
+        fromWarehouseId: originWarehouseId,
         toWarehouseId: selectedTarget,
         quantity,
       });
@@ -180,6 +220,7 @@ function Transfers() {
       setQty("");
       setTo(destinationWarehouses[0]?.id ?? "");
       setSourceBatchId("");
+      setFromWarehouseId("");
     } catch (error) {
       const message = error instanceof Error ? error.message : "No se pudo crear la solicitud.";
       toast.error("No se pudo crear la solicitud", { description: message });
@@ -232,7 +273,21 @@ function Transfers() {
         title="Transferencias entre depósitos"
         description="Flujo: solicitado → autorizado → despachado → recibido → aceptado (o rechazado)."
         action={
-          <Dialog open={open} onOpenChange={setOpen}>
+          <Dialog open={open} onOpenChange={(next) => {
+            setOpen(next);
+            if (next && isAdmin) {
+              const destId = to || destinationWarehouses[0]?.id || "";
+              const opts = workspaceWarehouses.filter((w) => w.id !== destId);
+              const preferred =
+                centralWarehouse && opts.some((w) => w.id === centralWarehouse.id)
+                  ? centralWarehouse.id
+                  : opts[0]?.id ?? "";
+              setFromWarehouseId(preferred);
+            }
+            if (!next) {
+              setFromWarehouseId("");
+            }
+          }}>
             <DialogTrigger asChild>
               <Button disabled={showTransferTableLoading}>Nueva solicitud</Button>
             </DialogTrigger>
@@ -246,7 +301,14 @@ function Transfers() {
               <form onSubmit={submit} className="space-y-4">
                 <div className="space-y-2">
                   <Label>Medicamento</Label>
-                  <Select value={med} onValueChange={setMed} disabled={formDisabled}>
+                  <Select
+                    value={med}
+                    onValueChange={(v) => {
+                      setMed(v);
+                      setSourceBatchId("");
+                    }}
+                    disabled={formDisabled}
+                  >
                     <SelectTrigger><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
                     <SelectContent>
                       {medications.map((m) => (
@@ -260,7 +322,29 @@ function Transfers() {
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Desde</Label>
-                    <Input value={centralWarehouse?.name ?? "Sin depósito central"} disabled />
+                    {isAdmin ? (
+                      <Select
+                        value={fromWarehouseId}
+                        onValueChange={(id) => {
+                          setFromWarehouseId(id);
+                          setSourceBatchId("");
+                        }}
+                        disabled={formDisabled || adminOriginOptions.length === 0}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Depósito de origen…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {adminOriginOptions.map((w) => (
+                            <SelectItem key={w.id} value={w.id}>
+                              {w.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input value={centralWarehouse?.name ?? "Sin depósito central"} disabled />
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label>Hacia</Label>
@@ -277,9 +361,9 @@ function Transfers() {
                 <div className="space-y-2">
                   <Label>Cantidad</Label>
                   <Input type="number" min="1" value={qty} onChange={(e) => setQty(e.target.value)} disabled={formDisabled} />
-                  {med && (
+                  {med && originWarehouseId && (
                     <p className="text-xs text-muted-foreground">
-                      Stock total en origen: {stockFor(batches, med, centralWarehouse?.id ?? "")} u
+                      Stock total en origen: {stockFor(batches, med, originWarehouseId)} u
                     </p>
                   )}
                 </div>

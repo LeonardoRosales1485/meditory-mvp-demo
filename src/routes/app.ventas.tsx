@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import { Plus, Receipt, Paperclip, X, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -24,28 +24,31 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDate, medName } from "@/lib/domain-types";
+import { requireAdminOrVentas } from "@/lib/route-guards";
 import { stockFor, useStore } from "@/lib/store";
 import { useMobileListView } from "@/lib/use-mobile-list-view";
 import { MobileViewToggle } from "@/components/mobile-view-toggle";
 
 export const Route = createFileRoute("/app/ventas")({
+  beforeLoad: requireAdminOrVentas,
   component: SalesPage,
 });
 
-const PRICE_BY_NAME: Record<string, number> = {
-  Paracetamol: 850, Ibuprofeno: 1200, Amoxicilina: 4200, Omeprazol: 1500,
-  Salbutamol: 3800, Enalapril: 1100, Metformina: 3200, Diclofenac: 2400,
-};
+function formatArs(n: number) {
+  return n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 
 function SalesPage() {
   const session = useStore((s) => s.session);
+  const role = session?.role;
   const allWarehouses = useStore((s) => s.warehouses);
   const sales = useStore((s) => s.sales);
   const batches = useStore((s) => s.batches);
   const medications = useStore((s) => s.medications);
   const addSale = useStore((s) => s.addSale);
+
   const salesWarehouses = allWarehouses.filter(
-    (w) => w.workspaceId === session?.workspaceId && w.type === "ventas",
+    (w) => w.workspaceId === session?.workspaceId && w.type === "ventas" && !w.deletedAt,
   );
   const salesWarehousesWithStock = salesWarehouses.filter((w) =>
     batches.some((b) => b.warehouseId === w.id && b.quantity > 0),
@@ -62,7 +65,7 @@ function SalesPage() {
   const total = sales.reduce((acc, s) => acc + s.price * s.quantity, 0);
   const available = med ? stockFor(batches, med, salesWarehouseId) : 0;
   const medObj = medications.find((m) => m.id === med);
-  const unitPrice = medObj ? (PRICE_BY_NAME[medObj.name] ?? 0) : 0;
+  const unitPrice = medObj ? medObj.salePrice : 0;
   const medicationsForSelectedWarehouse = medications.filter((m) => stockFor(batches, m.id, salesWarehouseId) > 0);
 
   async function submit(e: React.FormEvent) {
@@ -70,6 +73,14 @@ function SalesPage() {
     if (submitting) return;
     if (!salesWarehouseId) return toast.error("Seleccioná un depósito de venta.");
     if (!med) return toast.error("Seleccioná medicamento");
+    if (unitPrice <= 0) {
+      return toast.error("Precio de venta no definido", {
+        description:
+          role === "admin"
+            ? "Cargalo en Dispensación → Listas de precios."
+            : "Pedí a administración que defina el precio en Listas de precios (menú Dispensación).",
+      });
+    }
     const quantity = parseInt(qty, 10);
     if (Number.isNaN(quantity) || quantity <= 0) return toast.error("Cantidad inválida");
     if (available < quantity) {
@@ -87,6 +98,9 @@ function SalesPage() {
       setQty("1");
       setRxFile(null);
       if (fileRef.current) fileRef.current.value = "";
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "No se pudo registrar la venta.";
+      toast.error("Error al registrar la venta", { description: msg });
     } finally {
       setSubmitting(false);
     }
@@ -101,19 +115,39 @@ function SalesPage() {
             <p className="mt-1">Creá al menos un depósito de tipo ventas para habilitar la operación de mostrador.</p>
           </CardContent>
         </Card>
-      ) : salesWarehousesWithStock.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center text-sm text-muted-foreground">
-            <p className="font-medium text-foreground">Ningún depósito tipo venta tiene stock en su inventario</p>
-            <p className="mt-1">Ingresá o transferí stock a un depósito de ventas para poder registrar operaciones.</p>
-          </CardContent>
-        </Card>
       ) : (
       <>
       <PageHeader
         title="Ventas — Mostrador"
-        description="Ventas disponibles solo desde depósitos de tipo ventas."
+        description={
+          <>
+            Registro de ventas desde depósitos tipo ventas. El precio unitario es el definido en{" "}
+            <Link to="/app/lista-precios" className="font-medium text-primary underline underline-offset-2">
+              Listas de precios
+            </Link>
+            .
+          </>
+        }
       />
+
+      {salesWarehousesWithStock.length === 0 && (
+        <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
+          <p className="font-medium">Sin stock en mostrador</p>
+          <p className="mt-1 text-amber-900/90 dark:text-amber-100/90">
+            {role === "admin" || role === "tecnico" ? (
+              <>
+                Desde{" "}
+                <Link to="/app/transferencias" className="font-semibold underline underline-offset-2">
+                  Transferencias
+                </Link>{" "}
+                podés enviar mercadería desde el depósito central al depósito de ventas.
+              </>
+            ) : (
+              "Solicitá a administración o a farmacia que transfieran stock al depósito de ventas."
+            )}
+          </p>
+        </div>
+      )}
       <div className="grid gap-4 sm:gap-6 lg:grid-cols-[400px_1fr]">
         <Card>
           <CardHeader>
@@ -153,9 +187,22 @@ function SalesPage() {
                     ))}
                   </SelectContent>
                 </Select>
+                {salesWarehouseId && medicationsForSelectedWarehouse.length === 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    No hay medicamentos con stock en este depósito. Transferí o ingresá mercadería al mostrador.
+                  </p>
+                )}
                 {med && (
                   <p className="text-xs text-muted-foreground">
-                    Stock disponible: <span className="font-medium text-foreground">{available} u</span> · Precio unitario: ${unitPrice}
+                    Stock disponible: <span className="font-medium text-foreground">{available} u</span> · Precio
+                    unitario (según{" "}
+                    <Link to="/app/lista-precios" className="font-medium text-foreground underline underline-offset-2">
+                      Listas de precios
+                    </Link>
+                    ):{" "}
+                    <span className="font-medium text-foreground">
+                      {unitPrice > 0 ? `$${formatArs(unitPrice)}` : "sin definir"}
+                    </span>
                   </p>
                 )}
               </div>
@@ -202,9 +249,12 @@ function SalesPage() {
                 </div>
                 <p className="text-[11px] text-muted-foreground">PDF o imagen. Demo: solo se guarda el nombre.</p>
               </div>
-              {med && qty && (
+              {med && qty && unitPrice > 0 && (
                 <div className="rounded-md bg-muted px-3 py-2 text-sm">
-                  Total: <span className="font-semibold">${(unitPrice * (parseInt(qty, 10) || 0)).toLocaleString("es-AR")}</span>
+                  Total:{" "}
+                  <span className="font-semibold">
+                    ${formatArs(unitPrice * (parseInt(qty, 10) || 0))}
+                  </span>
                 </div>
               )}
               <Button
@@ -220,11 +270,17 @@ function SalesPage() {
 
         <Card>
           <CardHeader className="flex-col items-start justify-between gap-2 sm:flex-row sm:items-center">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Receipt className="h-4 w-4 text-primary" /> Ventas recientes
-            </CardTitle>
+            <div>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Receipt className="h-4 w-4 text-primary" /> Ventas recientes
+              </CardTitle>
+              <p className="mt-1 max-w-xl text-xs text-muted-foreground">
+                Cada fila muestra el precio unitario y el importe calculados con el valor guardado en esa venta, no
+                con el listado actual de Listas de precios.
+              </p>
+            </div>
             <div className="text-sm text-muted-foreground">
-              Total: <span className="font-semibold text-foreground">${total.toLocaleString("es-AR")}</span>
+              Total: <span className="font-semibold text-foreground">${formatArs(total)}</span>
             </div>
           </CardHeader>
           <CardContent className="px-0">
@@ -235,20 +291,35 @@ function SalesPage() {
             )}
             {isMobile && viewMode === "cards" ? (
               <div className="space-y-3 p-3">
-                {sales.map((s) => (
-                  <Card key={s.id}>
-                    <CardContent className="space-y-2 p-4">
-                      <p className="text-sm font-semibold">{medName(s.medicationId)}</p>
-                      <div className="space-y-1 text-xs text-muted-foreground">
-                        <p>Cantidad: {s.quantity} u</p>
-                        <p>Importe: <span className="font-semibold text-foreground">${(s.price * s.quantity).toLocaleString("es-AR")}</span></p>
-                        <p>Cajero: {s.cashier}</p>
-                        <p>Receta: {s.prescription ?? "—"}</p>
-                        <p>Fecha: {formatDate(s.date)}</p>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                {sales.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-muted-foreground">
+                    Todavía no hay ventas registradas en este espacio de trabajo.
+                  </p>
+                ) : (
+                  sales.map((s) => (
+                    <Card key={s.id}>
+                      <CardContent className="space-y-2 p-4">
+                        <p className="text-sm font-semibold">{medName(s.medicationId)}</p>
+                        <div className="space-y-1 text-xs text-muted-foreground">
+                          <p>Cantidad: {s.quantity} u</p>
+                          <p>
+                            P. unit. (en la venta):{" "}
+                            <span className="font-medium text-foreground">${formatArs(s.price)}</span>
+                          </p>
+                          <p>
+                            Importe:{" "}
+                            <span className="font-semibold text-foreground">
+                              ${formatArs(s.price * s.quantity)}
+                            </span>
+                          </p>
+                          <p>Cajero: {s.cashier}</p>
+                          <p>Receta: {s.prescription ?? "—"}</p>
+                          <p>Fecha: {formatDate(s.date)}</p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
               </div>
             ) : (
             <Table>
@@ -256,6 +327,7 @@ function SalesPage() {
                 <TableRow>
                   <TableHead>Medicamento</TableHead>
                   <TableHead className="text-right">Cantidad</TableHead>
+                  <TableHead className="hidden text-right md:table-cell">P. unit. (venta)</TableHead>
                   <TableHead className="hidden md:table-cell">Receta</TableHead>
                   <TableHead className="hidden md:table-cell">Cajero</TableHead>
                   <TableHead className="text-right">Importe</TableHead>
@@ -263,18 +335,25 @@ function SalesPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {sales.map((s) => (
+                {sales.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="h-24 text-center text-sm text-muted-foreground">
+                      Todavía no hay ventas registradas en este espacio de trabajo.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                sales.map((s) => (
                   <TableRow key={s.id}>
                     <TableCell>{medName(s.medicationId)}</TableCell>
                     <TableCell className="text-right">{s.quantity}</TableCell>
+                    <TableCell className="hidden text-right tabular-nums md:table-cell">${formatArs(s.price)}</TableCell>
                     <TableCell className="hidden font-mono text-xs md:table-cell">{s.prescription ?? "—"}</TableCell>
                     <TableCell className="hidden text-sm md:table-cell">{s.cashier}</TableCell>
-                    <TableCell className="text-right font-semibold">
-                      ${(s.price * s.quantity).toLocaleString("es-AR")}
-                    </TableCell>
+                    <TableCell className="text-right font-semibold tabular-nums">${formatArs(s.price * s.quantity)}</TableCell>
                     <TableCell className="hidden text-sm text-muted-foreground md:table-cell">{formatDate(s.date)}</TableCell>
                   </TableRow>
-                ))}
+                ))
+                )}
               </TableBody>
             </Table>
             )}

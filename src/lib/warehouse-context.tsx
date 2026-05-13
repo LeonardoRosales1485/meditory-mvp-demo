@@ -35,7 +35,7 @@ export function WarehouseProvider({ children }: { children: ReactNode }) {
 
   const list = useMemo(() => {
     const byWorkspace = allWarehouses.filter(
-      (w) => !session || w.workspaceId === session.workspaceId,
+      (w) => (!session || w.workspaceId === session.workspaceId) && !w.deletedAt,
     );
     if (!session) return byWorkspace;
     if (session.role === "admin") return byWorkspace;
@@ -51,7 +51,7 @@ export function WarehouseProvider({ children }: { children: ReactNode }) {
     return allowedTypes ? byAccess.filter((w) => allowedTypes.includes(w.type)) : byAccess;
   }, [session, allWarehouses, users, userWarehouseAccesses]);
 
-  const [warehouse, setWarehouse] = useState<Warehouse>(list[0] ?? allWarehouses[0] ?? EMPTY_WAREHOUSE);
+  const [warehouse, setWarehouse] = useState<Warehouse>(list[0] ?? EMPTY_WAREHOUSE);
 
   useEffect(() => {
     if (!list.find((w) => w.id === warehouse.id)) {

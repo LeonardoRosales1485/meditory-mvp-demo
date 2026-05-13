@@ -17,6 +17,14 @@ async function db<T>(promise: Promise<{ data: T | null; error: { message: string
   return (data ?? ([] as unknown as T));
 }
 
+type DbWarehouseRow = {
+  id: string;
+  workspace_id: string;
+  name: string;
+  type: "central" | "interna" | "ventas";
+  deleted_at: string | null;
+};
+
 type ActionPayloadMap = {
   addMedication: {
     workspaceId: string;
@@ -27,6 +35,7 @@ type ActionPayloadMap = {
       concentrationValue: number;
       concentrationUnit: string;
       form: string;
+      salePrice?: number;
     };
   };
   updateMedication: {
@@ -39,6 +48,7 @@ type ActionPayloadMap = {
       concentrationValue: number;
       concentrationUnit: string;
       form: string;
+      salePrice: number;
     }>;
   };
   deleteMedication: { workspaceId: string; actor: string; id: string };
@@ -163,6 +173,7 @@ type ActionPayloadMap = {
       assignedDoctor: string;
       room: string;
     };
+    bedId?: string | null;
   };
   updatePatient: {
     workspaceId: string;
@@ -178,6 +189,54 @@ type ActionPayloadMap = {
     }>;
   };
   deletePatient: { workspaceId: string; actor: string; id: string };
+  addWing: {
+    workspaceId: string;
+    actor: string;
+    wing: {
+      name: string;
+      type:
+        | "urgencias"
+        | "quirofanos"
+        | "cuidados_intensivos"
+        | "hospitalizacion"
+        | "ambulatoria";
+      prefix: number;
+    };
+  };
+  updateWing: {
+    workspaceId: string;
+    actor: string;
+    id: string;
+    patch: Partial<{
+      name: string;
+      type:
+        | "urgencias"
+        | "quirofanos"
+        | "cuidados_intensivos"
+        | "hospitalizacion"
+        | "ambulatoria";
+      prefix: number;
+    }>;
+  };
+  deleteWing: { workspaceId: string; actor: string; id: string };
+  addRoom: {
+    workspaceId: string;
+    actor: string;
+    room: { wingId: string; number: number; bedCount: number };
+  };
+  updateRoom: {
+    workspaceId: string;
+    actor: string;
+    id: string;
+    patch: Partial<{ wingId: string; number: number; bedCount: number }>;
+  };
+  deleteRoom: { workspaceId: string; actor: string; id: string };
+  assignBed: {
+    workspaceId: string;
+    actor: string;
+    bedId: string;
+    patientId: string | null;
+  };
 };
 
 async function logAudit(workspaceId: string, actor: string, action: string, entity: string) {
@@ -342,14 +401,14 @@ async function warehouseDetailById(warehouseId: string) {
   return `${warehouse.name} (${warehouse.type})`;
 }
 
-async function getWarehouseById(warehouseId: string) {
+async function getWarehouseById(warehouseId: string): Promise<DbWarehouseRow | null> {
   const { data, error } = await supabaseAdmin
     .from("warehouses")
-    .select("id, workspace_id, name, type")
+    .select("id, workspace_id, name, type, deleted_at")
     .eq("id", warehouseId)
     .maybeSingle();
   if (error) throw new Error(error.message);
-  return data;
+  return data as DbWarehouseRow | null;
 }
 
 async function resolveActorUser(workspaceId: string, actor: string) {
@@ -381,6 +440,13 @@ async function resolveActorUser(workspaceId: string, actor: string) {
 }
 
 async function assertWarehouseAccess(workspaceId: string, actor: string, warehouseId: string) {
+  const wh = await getWarehouseById(warehouseId);
+  if (!wh || wh.workspace_id !== workspaceId) {
+    throw new Error("No tenés acceso al depósito requerido para esta operación.");
+  }
+  if (wh.deleted_at) {
+    throw new Error("El depósito fue dado de baja.");
+  }
   const actorUser = await resolveActorUser(workspaceId, actor);
   const { data, error } = await supabaseAdmin
     .from("workspace_user_warehouses")
@@ -390,6 +456,23 @@ async function assertWarehouseAccess(workspaceId: string, actor: string, warehou
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) throw new Error("No tenés acceso al depósito requerido para esta operación.");
+}
+
+async function assertAssignableWarehouses(workspaceId: string, warehouseIds: string[]) {
+  if (warehouseIds.length === 0) return;
+  const { data, error } = await supabaseAdmin
+    .from("warehouses")
+    .select("id")
+    .eq("workspace_id", workspaceId)
+    .in("id", warehouseIds)
+    .is("deleted_at", null);
+  if (error) throw new Error(error.message);
+  const found = new Set((data ?? []).map((r) => (r as { id: string }).id));
+  for (const id of warehouseIds) {
+    if (!found.has(id)) {
+      throw new Error("Uno o más depósitos asignados no existen o fueron dados de baja.");
+    }
+  }
 }
 
 export async function fetchWorkspaceData(workspaceId: string) {
@@ -427,6 +510,15 @@ export async function fetchWorkspaceData(workspaceId: string) {
     ? await db<object[]>(supabaseAdmin.from("workspace_user_warehouses").select("*").in("user_id", userIds))
     : [];
 
+  const [wingRows, roomRows] = await Promise.all([
+    db<object[]>(supabaseAdmin.from("wings").select("*").eq("workspace_id", workspaceId).order("prefix", { ascending: true })),
+    db<object[]>(supabaseAdmin.from("rooms").select("*").eq("workspace_id", workspaceId).order("full_number", { ascending: true })),
+  ]);
+  const roomIds = (roomRows ?? []).map((r) => (r as { id: string }).id);
+  const bedRows = roomIds.length
+    ? await db<object[]>(supabaseAdmin.from("beds").select("*").in("room_id", roomIds).order("position", { ascending: true }))
+    : [];
+
   const txMap = new Map<string, object>();
   [...(txFromRows ?? []), ...(txToRows ?? [])].forEach((r) => txMap.set((r as { id: string }).id, r));
 
@@ -443,6 +535,9 @@ export async function fetchWorkspaceData(workspaceId: string) {
     patients: patientRows ?? [],
     userWarehouseAccesses: userWarehouseAccessRows ?? [],
     audit: auditRows ?? [],
+    wings: wingRows ?? [],
+    rooms: roomRows ?? [],
+    beds: bedRows ?? [],
   };
 }
 
@@ -457,6 +552,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
         concentration_value: payload.medication.concentrationValue,
         concentration_unit: payload.medication.concentrationUnit,
         form: payload.medication.form,
+        sale_price: Math.max(0, Number(payload.medication.salePrice ?? 0)),
       }),
     );
     await logAudit(payload.workspaceId, payload.actor, "Alta de medicamento", payload.medication.name);
@@ -470,6 +566,15 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
     if (payload.patch.concentrationValue !== undefined) dbPatch.concentration_value = payload.patch.concentrationValue;
     if (payload.patch.concentrationUnit !== undefined) dbPatch.concentration_unit = payload.patch.concentrationUnit;
     if (payload.patch.form !== undefined) dbPatch.form = payload.patch.form;
+    if (payload.patch.salePrice !== undefined) {
+      const actorUser = await resolveActorUser(payload.workspaceId, payload.actor);
+      if (actorUser.role !== "admin") {
+        throw new Error("Solo administración puede actualizar precios de venta del catálogo.");
+      }
+      const sp = Number(payload.patch.salePrice);
+      if (Number.isNaN(sp) || sp < 0) throw new Error("Precio de venta inválido.");
+      dbPatch.sale_price = sp;
+    }
     await db(supabaseAdmin.from("medications").update(dbPatch).eq("id", payload.id));
     await logAudit(payload.workspaceId, payload.actor, "Editó medicamento", await medicationDetailById(payload.id));
     return;
@@ -489,6 +594,9 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
     }
     if (warehouse.type !== "central") {
       throw new Error("Los ingresos solo pueden registrarse en el depósito central.");
+    }
+    if (warehouse.deleted_at) {
+      throw new Error("El depósito central fue dado de baja.");
     }
     const expiryDate = new Date(payload.expiry);
     const today = new Date();
@@ -539,6 +647,10 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
     const { data: batch, error: batchError } = await supabaseAdmin.from("batches").select("*").eq("id", payload.batchId).maybeSingle();
     if (batchError) throw new Error(batchError.message);
     if (!batch) throw new Error("Lote no encontrado");
+    const batchWh = await getWarehouseById(String(batch.warehouse_id));
+    if (!batchWh || batchWh.deleted_at) {
+      throw new Error("No se puede ajustar stock en un depósito dado de baja.");
+    }
     const newQty = Math.max(0, Number(batch.quantity) + payload.delta);
     await db(supabaseAdmin.from("batches").update({ quantity: newQty }).eq("id", payload.batchId));
     await db(
@@ -549,6 +661,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
         medication_id: batch.medication_id,
         warehouse_id: batch.warehouse_id,
         quantity: payload.delta,
+        lot: batch.lot,
         user_name: payload.actor,
         reason: `Ajuste lote ${batch.lot}: ${payload.reason}`,
         date: new Date().toISOString(),
@@ -569,11 +682,20 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
     ) {
       throw new Error("Los depósitos de la transferencia no pertenecen al workspace actual.");
     }
+    if (fromWarehouse.deleted_at || toWarehouse.deleted_at) {
+      throw new Error("No se pueden usar depósitos dados de baja en transferencias.");
+    }
     if (fromWarehouse.type !== "central") {
       throw new Error("Las transferencias deben originarse en el depósito central.");
     }
     if (payload.fromWarehouseId === payload.toWarehouseId) {
       throw new Error("Origen y destino deben ser distintos.");
+    }
+    const actorUser = await resolveActorUser(payload.workspaceId, payload.actor);
+    if (fromWarehouse.type !== "central") {
+      if (actorUser.role !== "admin") {
+        throw new Error("Las transferencias deben originarse en el depósito central.");
+      }
     }
     const sourceBatch = await getBatchById(payload.sourceBatchId);
     if (!sourceBatch) throw new Error("Lote origen no encontrado.");
@@ -762,6 +884,21 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
   }
 
   if (action === "addSale") {
+    const saleWarehouse = await getWarehouseById(payload.warehouseId);
+    if (!saleWarehouse || saleWarehouse.workspace_id !== payload.workspaceId) {
+      throw new Error("Depósito inválido para el workspace actual.");
+    }
+    if (saleWarehouse.type !== "ventas") {
+      throw new Error("Las ventas solo pueden registrarse desde un depósito tipo ventas.");
+    }
+    if (saleWarehouse.deleted_at) {
+      throw new Error("El depósito de ventas fue dado de baja.");
+    }
+    const actorForSale = await resolveActorUser(payload.workspaceId, payload.actor);
+    if (actorForSale.role !== "admin" && actorForSale.role !== "ventas") {
+      throw new Error("Solo administración o ventas pueden registrar ventas en mostrador.");
+    }
+    await assertWarehouseAccess(payload.workspaceId, payload.actor, payload.warehouseId);
     await consumeStock(payload.medicationId, payload.warehouseId, payload.quantity);
     await db(
       supabaseAdmin.from("sales").insert({
@@ -794,6 +931,10 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
   }
 
   if (action === "addDispensation") {
+    const dispWh = await getWarehouseById(payload.warehouseId);
+    if (!dispWh || dispWh.workspace_id !== payload.workspaceId || dispWh.deleted_at) {
+      throw new Error("Depósito inválido para el workspace actual o dado de baja.");
+    }
     await consumeStock(payload.medicationId, payload.warehouseId, payload.quantity);
     await db(
       supabaseAdmin.from("dispensations").insert({
@@ -827,6 +968,10 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
   }
 
   if (action === "createOrder") {
+    const actorUser = await resolveActorUser(payload.workspaceId, payload.actor);
+    if (actorUser.role === "tecnico") {
+      throw new Error("El enfermero jefe no puede registrar pedidos médicos.");
+    }
     const sourceBatch = await getBatchById(payload.sourceBatchId);
     if (!sourceBatch) throw new Error("Lote seleccionado no encontrado.");
     if (sourceBatch.medication_id !== payload.medicationId || sourceBatch.warehouse_id !== payload.warehouseId) {
@@ -834,6 +979,10 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
     }
     if (Number(sourceBatch.quantity) < payload.quantity) {
       throw new Error("El lote seleccionado no tiene stock suficiente.");
+    }
+    const orderWarehouse = await getWarehouseById(payload.warehouseId);
+    if (!orderWarehouse || orderWarehouse.workspace_id !== payload.workspaceId || orderWarehouse.deleted_at) {
+      throw new Error("El depósito del pedido no es válido o fue dado de baja.");
     }
     const requestedDoctor = payload.doctorName?.trim() || payload.actor;
     await db(
@@ -865,7 +1014,16 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
     const { data: order, error: orderError } = await supabaseAdmin.from("medication_orders").select("*").eq("id", payload.id).maybeSingle();
     if (orderError) throw new Error(orderError.message);
     if (!order) throw new Error("Pedido no encontrado");
-    if (
+    if (payload.actorRole === "tecnico") {
+      const allowed: ActionPayloadMap["processOrder"]["action"][] = ["despachar", "marcar_recibir", "confirmar_recepcion"];
+      if (!allowed.includes(payload.action)) {
+        throw new Error(
+          "El enfermero jefe solo puede despachar o avanzar la recepción del pedido en depósitos asignados; no puede administrar ni rechazar.",
+        );
+      }
+      // En el esquema actual un solo warehouse_id cubre el depósito que gestiona el pedido (origen del despacho y trazabilidad de recepción).
+      await assertWarehouseAccess(payload.workspaceId, payload.actor, order.warehouse_id);
+    } else if (
       payload.action === "confirmar_recepcion" &&
       payload.actorRole !== "admin" &&
       payload.actor !== order.doctor
@@ -1022,6 +1180,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
       }).select("id").single(),
     );
     if (payload.user.warehouseIds.length > 0) {
+      await assertAssignableWarehouses(payload.workspaceId, payload.user.warehouseIds);
       await db(
         supabaseAdmin.from("workspace_user_warehouses").insert(
           payload.user.warehouseIds.map((warehouseId) => ({
@@ -1044,6 +1203,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
     if (payload.patch.warehouseIds !== undefined) {
       await db(supabaseAdmin.from("workspace_user_warehouses").delete().eq("user_id", payload.id));
       if (payload.patch.warehouseIds.length > 0) {
+        await assertAssignableWarehouses(payload.workspaceId, payload.patch.warehouseIds);
         await db(
           supabaseAdmin.from("workspace_user_warehouses").insert(
             payload.patch.warehouseIds.map((warehouseId) => ({
@@ -1078,7 +1238,8 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
         .from("warehouses")
         .select("id")
         .eq("workspace_id", payload.workspaceId)
-        .eq("type", "central"),
+        .eq("type", "central")
+        .is("deleted_at", null),
     );
     const hasCentral = centralRows.length > 0;
     if (!hasCentral && payload.warehouse.type !== "central") {
@@ -1106,6 +1267,9 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
     if (!currentWarehouse || currentWarehouse.workspace_id !== payload.workspaceId) {
       throw new Error("Depósito no encontrado en el workspace actual.");
     }
+    if (currentWarehouse.deleted_at) {
+      throw new Error("No se puede editar un depósito dado de baja.");
+    }
     if (payload.patch.type !== undefined) {
       const otherCentralRows = await db<{ id: string }[]>(
         supabaseAdmin
@@ -1113,6 +1277,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
           .select("id")
           .eq("workspace_id", payload.workspaceId)
           .eq("type", "central")
+          .is("deleted_at", null)
           .neq("id", payload.id),
       );
       const hasAnotherCentral = otherCentralRows.length > 0;
@@ -1132,8 +1297,46 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
   }
 
   if (action === "deleteWarehouse") {
+    const warehouse = await getWarehouseById(payload.id);
+    if (!warehouse || warehouse.workspace_id !== payload.workspaceId) {
+      throw new Error("Depósito no encontrado o no pertenece al workspace.");
+    }
+    if (warehouse.deleted_at) {
+      throw new Error("Este depósito ya fue dado de baja.");
+    }
+    const { data: batchRows, error: batchErr } = await supabaseAdmin
+      .from("batches")
+      .select("quantity")
+      .eq("warehouse_id", payload.id);
+    if (batchErr) throw new Error(batchErr.message);
+    const stockTotal = (batchRows ?? []).reduce((s, r) => s + Number((r as { quantity: number }).quantity ?? 0), 0);
+    if (stockTotal > 0) {
+      throw new Error(
+        "No se puede eliminar el depósito: aún tiene stock en al menos un lote. Transferí, vendé o ajustá el stock hasta dejarlo en cero.",
+      );
+    }
+    const { data: trRows, error: trErr } = await supabaseAdmin
+      .from("transfer_requests")
+      .select("status, from_warehouse_id, to_warehouse_id")
+      .eq("workspace_id", payload.workspaceId);
+    if (trErr) throw new Error(trErr.message);
+    const terminal = new Set(["aceptado", "rechazado"]);
+    const activeTransfers = (trRows ?? []).filter(
+      (t) =>
+        ((t as { from_warehouse_id: string }).from_warehouse_id === payload.id ||
+          (t as { to_warehouse_id: string }).to_warehouse_id === payload.id) &&
+        !terminal.has((t as { status: string }).status),
+    );
+    if (activeTransfers.length > 0) {
+      throw new Error(
+        "No se puede eliminar el depósito: hay transferencias de stock activas (no finalizadas en aceptada o rechazada) que lo involucran como origen o destino.",
+      );
+    }
     const detail = await warehouseDetailById(payload.id);
-    await db(supabaseAdmin.from("warehouses").delete().eq("id", payload.id));
+    await db(
+      supabaseAdmin.from("warehouses").update({ deleted_at: new Date().toISOString() }).eq("id", payload.id),
+    );
+    await db(supabaseAdmin.from("workspace_user_warehouses").delete().eq("warehouse_id", payload.id));
     await logAudit(payload.workspaceId, payload.actor, "Baja de depósito", detail);
     return;
   }
@@ -1161,19 +1364,56 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
   }
 
   if (action === "addPatient") {
+    const newPatientId = randomUUID();
+    let computedRoom = payload.patient.room;
+
+    if (payload.bedId) {
+      const { data: bedRow, error: bedError } = await supabaseAdmin
+        .from("beds")
+        .select("*, rooms!inner(workspace_id, full_number)")
+        .eq("id", payload.bedId)
+        .maybeSingle();
+      if (bedError) throw new Error(bedError.message);
+      if (!bedRow) throw new Error("Cama seleccionada no encontrada.");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const bedRoom = (bedRow as any).rooms as { workspace_id: string; full_number: number } | null;
+      if (!bedRoom || bedRoom.workspace_id !== payload.workspaceId) {
+        throw new Error("La cama seleccionada no pertenece al workspace actual.");
+      }
+      if (bedRow.patient_id) {
+        throw new Error("La cama seleccionada ya tiene un paciente asignado.");
+      }
+      computedRoom = String(bedRoom.full_number);
+    }
+
     await db(
       supabaseAdmin.from("patients").insert({
-        id: randomUUID(),
+        id: newPatientId,
         workspace_id: payload.workspaceId,
         first_name: payload.patient.firstName,
         last_name: payload.patient.lastName,
         insurance: payload.patient.insurance,
         diagnosis: payload.patient.diagnosis,
         assigned_doctor: payload.patient.assignedDoctor,
-        room: payload.patient.room,
+        room: computedRoom,
       }),
     );
-    await logAudit(payload.workspaceId, payload.actor, "Alta de paciente", `${payload.patient.lastName}, ${payload.patient.firstName}`);
+
+    if (payload.bedId) {
+      await db(
+        supabaseAdmin
+          .from("beds")
+          .update({ patient_id: newPatientId })
+          .eq("id", payload.bedId),
+      );
+    }
+
+    await logAudit(
+      payload.workspaceId,
+      payload.actor,
+      "Alta de paciente",
+      `${payload.patient.lastName}, ${payload.patient.firstName}${payload.bedId ? ` · Sala ${computedRoom}` : ""}`,
+    );
     return;
   }
 
@@ -1193,5 +1433,339 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
   if (action === "deletePatient") {
     await db(supabaseAdmin.from("patients").delete().eq("id", payload.id));
     await logAudit(payload.workspaceId, payload.actor, "Baja de paciente", `Paciente #${payload.id}`);
+    return;
+  }
+
+  if (action === "addWing") {
+    const actorUser = await resolveActorUser(payload.workspaceId, payload.actor);
+    if (actorUser.role !== "admin") {
+      throw new Error("Solo administración puede crear alas médicas.");
+    }
+    const name = payload.wing.name.trim();
+    if (!name) throw new Error("El nombre del ala es obligatorio.");
+    const prefix = Math.trunc(Number(payload.wing.prefix));
+    if (!Number.isFinite(prefix) || prefix < 1 || prefix > 9) {
+      throw new Error("El prefijo debe ser un dígito entre 1 y 9.");
+    }
+    const { data: prefixDup } = await supabaseAdmin
+      .from("wings")
+      .select("id")
+      .eq("workspace_id", payload.workspaceId)
+      .eq("prefix", prefix)
+      .maybeSingle();
+    if (prefixDup) throw new Error(`Ya existe un ala con prefijo ${prefix}xx en este workspace.`);
+    const { data: nameDup } = await supabaseAdmin
+      .from("wings")
+      .select("id")
+      .eq("workspace_id", payload.workspaceId)
+      .ilike("name", name)
+      .maybeSingle();
+    if (nameDup) throw new Error("Ya existe un ala con ese nombre en este workspace.");
+
+    await db(
+      supabaseAdmin.from("wings").insert({
+        id: randomUUID(),
+        workspace_id: payload.workspaceId,
+        name,
+        type: payload.wing.type,
+        prefix,
+      }),
+    );
+    await logAudit(payload.workspaceId, payload.actor, "Alta de ala médica", `${name} (${prefix}xx)`);
+    return;
+  }
+
+  if (action === "updateWing") {
+    const actorUser = await resolveActorUser(payload.workspaceId, payload.actor);
+    if (actorUser.role !== "admin") {
+      throw new Error("Solo administración puede editar alas médicas.");
+    }
+    const { data: current, error } = await supabaseAdmin
+      .from("wings")
+      .select("*")
+      .eq("id", payload.id)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!current || current.workspace_id !== payload.workspaceId) {
+      throw new Error("Ala no encontrada en el workspace actual.");
+    }
+    const dbPatch: Record<string, unknown> = {};
+    if (payload.patch.name !== undefined) {
+      const name = payload.patch.name.trim();
+      if (!name) throw new Error("El nombre del ala es obligatorio.");
+      const { data: nameDup } = await supabaseAdmin
+        .from("wings")
+        .select("id")
+        .eq("workspace_id", payload.workspaceId)
+        .ilike("name", name)
+        .neq("id", payload.id)
+        .maybeSingle();
+      if (nameDup) throw new Error("Ya existe un ala con ese nombre en este workspace.");
+      dbPatch.name = name;
+    }
+    if (payload.patch.type !== undefined) {
+      dbPatch.type = payload.patch.type;
+    }
+    if (payload.patch.prefix !== undefined) {
+      const prefix = Math.trunc(Number(payload.patch.prefix));
+      if (!Number.isFinite(prefix) || prefix < 1 || prefix > 9) {
+        throw new Error("El prefijo debe ser un dígito entre 1 y 9.");
+      }
+      const { data: prefixDup } = await supabaseAdmin
+        .from("wings")
+        .select("id")
+        .eq("workspace_id", payload.workspaceId)
+        .eq("prefix", prefix)
+        .neq("id", payload.id)
+        .maybeSingle();
+      if (prefixDup) throw new Error(`Ya existe un ala con prefijo ${prefix}xx en este workspace.`);
+      dbPatch.prefix = prefix;
+    }
+    if (Object.keys(dbPatch).length === 0) return;
+    await db(supabaseAdmin.from("wings").update(dbPatch).eq("id", payload.id));
+    await logAudit(payload.workspaceId, payload.actor, "Editó ala médica", `Ala #${payload.id}`);
+    return;
+  }
+
+  if (action === "deleteWing") {
+    const actorUser = await resolveActorUser(payload.workspaceId, payload.actor);
+    if (actorUser.role !== "admin") {
+      throw new Error("Solo administración puede eliminar alas médicas.");
+    }
+    const { data: rooms, error: rError } = await supabaseAdmin
+      .from("rooms")
+      .select("id")
+      .eq("wing_id", payload.id);
+    if (rError) throw new Error(rError.message);
+    if ((rooms ?? []).length > 0) {
+      throw new Error("No se puede eliminar el ala: tiene salas asociadas. Eliminá primero las salas.");
+    }
+    await db(supabaseAdmin.from("wings").delete().eq("id", payload.id));
+    await logAudit(payload.workspaceId, payload.actor, "Baja de ala médica", `Ala #${payload.id}`);
+    return;
+  }
+
+  if (action === "addRoom") {
+    const actorUser = await resolveActorUser(payload.workspaceId, payload.actor);
+    if (actorUser.role !== "admin") {
+      throw new Error("Solo administración puede crear salas.");
+    }
+    const number = Math.trunc(Number(payload.room.number));
+    if (!Number.isFinite(number) || number < 1 || number > 99) {
+      throw new Error("El número de sala debe estar entre 01 y 99.");
+    }
+    const bedCount = Math.trunc(Number(payload.room.bedCount));
+    if (!Number.isFinite(bedCount) || bedCount < 1 || bedCount > 4) {
+      throw new Error("La sala debe tener entre 1 y 4 camas.");
+    }
+    const { data: wing, error: wingError } = await supabaseAdmin
+      .from("wings")
+      .select("*")
+      .eq("id", payload.room.wingId)
+      .maybeSingle();
+    if (wingError) throw new Error(wingError.message);
+    if (!wing || wing.workspace_id !== payload.workspaceId) {
+      throw new Error("El ala seleccionada no existe en este workspace.");
+    }
+    const { data: dup } = await supabaseAdmin
+      .from("rooms")
+      .select("id")
+      .eq("workspace_id", payload.workspaceId)
+      .eq("wing_id", payload.room.wingId)
+      .eq("number", number)
+      .maybeSingle();
+    if (dup) throw new Error(`Ya existe una sala con número ${String(number).padStart(2, "0")} en esta ala.`);
+
+    const fullNumber = Number(wing.prefix) * 100 + number;
+    const { data: dupFull } = await supabaseAdmin
+      .from("rooms")
+      .select("id")
+      .eq("workspace_id", payload.workspaceId)
+      .eq("full_number", fullNumber)
+      .maybeSingle();
+    if (dupFull) throw new Error(`Ya existe una sala con número ${fullNumber} en el workspace.`);
+
+    await db(
+      supabaseAdmin.from("rooms").insert({
+        id: randomUUID(),
+        workspace_id: payload.workspaceId,
+        wing_id: payload.room.wingId,
+        number,
+        bed_count: bedCount,
+      }),
+    );
+    await logAudit(
+      payload.workspaceId,
+      payload.actor,
+      "Alta de sala",
+      `Sala ${fullNumber} · ${bedCount} cama${bedCount === 1 ? "" : "s"}`,
+    );
+    return;
+  }
+
+  if (action === "updateRoom") {
+    const actorUser = await resolveActorUser(payload.workspaceId, payload.actor);
+    if (actorUser.role !== "admin") {
+      throw new Error("Solo administración puede editar salas.");
+    }
+    const { data: current, error } = await supabaseAdmin
+      .from("rooms")
+      .select("*")
+      .eq("id", payload.id)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!current || current.workspace_id !== payload.workspaceId) {
+      throw new Error("Sala no encontrada en el workspace actual.");
+    }
+    const targetWingId = payload.patch.wingId ?? current.wing_id;
+    const targetNumber = payload.patch.number ?? current.number;
+    const targetBedCount = payload.patch.bedCount ?? current.bed_count;
+
+    if (targetBedCount < 1 || targetBedCount > 4) {
+      throw new Error("La sala debe tener entre 1 y 4 camas.");
+    }
+    if (targetNumber < 1 || targetNumber > 99) {
+      throw new Error("El número de sala debe estar entre 01 y 99.");
+    }
+
+    const { data: wing, error: wingError } = await supabaseAdmin
+      .from("wings")
+      .select("*")
+      .eq("id", targetWingId)
+      .maybeSingle();
+    if (wingError) throw new Error(wingError.message);
+    if (!wing || wing.workspace_id !== payload.workspaceId) {
+      throw new Error("El ala seleccionada no existe en este workspace.");
+    }
+
+    if (payload.patch.wingId !== undefined || payload.patch.number !== undefined) {
+      const { data: dup } = await supabaseAdmin
+        .from("rooms")
+        .select("id")
+        .eq("workspace_id", payload.workspaceId)
+        .eq("wing_id", targetWingId)
+        .eq("number", targetNumber)
+        .neq("id", payload.id)
+        .maybeSingle();
+      if (dup) throw new Error(`Ya existe una sala con número ${String(targetNumber).padStart(2, "0")} en esa ala.`);
+      const fullNumber = Number(wing.prefix) * 100 + targetNumber;
+      const { data: dupFull } = await supabaseAdmin
+        .from("rooms")
+        .select("id")
+        .eq("workspace_id", payload.workspaceId)
+        .eq("full_number", fullNumber)
+        .neq("id", payload.id)
+        .maybeSingle();
+      if (dupFull) throw new Error(`Ya existe una sala con número ${fullNumber} en el workspace.`);
+    }
+
+    const dbPatch: Record<string, unknown> = {};
+    if (payload.patch.wingId !== undefined) dbPatch.wing_id = payload.patch.wingId;
+    if (payload.patch.number !== undefined) dbPatch.number = payload.patch.number;
+    if (payload.patch.bedCount !== undefined) dbPatch.bed_count = payload.patch.bedCount;
+    if (Object.keys(dbPatch).length === 0) return;
+
+    await db(supabaseAdmin.from("rooms").update(dbPatch).eq("id", payload.id));
+    await logAudit(payload.workspaceId, payload.actor, "Editó sala", `Sala #${payload.id}`);
+    return;
+  }
+
+  if (action === "deleteRoom") {
+    const actorUser = await resolveActorUser(payload.workspaceId, payload.actor);
+    if (actorUser.role !== "admin") {
+      throw new Error("Solo administración puede eliminar salas.");
+    }
+    const { data: current } = await supabaseAdmin
+      .from("rooms")
+      .select("*")
+      .eq("id", payload.id)
+      .maybeSingle();
+    if (!current || current.workspace_id !== payload.workspaceId) {
+      throw new Error("Sala no encontrada en el workspace actual.");
+    }
+    const { data: occupiedBeds } = await supabaseAdmin
+      .from("beds")
+      .select("id")
+      .eq("room_id", payload.id)
+      .not("patient_id", "is", null);
+    if ((occupiedBeds ?? []).length > 0) {
+      throw new Error("No se puede eliminar la sala: tiene camas con pacientes asignados.");
+    }
+    await db(supabaseAdmin.from("rooms").delete().eq("id", payload.id));
+    await logAudit(payload.workspaceId, payload.actor, "Baja de sala", `Sala ${current.full_number}`);
+    return;
+  }
+
+  if (action === "assignBed") {
+    const { data: bed, error } = await supabaseAdmin
+      .from("beds")
+      .select("*, rooms!inner(workspace_id, full_number)")
+      .eq("id", payload.bedId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!bed) throw new Error("Cama no encontrada.");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const room = (bed as any).rooms as { workspace_id: string; full_number: number } | null;
+    if (!room || room.workspace_id !== payload.workspaceId) {
+      throw new Error("La cama no pertenece al workspace actual.");
+    }
+
+    if (payload.patientId) {
+      const { data: patient } = await supabaseAdmin
+        .from("patients")
+        .select("id, workspace_id, first_name, last_name")
+        .eq("id", payload.patientId)
+        .maybeSingle();
+      if (!patient || patient.workspace_id !== payload.workspaceId) {
+        throw new Error("Paciente no encontrado en este workspace.");
+      }
+      if (bed.patient_id && bed.patient_id !== payload.patientId) {
+        throw new Error("La cama destino ya tiene otro paciente asignado.");
+      }
+      // Liberamos automáticamente la cama previa del paciente (si existía).
+      await db(
+        supabaseAdmin
+          .from("beds")
+          .update({ patient_id: null })
+          .eq("patient_id", payload.patientId)
+          .neq("id", payload.bedId),
+      );
+
+      await db(
+        supabaseAdmin
+          .from("beds")
+          .update({ patient_id: payload.patientId })
+          .eq("id", payload.bedId),
+      );
+      await db(
+        supabaseAdmin
+          .from("patients")
+          .update({ room: String(room.full_number) })
+          .eq("id", payload.patientId),
+      );
+      await logAudit(
+        payload.workspaceId,
+        payload.actor,
+        "Asignación de cama",
+        `${patient.last_name}, ${patient.first_name} → Sala ${room.full_number} · Cama ${bed.position}`,
+      );
+    } else {
+      const prevPatientId = bed.patient_id as string | null;
+      await db(
+        supabaseAdmin.from("beds").update({ patient_id: null }).eq("id", payload.bedId),
+      );
+      if (prevPatientId) {
+        await db(
+          supabaseAdmin.from("patients").update({ room: "" }).eq("id", prevPatientId),
+        );
+      }
+      await logAudit(
+        payload.workspaceId,
+        payload.actor,
+        "Liberación de cama",
+        `Sala ${room.full_number} · Cama ${bed.position}`,
+      );
+    }
+    return;
   }
 }

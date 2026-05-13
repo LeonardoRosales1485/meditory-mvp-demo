@@ -67,7 +67,7 @@ function SidebarProvider({
             ...style,
           } as React.CSSProperties
         }
-        className={cn("flex min-h-screen w-full", className)}
+        className={cn("flex h-svh min-h-0 w-full overflow-hidden", className)}
         {...props}
       >
         {children}
@@ -99,7 +99,7 @@ function Sidebar({
           data-slot="sidebar"
           data-state={open ? "expanded" : "collapsed"}
           className={cn(
-            "fixed inset-y-0 left-0 z-50 flex h-screen w-[var(--sidebar-width)] flex-col border-r bg-sidebar text-sidebar-foreground shadow-xl transition-transform duration-200",
+            "fixed inset-y-0 left-0 z-50 flex h-svh w-[var(--sidebar-width)] flex-col border-r bg-sidebar text-sidebar-foreground shadow-xl transition-transform duration-200",
             open ? "translate-x-0" : "-translate-x-full",
             className
           )}
@@ -116,7 +116,7 @@ function Sidebar({
       data-slot="sidebar"
       data-state={open ? "expanded" : "collapsed"}
       className={cn(
-        "flex h-screen flex-col border-r bg-sidebar text-sidebar-foreground transition-[width] duration-200",
+        "flex h-full min-h-0 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground transition-[width] duration-200",
         open ? "w-[var(--sidebar-width)]" : "w-[var(--sidebar-width-collapsed)]",
         className
       )}
@@ -257,7 +257,7 @@ function SidebarInset({ className, ...props }: React.HTMLAttributes<HTMLElement>
   return (
     <main
       data-slot="sidebar-inset"
-      className={cn("relative flex min-h-screen flex-1 flex-col bg-background", className)}
+      className={cn("relative flex min-h-0 flex-1 flex-col overflow-hidden bg-background", className)}
       {...props}
     />
   );

@@ -17,8 +17,10 @@ import { Route as AppVentasRouteImport } from './routes/app.ventas'
 import { Route as AppVencimientosRouteImport } from './routes/app.vencimientos'
 import { Route as AppUsuariosRouteImport } from './routes/app.usuarios'
 import { Route as AppTransferenciasRouteImport } from './routes/app.transferencias'
+import { Route as AppSalasRouteImport } from './routes/app.salas'
 import { Route as AppPedidosRouteImport } from './routes/app.pedidos'
 import { Route as AppPacientesRouteImport } from './routes/app.pacientes'
+import { Route as AppListaPreciosRouteImport } from './routes/app.lista-precios'
 import { Route as AppInventarioRouteImport } from './routes/app.inventario'
 import { Route as AppIngresosRouteImport } from './routes/app.ingresos'
 import { Route as AppDispensacionRouteImport } from './routes/app.dispensacion'
@@ -68,6 +70,11 @@ const AppTransferenciasRoute = AppTransferenciasRouteImport.update({
   path: '/transferencias',
   getParentRoute: () => AppRoute,
 } as any)
+const AppSalasRoute = AppSalasRouteImport.update({
+  id: '/salas',
+  path: '/salas',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppPedidosRoute = AppPedidosRouteImport.update({
   id: '/pedidos',
   path: '/pedidos',
@@ -76,6 +83,11 @@ const AppPedidosRoute = AppPedidosRouteImport.update({
 const AppPacientesRoute = AppPacientesRouteImport.update({
   id: '/pacientes',
   path: '/pacientes',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppListaPreciosRoute = AppListaPreciosRouteImport.update({
+  id: '/lista-precios',
+  path: '/lista-precios',
   getParentRoute: () => AppRoute,
 } as any)
 const AppInventarioRoute = AppInventarioRouteImport.update({
@@ -131,8 +143,10 @@ export interface FileRoutesByFullPath {
   '/app/dispensacion': typeof AppDispensacionRoute
   '/app/ingresos': typeof AppIngresosRoute
   '/app/inventario': typeof AppInventarioRoute
+  '/app/lista-precios': typeof AppListaPreciosRoute
   '/app/pacientes': typeof AppPacientesRoute
   '/app/pedidos': typeof AppPedidosRoute
+  '/app/salas': typeof AppSalasRoute
   '/app/transferencias': typeof AppTransferenciasRoute
   '/app/usuarios': typeof AppUsuariosRoute
   '/app/vencimientos': typeof AppVencimientosRoute
@@ -150,8 +164,10 @@ export interface FileRoutesByTo {
   '/app/dispensacion': typeof AppDispensacionRoute
   '/app/ingresos': typeof AppIngresosRoute
   '/app/inventario': typeof AppInventarioRoute
+  '/app/lista-precios': typeof AppListaPreciosRoute
   '/app/pacientes': typeof AppPacientesRoute
   '/app/pedidos': typeof AppPedidosRoute
+  '/app/salas': typeof AppSalasRoute
   '/app/transferencias': typeof AppTransferenciasRoute
   '/app/usuarios': typeof AppUsuariosRoute
   '/app/vencimientos': typeof AppVencimientosRoute
@@ -171,8 +187,10 @@ export interface FileRoutesById {
   '/app/dispensacion': typeof AppDispensacionRoute
   '/app/ingresos': typeof AppIngresosRoute
   '/app/inventario': typeof AppInventarioRoute
+  '/app/lista-precios': typeof AppListaPreciosRoute
   '/app/pacientes': typeof AppPacientesRoute
   '/app/pedidos': typeof AppPedidosRoute
+  '/app/salas': typeof AppSalasRoute
   '/app/transferencias': typeof AppTransferenciasRoute
   '/app/usuarios': typeof AppUsuariosRoute
   '/app/vencimientos': typeof AppVencimientosRoute
@@ -193,8 +211,10 @@ export interface FileRouteTypes {
     | '/app/dispensacion'
     | '/app/ingresos'
     | '/app/inventario'
+    | '/app/lista-precios'
     | '/app/pacientes'
     | '/app/pedidos'
+    | '/app/salas'
     | '/app/transferencias'
     | '/app/usuarios'
     | '/app/vencimientos'
@@ -212,8 +232,10 @@ export interface FileRouteTypes {
     | '/app/dispensacion'
     | '/app/ingresos'
     | '/app/inventario'
+    | '/app/lista-precios'
     | '/app/pacientes'
     | '/app/pedidos'
+    | '/app/salas'
     | '/app/transferencias'
     | '/app/usuarios'
     | '/app/vencimientos'
@@ -232,8 +254,10 @@ export interface FileRouteTypes {
     | '/app/dispensacion'
     | '/app/ingresos'
     | '/app/inventario'
+    | '/app/lista-precios'
     | '/app/pacientes'
     | '/app/pedidos'
+    | '/app/salas'
     | '/app/transferencias'
     | '/app/usuarios'
     | '/app/vencimientos'
@@ -305,6 +329,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppTransferenciasRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/salas': {
+      id: '/app/salas'
+      path: '/salas'
+      fullPath: '/app/salas'
+      preLoaderRoute: typeof AppSalasRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/pedidos': {
       id: '/app/pedidos'
       path: '/pedidos'
@@ -317,6 +348,13 @@ declare module '@tanstack/react-router' {
       path: '/pacientes'
       fullPath: '/app/pacientes'
       preLoaderRoute: typeof AppPacientesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/lista-precios': {
+      id: '/app/lista-precios'
+      path: '/lista-precios'
+      fullPath: '/app/lista-precios'
+      preLoaderRoute: typeof AppListaPreciosRouteImport
       parentRoute: typeof AppRoute
     }
     '/app/inventario': {
@@ -387,8 +425,10 @@ interface AppRouteChildren {
   AppDispensacionRoute: typeof AppDispensacionRoute
   AppIngresosRoute: typeof AppIngresosRoute
   AppInventarioRoute: typeof AppInventarioRoute
+  AppListaPreciosRoute: typeof AppListaPreciosRoute
   AppPacientesRoute: typeof AppPacientesRoute
   AppPedidosRoute: typeof AppPedidosRoute
+  AppSalasRoute: typeof AppSalasRoute
   AppTransferenciasRoute: typeof AppTransferenciasRoute
   AppUsuariosRoute: typeof AppUsuariosRoute
   AppVencimientosRoute: typeof AppVencimientosRoute
@@ -405,8 +445,10 @@ const AppRouteChildren: AppRouteChildren = {
   AppDispensacionRoute: AppDispensacionRoute,
   AppIngresosRoute: AppIngresosRoute,
   AppInventarioRoute: AppInventarioRoute,
+  AppListaPreciosRoute: AppListaPreciosRoute,
   AppPacientesRoute: AppPacientesRoute,
   AppPedidosRoute: AppPedidosRoute,
+  AppSalasRoute: AppSalasRoute,
   AppTransferenciasRoute: AppTransferenciasRoute,
   AppUsuariosRoute: AppUsuariosRoute,
   AppVencimientosRoute: AppVencimientosRoute,

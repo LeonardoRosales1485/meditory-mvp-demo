@@ -1,7 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { requireAdmin } from "@/lib/route-guards";
 import { useState } from "react";
-import { Plus, Pencil, Trash2, BookOpen } from "lucide-react";
+import { Plus, Pencil, Trash2, BookOpen, Eye } from "lucide-react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/page-header";
@@ -62,21 +62,37 @@ function CatalogPage() {
     concentrationValue: 0,
     concentrationUnit: "mg",
     form: "",
+    salePrice: 0,
   });
 
   function startNew() {
     setEditing(null);
-    setForm({ name: "", activeIngredient: "", concentrationValue: 0, concentrationUnit: "mg", form: "" });
+    setForm({
+      name: "",
+      activeIngredient: "",
+      concentrationValue: 0,
+      concentrationUnit: "mg",
+      form: "",
+      salePrice: 0,
+    });
     setOpen(true);
   }
   function startEdit(m: Medication) {
     setEditing(m);
-    setForm({ name: m.name, activeIngredient: m.activeIngredient, concentrationValue: m.concentrationValue, concentrationUnit: m.concentrationUnit, form: m.form });
+    setForm({
+      name: m.name,
+      activeIngredient: m.activeIngredient,
+      concentrationValue: m.concentrationValue,
+      concentrationUnit: m.concentrationUnit,
+      form: m.form,
+      salePrice: m.salePrice,
+    });
     setOpen(true);
   }
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.name || form.concentrationValue <= 0) return toast.error("Nombre y concentración son obligatorios");
+    if (form.salePrice < 0 || Number.isNaN(form.salePrice)) return toast.error("Precio de venta inválido");
     setSaving(true);
     try {
       if (editing) {
@@ -136,7 +152,15 @@ function CatalogPage() {
                       <p className="text-sm font-semibold">{m.name}</p>
                       <p className="text-xs text-muted-foreground">{m.activeIngredient}</p>
                       <p className="text-xs">{m.concentrationValue}{m.concentrationUnit} · {m.form}</p>
-                      <div className="flex gap-2">
+                      <p className="text-xs text-muted-foreground">
+                        P. venta: <span className="font-semibold text-foreground">${m.salePrice.toLocaleString("es-AR")}</span>
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <Button asChild variant="outline" size="icon" aria-label="Ver en inventario">
+                          <Link to="/app/inventario" search={{ medicamento: m.id }}>
+                            <Eye className="h-4 w-4" />
+                          </Link>
+                        </Button>
                         <Button variant="outline" size="sm" onClick={() => startEdit(m)}>Editar</Button>
                         <Button variant="destructive" size="sm" onClick={() => remove(m)}>Eliminar</Button>
                       </div>
@@ -153,13 +177,14 @@ function CatalogPage() {
                 <TableHead>Principio activo</TableHead>
                 <TableHead>Concentración</TableHead>
                 <TableHead>Forma</TableHead>
+                <TableHead className="text-right">P. venta</TableHead>
                 <TableHead className="text-right">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {medications.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-10 text-center text-sm text-muted-foreground">
+                  <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
                     <BookOpen className="mx-auto mb-2 h-5 w-5 opacity-40" />
                     Catálogo vacío
                   </TableCell>
@@ -171,7 +196,13 @@ function CatalogPage() {
                   <TableCell className="text-sm text-muted-foreground">{m.activeIngredient}</TableCell>
                   <TableCell>{m.concentrationValue}{m.concentrationUnit}</TableCell>
                   <TableCell className="text-sm">{m.form}</TableCell>
+                  <TableCell className="text-right tabular-nums">${m.salePrice.toLocaleString("es-AR")}</TableCell>
                   <TableCell className="text-right">
+                    <Button asChild variant="ghost" size="icon" aria-label="Ver lotes en inventario">
+                      <Link to="/app/inventario" search={{ medicamento: m.id }}>
+                        <Eye className="h-4 w-4" />
+                      </Link>
+                    </Button>
                     <Button variant="ghost" size="icon" onClick={() => startEdit(m)} aria-label="Editar">
                       <Pencil className="h-4 w-4" />
                     </Button>
@@ -230,6 +261,17 @@ function CatalogPage() {
             <div className="space-y-2">
               <Label>Forma farmacéutica</Label>
               <Input value={form.form} onChange={(e) => setForm({ ...form, form: e.target.value })} placeholder="Comprimido" />
+            </div>
+            <div className="space-y-2">
+              <Label>Precio de venta (mostrador)</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.salePrice}
+                onChange={(e) => setForm({ ...form, salePrice: Number(e.target.value) })}
+              />
+              <p className="text-xs text-muted-foreground">Lista de precios del workspace; las ventas guardan el valor vigente al momento de registrar.</p>
             </div>
             <DialogFooter>
               <Button type="submit" disabled={saving}>

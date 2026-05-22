@@ -2,8 +2,16 @@ import { createFileRoute, Outlet, useNavigate, Link, useLocation } from "@tansta
 import { useEffect, useState } from "react";
 import {
   LayoutDashboard, Building2, Users, Database, LogOut, ShieldCheck, Menu, X, Activity,
+  MessageSquareMore,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { WorkspaceAssistantChat } from "@/components/workspace-assistant-chat";
 import { useBackofficeStore } from "@/lib/backoffice-store";
 import { requireBackofficeAuth } from "@/lib/route-guards";
 
@@ -31,6 +39,7 @@ function BackofficeLayout() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
 
   useEffect(() => {
     useBackofficeStore.getState().hydrate();
@@ -110,6 +119,31 @@ function BackofficeLayout() {
           <Outlet />
         </main>
       </div>
+
+      {/* Chat floating button */}
+      <button
+        onClick={() => setChatOpen(true)}
+        className="fixed bottom-6 right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-colors hover:bg-primary/90"
+      >
+        <MessageSquareMore className="h-5 w-5" />
+      </button>
+
+      <Dialog open={chatOpen} onOpenChange={setChatOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Asistente IA</DialogTitle>
+          </DialogHeader>
+          <WorkspaceAssistantChat
+            snapshotInput={{
+              batches: [],
+              medications: [],
+              warehouses: [],
+              transfers: [],
+              workspaceName: "Backoffice",
+            }}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

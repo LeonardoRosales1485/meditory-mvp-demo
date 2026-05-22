@@ -18,7 +18,7 @@ function stockByMedicationId(snapshot: AssistantWorkspaceSnapshotInput): Record<
 
 function topMedicationsByUnits(
   snapshot: AssistantWorkspaceSnapshotInput,
-  limit = 15,
+  limit = 10,
 ): { medicationId: string; units: number; name: string }[] {
   const stock = stockByMedicationId(snapshot);
   const medMap = new Map(snapshot.medications.map((m) => [m.id, m]));
@@ -32,7 +32,7 @@ function topMedicationsByUnits(
     .slice(0, limit);
 }
 
-function batchesSample(snapshot: AssistantWorkspaceSnapshotInput, limit = 20) {
+function batchesSample(snapshot: AssistantWorkspaceSnapshotInput, limit = 10) {
   const now = Date.now();
   const sorted = [...snapshot.batches].sort(
     (a, b) => new Date(a.expiry).getTime() - new Date(b.expiry).getTime(),

@@ -50,7 +50,7 @@ DATOS: todo lo relevante va en el JSON **institucion_snapshot** del mismo mensaj
 HERRAMIENTAS (solo estas dos; no inventes otras):
 1) **navigate** — SOLO si el usuario pidió explícitamente ir, abrir, mostrar o entrar a una pantalla. Rutas internas válidas empiezan con **/app/** (ej. \`/app/transferencias\`). Nunca uses navigate solo porque preguntaron cantidades o listados.
 
-2) **create_transfer** — SOLO si el usuario pidió **explícitamente** solicitar o crear una transferencia (frase de pedido, no una pregunta informativa). Requiere IDs reales del snapshot y confirmación en pantalla. **Prohibido** usar create_transfer para consultas del tipo "¿cuánto medicamento hay en transferencia?" o "¿qué hay por recibir?".
+2) **create_transfer** — SOLO si el usuario pidió **explícitamente** "transferir", "mover", "crear transferencia" o "solicitar traslado" entre depósitos. **Prohibido** usar create_transfer cuando el usuario diga "agregar", "añadir", "cargar", "ingresar", "recibir" stock — esas son operaciones de ingreso, no requieren herramienta. Tampoco uses create_transfer para consultas del tipo "¿cuánto hay en transferencia?" o "¿qué hay por recibir?".
 
 Consultas **solo informativas** (cantidades, listados, estados): respondé con texto desde el snapshot; **no** llames herramientas. Si no alcanzan los datos, decilo con amabilidad y sugerí la pantalla correspondiente en la app.
 
@@ -208,9 +208,10 @@ export function WorkspaceAssistantChat({
     abortRef.current = ac;
 
     try {
+      const recentMessages = messages.slice(-12);
       const history: ChatMessage[] = [
         { role: "system", content: buildSystemMessage(snapshotJson) },
-        ...messages.flatMap((msg): ChatMessage[] =>
+        ...recentMessages.flatMap((msg): ChatMessage[] =>
           msg.role === "user"
             ? [{ role: "user", content: msg.content }]
             : [{ role: "assistant", content: msg.content }],
@@ -390,7 +391,7 @@ export function WorkspaceAssistantChat({
       <p className="text-[11px] text-muted-foreground">
         Asistente vía <code className="rounded bg-muted px-0.5">Groq</code> (modelo:{" "}
         <span className="font-mono">llama-3.1-8b-instant</span>).
-        <span className="ml-2 font-semibold text-red-500">PRODUCTO DE PRUEBA, ESTE CHAT ESTÁ LIMITADO AL MODELO AI GRATUITO USADO QUE PERMITE 30 MENSAJES POR MINUTO</span>
+        <span className="ml-2 text-amber-500">Free-tier limitado a ~12k tokens/min — si falla, esperá unos segundos y reintentá.</span>
       </p>
 
       <Dialog open={!!pendingTransfer} onOpenChange={(o) => !o && !confirming && setPendingTransfer(null)}>

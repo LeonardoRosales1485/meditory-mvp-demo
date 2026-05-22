@@ -138,6 +138,7 @@ export const aiChatRpc = createServerFn({ method: "POST" })
         model: data.model,
         messages: data.messages,
         tools: data.tools?.length ? data.tools : undefined,
+        max_tokens: 1024,
         stream: false,
       }),
     });

@@ -32,12 +32,12 @@ function DemoToolsPage() {
     setRunning(true);
     try {
       await resetWorkspaceDemo();
-      toast.success("Workspace reseteado", {
+      toast.success("Institución reseteada", {
         description: "Se limpiaron depósitos y datos operativos. Se conservaron los usuarios.",
       });
       setConfirmOpen(false);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "No se pudo resetear el workspace.";
+      const message = error instanceof Error ? error.message : "No se pudo resetear la Institución.";
       toast.error("No se pudo resetear", { description: message });
     } finally {
       setRunning(false);
@@ -48,7 +48,7 @@ function DemoToolsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Demo Tools"
-        description={`Herramientas de prueba para ${session?.workspaceName ?? "workspace actual"}.`}
+        description={`Herramientas de prueba para ${session?.workspaceName ?? "Institución actual"}.`}
       />
 
       <Card className="border-destructive/30">
@@ -57,12 +57,12 @@ function DemoToolsPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Esta acción deja el workspace en estado inicial de demo tipo Hospital Blanco:
+            Esta acción deja la Institución en estado inicial de demo tipo Hospital Blanco:
             elimina depósitos y todos los datos operativos, pero mantiene usuarios.
           </p>
           <Button variant="destructive" onClick={() => setConfirmOpen(true)}>
             <RotateCcw className="mr-2 h-4 w-4" />
-            Resetear workspace
+            Resetear Institución
           </Button>
         </CardContent>
       </Card>
@@ -70,7 +70,7 @@ function DemoToolsPage() {
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Confirmar reseteo de workspace</DialogTitle>
+            <DialogTitle>Confirmar reseteo de Institución</DialogTitle>
             <DialogDescription>
               Se eliminarán depósitos, stock, movimientos, ventas, transferencias, dispensaciones,
               pedidos, medicamentos y auditoría. Los usuarios se conservan.

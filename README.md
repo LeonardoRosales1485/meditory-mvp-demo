@@ -23,6 +23,7 @@ Este documento está pensado para que un programador pueda:
 - Estado cliente: Zustand
 - UI: shadcn/ui + Tailwind
 - Base de datos: Supabase (PostgreSQL)
+- Asistente virtual: Groq API (LLM vía Nitro route `server/api/ai-chat.ts` con streaming SSE)
 
 ---
 
@@ -31,6 +32,7 @@ Este documento está pensado para que un programador pueda:
 - Node.js 20+ (recomendado 22 LTS)
 - npm 10+
 - Proyecto Supabase (URL + keys)
+- (Opcional) Cuenta en Groq (https://console.groq.com) para el asistente virtual
 - (Opcional) cuenta en Vercel para deploy demo
 
 ---
@@ -53,6 +55,9 @@ VITE_SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
 # opcional para SSR si no querés depender de VITE_SUPABASE_URL
 SUPABASE_URL=...
+
+# Asistente virtual (Groq)
+GROQ_API_KEY=gsk_...
 ```
 
 Notas:
@@ -87,6 +92,13 @@ Ejecutar scripts en este orden exacto desde `sql/`:
 8. `008_hard_stock_rules.sql`
 9. `009_lot_selection_flow.sql`
 10. `010_transfer_codes.sql`
+11. `011_consume_stock_overload.sql`
+12. `012_wings_rooms_beds.sql`
+13. `013_demo_internacion_rooms.sql`
+14. `014_medications_sale_price.sql`
+15. `015_warehouses_soft_delete.sql`
+16. `016_medications_soft_delete.sql`
+17. `017_medications_sale_enabled.sql`
 
 ### Recomendación práctica
 
@@ -119,10 +131,11 @@ Prerequisito: este proyecto usa **TanStack Start + Nitro** para generar salida c
 
 1. Importar repo en Vercel.
 2. Configurar variables de entorno en Vercel (Production y Preview):
-   - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_ANON_KEY`
-   - `SUPABASE_SERVICE_ROLE_KEY`
-   - `SUPABASE_URL` (recomendado explícito)
+    - `VITE_SUPABASE_URL`
+    - `VITE_SUPABASE_ANON_KEY`
+    - `SUPABASE_SERVICE_ROLE_KEY`
+    - `SUPABASE_URL` (recomendado explícito)
+    - `GROQ_API_KEY` (si se usa el asistente virtual)
 3. Project Settings -> Build and Output Settings:
    - Install Command: `npm install`
    - Build Command: `npm run build`

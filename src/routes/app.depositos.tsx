@@ -219,7 +219,7 @@ function WarehousesPage() {
             {showLoading ? (
               <WorkspaceLoadingPlaceholder
                 title="Cargando depósitos"
-                description="Sincronizando depósitos del workspace…"
+                description="Sincronizando depósitos de la Institución…"
               />
             ) : isMobile && viewMode === "cards" ? (
               <div className="space-y-3 p-3">

@@ -10,9 +10,16 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as BackofficeRouteImport } from './routes/backoffice'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as BackofficeIndexRouteImport } from './routes/backoffice.index'
 import { Route as AppIndexRouteImport } from './routes/app.index'
+import { Route as BackofficeWorkspacesRouteImport } from './routes/backoffice.workspaces'
+import { Route as BackofficeUsuariosRouteImport } from './routes/backoffice.usuarios'
+import { Route as BackofficePanelEnVivoRouteImport } from './routes/backoffice.panel-en-vivo'
+import { Route as BackofficeLoginRouteImport } from './routes/backoffice.login'
+import { Route as BackofficeEsquemaRouteImport } from './routes/backoffice.esquema'
 import { Route as AppVentasRouteImport } from './routes/app.ventas'
 import { Route as AppVencimientosRouteImport } from './routes/app.vencimientos'
 import { Route as AppUsuariosRouteImport } from './routes/app.usuarios'
@@ -35,6 +42,11 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BackofficeRoute = BackofficeRouteImport.update({
+  id: '/backoffice',
+  path: '/backoffice',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AppRoute = AppRouteImport.update({
   id: '/app',
   path: '/app',
@@ -45,10 +57,40 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BackofficeIndexRoute = BackofficeIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => BackofficeRoute,
+} as any)
 const AppIndexRoute = AppIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AppRoute,
+} as any)
+const BackofficeWorkspacesRoute = BackofficeWorkspacesRouteImport.update({
+  id: '/workspaces',
+  path: '/workspaces',
+  getParentRoute: () => BackofficeRoute,
+} as any)
+const BackofficeUsuariosRoute = BackofficeUsuariosRouteImport.update({
+  id: '/usuarios',
+  path: '/usuarios',
+  getParentRoute: () => BackofficeRoute,
+} as any)
+const BackofficePanelEnVivoRoute = BackofficePanelEnVivoRouteImport.update({
+  id: '/panel-en-vivo',
+  path: '/panel-en-vivo',
+  getParentRoute: () => BackofficeRoute,
+} as any)
+const BackofficeLoginRoute = BackofficeLoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => BackofficeRoute,
+} as any)
+const BackofficeEsquemaRoute = BackofficeEsquemaRouteImport.update({
+  id: '/esquema',
+  path: '/esquema',
+  getParentRoute: () => BackofficeRoute,
 } as any)
 const AppVentasRoute = AppVentasRouteImport.update({
   id: '/ventas',
@@ -134,6 +176,7 @@ const AppAjustesRoute = AppAjustesRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/app': typeof AppRouteWithChildren
+  '/backoffice': typeof BackofficeRouteWithChildren
   '/login': typeof LoginRoute
   '/app/ajustes': typeof AppAjustesRoute
   '/app/auditoria': typeof AppAuditoriaRoute
@@ -151,7 +194,13 @@ export interface FileRoutesByFullPath {
   '/app/usuarios': typeof AppUsuariosRoute
   '/app/vencimientos': typeof AppVencimientosRoute
   '/app/ventas': typeof AppVentasRoute
+  '/backoffice/esquema': typeof BackofficeEsquemaRoute
+  '/backoffice/login': typeof BackofficeLoginRoute
+  '/backoffice/panel-en-vivo': typeof BackofficePanelEnVivoRoute
+  '/backoffice/usuarios': typeof BackofficeUsuariosRoute
+  '/backoffice/workspaces': typeof BackofficeWorkspacesRoute
   '/app/': typeof AppIndexRoute
+  '/backoffice/': typeof BackofficeIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -172,12 +221,19 @@ export interface FileRoutesByTo {
   '/app/usuarios': typeof AppUsuariosRoute
   '/app/vencimientos': typeof AppVencimientosRoute
   '/app/ventas': typeof AppVentasRoute
+  '/backoffice/esquema': typeof BackofficeEsquemaRoute
+  '/backoffice/login': typeof BackofficeLoginRoute
+  '/backoffice/panel-en-vivo': typeof BackofficePanelEnVivoRoute
+  '/backoffice/usuarios': typeof BackofficeUsuariosRoute
+  '/backoffice/workspaces': typeof BackofficeWorkspacesRoute
   '/app': typeof AppIndexRoute
+  '/backoffice': typeof BackofficeIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/app': typeof AppRouteWithChildren
+  '/backoffice': typeof BackofficeRouteWithChildren
   '/login': typeof LoginRoute
   '/app/ajustes': typeof AppAjustesRoute
   '/app/auditoria': typeof AppAuditoriaRoute
@@ -195,13 +251,20 @@ export interface FileRoutesById {
   '/app/usuarios': typeof AppUsuariosRoute
   '/app/vencimientos': typeof AppVencimientosRoute
   '/app/ventas': typeof AppVentasRoute
+  '/backoffice/esquema': typeof BackofficeEsquemaRoute
+  '/backoffice/login': typeof BackofficeLoginRoute
+  '/backoffice/panel-en-vivo': typeof BackofficePanelEnVivoRoute
+  '/backoffice/usuarios': typeof BackofficeUsuariosRoute
+  '/backoffice/workspaces': typeof BackofficeWorkspacesRoute
   '/app/': typeof AppIndexRoute
+  '/backoffice/': typeof BackofficeIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/app'
+    | '/backoffice'
     | '/login'
     | '/app/ajustes'
     | '/app/auditoria'
@@ -219,7 +282,13 @@ export interface FileRouteTypes {
     | '/app/usuarios'
     | '/app/vencimientos'
     | '/app/ventas'
+    | '/backoffice/esquema'
+    | '/backoffice/login'
+    | '/backoffice/panel-en-vivo'
+    | '/backoffice/usuarios'
+    | '/backoffice/workspaces'
     | '/app/'
+    | '/backoffice/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -240,11 +309,18 @@ export interface FileRouteTypes {
     | '/app/usuarios'
     | '/app/vencimientos'
     | '/app/ventas'
+    | '/backoffice/esquema'
+    | '/backoffice/login'
+    | '/backoffice/panel-en-vivo'
+    | '/backoffice/usuarios'
+    | '/backoffice/workspaces'
     | '/app'
+    | '/backoffice'
   id:
     | '__root__'
     | '/'
     | '/app'
+    | '/backoffice'
     | '/login'
     | '/app/ajustes'
     | '/app/auditoria'
@@ -262,12 +338,19 @@ export interface FileRouteTypes {
     | '/app/usuarios'
     | '/app/vencimientos'
     | '/app/ventas'
+    | '/backoffice/esquema'
+    | '/backoffice/login'
+    | '/backoffice/panel-en-vivo'
+    | '/backoffice/usuarios'
+    | '/backoffice/workspaces'
     | '/app/'
+    | '/backoffice/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
+  BackofficeRoute: typeof BackofficeRouteWithChildren
   LoginRoute: typeof LoginRoute
 }
 
@@ -278,6 +361,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/backoffice': {
+      id: '/backoffice'
+      path: '/backoffice'
+      fullPath: '/backoffice'
+      preLoaderRoute: typeof BackofficeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/app': {
@@ -294,12 +384,54 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/backoffice/': {
+      id: '/backoffice/'
+      path: '/'
+      fullPath: '/backoffice/'
+      preLoaderRoute: typeof BackofficeIndexRouteImport
+      parentRoute: typeof BackofficeRoute
+    }
     '/app/': {
       id: '/app/'
       path: '/'
       fullPath: '/app/'
       preLoaderRoute: typeof AppIndexRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/backoffice/workspaces': {
+      id: '/backoffice/workspaces'
+      path: '/workspaces'
+      fullPath: '/backoffice/workspaces'
+      preLoaderRoute: typeof BackofficeWorkspacesRouteImport
+      parentRoute: typeof BackofficeRoute
+    }
+    '/backoffice/usuarios': {
+      id: '/backoffice/usuarios'
+      path: '/usuarios'
+      fullPath: '/backoffice/usuarios'
+      preLoaderRoute: typeof BackofficeUsuariosRouteImport
+      parentRoute: typeof BackofficeRoute
+    }
+    '/backoffice/panel-en-vivo': {
+      id: '/backoffice/panel-en-vivo'
+      path: '/panel-en-vivo'
+      fullPath: '/backoffice/panel-en-vivo'
+      preLoaderRoute: typeof BackofficePanelEnVivoRouteImport
+      parentRoute: typeof BackofficeRoute
+    }
+    '/backoffice/login': {
+      id: '/backoffice/login'
+      path: '/login'
+      fullPath: '/backoffice/login'
+      preLoaderRoute: typeof BackofficeLoginRouteImport
+      parentRoute: typeof BackofficeRoute
+    }
+    '/backoffice/esquema': {
+      id: '/backoffice/esquema'
+      path: '/esquema'
+      fullPath: '/backoffice/esquema'
+      preLoaderRoute: typeof BackofficeEsquemaRouteImport
+      parentRoute: typeof BackofficeRoute
     }
     '/app/ventas': {
       id: '/app/ventas'
@@ -458,9 +590,32 @@ const AppRouteChildren: AppRouteChildren = {
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
+interface BackofficeRouteChildren {
+  BackofficeEsquemaRoute: typeof BackofficeEsquemaRoute
+  BackofficeLoginRoute: typeof BackofficeLoginRoute
+  BackofficePanelEnVivoRoute: typeof BackofficePanelEnVivoRoute
+  BackofficeUsuariosRoute: typeof BackofficeUsuariosRoute
+  BackofficeWorkspacesRoute: typeof BackofficeWorkspacesRoute
+  BackofficeIndexRoute: typeof BackofficeIndexRoute
+}
+
+const BackofficeRouteChildren: BackofficeRouteChildren = {
+  BackofficeEsquemaRoute: BackofficeEsquemaRoute,
+  BackofficeLoginRoute: BackofficeLoginRoute,
+  BackofficePanelEnVivoRoute: BackofficePanelEnVivoRoute,
+  BackofficeUsuariosRoute: BackofficeUsuariosRoute,
+  BackofficeWorkspacesRoute: BackofficeWorkspacesRoute,
+  BackofficeIndexRoute: BackofficeIndexRoute,
+}
+
+const BackofficeRouteWithChildren = BackofficeRoute._addFileChildren(
+  BackofficeRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
+  BackofficeRoute: BackofficeRouteWithChildren,
   LoginRoute: LoginRoute,
 }
 export const routeTree = rootRouteImport

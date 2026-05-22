@@ -21,7 +21,7 @@ export const Route = createFileRoute("/")({
 const features = [
   {
     icon: Boxes,
-    title: "Multi-depósito por workspace",
+    title: "Multi-depósito por Institución",
     description:
       "Hospital, farmacia interna, farmacia ventas. Datos aislados por cliente, configuración por unidad funcional.",
   },
@@ -66,7 +66,7 @@ function Landing() {
           </h1>
           <p className="mt-6 max-w-2xl text-lg text-muted-foreground">
             Meditory controla ingreso, egreso y movimientos de stock entre depósitos, con
-            alertas de vencimiento, lotes auditados y un modelo de workspaces por cliente.
+            alertas de vencimiento, lotes auditados y un modelo de instituciones por cliente.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Button asChild size="lg">

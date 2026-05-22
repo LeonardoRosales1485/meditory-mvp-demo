@@ -1,0 +1,988 @@
+import { useEffect, useRef, useState } from "react";
+import { Activity, ArrowDownToLine, ArrowUpFromLine, TrendingUp, Clock, Calendar, Package, AlertTriangle, CalendarClock, ClipboardList, CheckCircle2, XCircle, ArrowLeftRight, PackageCheck, CircleCheckBig, Filter, BarChart3 } from "lucide-react";
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell, AreaChart, Area,
+} from "recharts";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { MobileViewToggle } from "@/components/mobile-view-toggle";
+import { useMobileListView } from "@/lib/use-mobile-list-view";
+import { expiryStatus, formatDate, medName, warehouseName } from "@/lib/domain-types";
+
+type Batch = { id: string; medication_id: string; warehouse_id: string; lot: string; expiry: string; quantity: number };
+type Movement = { id: string; type: string; medication_id: string; warehouse_id: string; quantity: number; user_name: string; reason: string; lot?: string; date: string };
+type Order = { id: string; medication_id: string; warehouse_id: string; quantity: number; doctor: string; patient: string; room: string; reason: string; status: string; requested_at: string; processed_at?: string; processed_by?: string };
+type Transfer = { id: string; transfer_code?: string; medication_id: string; from_warehouse_id: string; to_warehouse_id: string; quantity: number; status: string; requested_by: string; date: string };
+type Warehouse = { id: string; name: string; type: string; unit: string; workspace_id: string };
+
+interface RealtimeData {
+  batches: Batch[];
+  movements: Movement[];
+  orders: Order[];
+  transfers: Transfer[];
+  warehouses: Warehouse[];
+}
+
+type TrendItem = {
+  medication_id: string;
+  medication_name: string;
+  stock_total: number;
+  consumed_per_day: number;
+  days_until_empty: number | null;
+  risk_category: string;
+};
+
+type SubTab = "stock" | "movements" | "orders" | "transfers" | "trends";
+
+const SUB_TABS = [
+  { value: "stock", label: "Stock" },
+  { value: "movements", label: "Movimientos" },
+  { value: "orders", label: "Pedidos" },
+  { value: "transfers", label: "Transferencias" },
+  { value: "trends", label: "Tendencias" },
+] as const;
+
+const CHART_COLORS = [
+  "var(--color-chart-1)", "var(--color-chart-2)", "var(--color-chart-3)",
+  "var(--color-chart-4)", "var(--color-chart-5)",
+];
+
+const EXPIRY_COLORS: Record<string, string> = {
+  vencido: "var(--color-destructive)",
+  critico: "var(--color-warning)",
+  proximo: "var(--color-chart-2)",
+  ok: "var(--color-chart-5)",
+};
+
+const EXPIRY_LABELS: Record<string, string> = {
+  vencido: "Vencido", critico: "Crítico (≤30d)", proximo: "Próximo (≤90d)", ok: "Ok",
+};
+
+const ORDER_STATUS_LABEL: Record<string, string> = {
+  pendiente: "Pendiente", aprobado: "Aprobado", despachado: "Despachado",
+  recibir: "A recibir", recibido: "Recibido", administrado: "Administrado",
+  rechazado: "Rechazado", devolucion_solicitada: "Dev. solicitada",
+  devuelto: "Devuelto", devolucion_rechazada: "Dev. rechazada",
+};
+
+const ORDER_BADGE_COLOR: Record<string, string> = {
+  pendiente: "bg-muted text-foreground", aprobado: "bg-primary-soft text-primary",
+  despachado: "bg-accent text-accent-foreground", recibido: "bg-success/15 text-success",
+  administrado: "bg-emerald-200 text-emerald-800", rechazado: "bg-destructive/10 text-destructive",
+};
+
+const TRANSFER_STATUS_LABEL: Record<string, string> = {
+  solicitado: "Solicitado", autorizado: "Autorizado", despachado: "Despachado",
+  recibir: "A recibir", recibido: "Recibido", aceptado: "Aceptado", rechazado: "Rechazado",
+};
+
+const TRANSFER_BADGE_COLOR: Record<string, string> = {
+  solicitado: "bg-muted text-foreground", autorizado: "bg-primary-soft text-primary",
+  despachado: "bg-accent text-accent-foreground", recibir: "bg-blue-100 text-blue-700",
+  recibido: "bg-success/15 text-success", aceptado: "bg-emerald-200 text-emerald-800",
+  rechazado: "bg-destructive/10 text-destructive",
+};
+
+const PIPELINE_COLORS: Record<string, string> = {
+  solicitado: "var(--color-chart-4)", autorizado: "var(--color-chart-1)",
+  despachado: "var(--color-chart-2)", recibir: "var(--color-chart-3)",
+  recibido: "var(--color-success)", aceptado: "var(--color-success)",
+  rechazado: "var(--color-destructive)",
+};
+
+const MOVEMENT_TYPE_LABEL: Record<string, string> = {
+  ingreso: "Ingreso", egreso: "Egreso", transferencia: "Transferencia",
+  venta: "Venta", dispensacion: "Dispensación", ajuste: "Ajuste",
+};
+
+function toLocalDateInput(offsetDays: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  return d.toISOString().split("T")[0];
+}
+
+const TRENDS_PERIOD_DAYS = Number(import.meta.env?.TRENDS_PERIOD_DAYS ?? 30);
+
+export function BackofficeRealtimePanel({ workspaces }: { workspaces: { id: string; name: string }[] }) {
+  const [subTab, setSubTab] = useState<SubTab>("stock");
+  const [data, setData] = useState<RealtimeData | null>(null);
+  const [trends, setTrends] = useState<TrendItem[]>([]);
+  const [trendsLoading, setTrendsLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [selectedWs, setSelectedWs] = useState<string>("__all__");
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  async function loadData(wsId: string) {
+    try {
+      const { backofficeGetRealtimeDataRpc, backofficeGetConsumptionTrendsRpc } = await import("@/lib/server-rpc");
+      const [result, trendsResult] = await Promise.all([
+        backofficeGetRealtimeDataRpc({
+          data: { workspaceId: wsId === "__all__" ? undefined : wsId },
+        }),
+        backofficeGetConsumptionTrendsRpc({
+          data: {
+            periodDays: TRENDS_PERIOD_DAYS,
+            workspaceId: wsId === "__all__" ? undefined : wsId,
+          },
+        }),
+      ]);
+      setData(result as RealtimeData);
+      setTrends(trendsResult as TrendItem[]);
+      setTrendsLoading(false);
+      setError("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadData(selectedWs);
+    intervalRef.current = setInterval(() => loadData(selectedWs), 10000);
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [selectedWs]);
+
+  const batches = data?.batches ?? [];
+  const movements = data?.movements ?? [];
+  const orders = data?.orders ?? [];
+  const transfers = data?.transfers ?? [];
+  const warehouses = data?.warehouses ?? [];
+
+  function warehouseName(id: string) {
+    const wh = warehouses.find((w) => w.id === id);
+    return wh?.name ?? id;
+  }
+
+  return (
+    <div className="mt-8">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
+          </span>
+          <span className="text-sm font-medium">Panel en tiempo real</span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Filter className="h-4 w-4 text-muted-foreground" />
+          <Select value={selectedWs} onValueChange={(v) => { setLoading(true); setSelectedWs(v); }}>
+            <SelectTrigger className="h-8 w-[220px] text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">Todas las Instituciones</SelectItem>
+              {workspaces.map((ws) => (
+                <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {error && (
+        <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+
+      <Tabs value={subTab} onValueChange={(v) => setSubTab(v as SubTab)}>
+        <TabsList className="grid w-full max-w-3xl grid-cols-5">
+          {SUB_TABS.map((t) => (
+            <TabsTrigger key={t.value} value={t.value}>{t.label}</TabsTrigger>
+          ))}
+        </TabsList>
+
+        <TabsContent value="stock" className="mt-4">
+          <StockTab batches={batches} warehouses={warehouses} loading={loading} />
+        </TabsContent>
+        <TabsContent value="movements" className="mt-4">
+          <MovementsTab movements={movements} loading={loading} />
+        </TabsContent>
+        <TabsContent value="orders" className="mt-4">
+          <OrdersTab orders={orders} loading={loading} />
+        </TabsContent>
+        <TabsContent value="transfers" className="mt-4">
+          <TransfersTab transfers={transfers} loading={loading} />
+        </TabsContent>
+        <TabsContent value="trends" className="mt-4">
+          <TrendsTab trends={trends} loading={trendsLoading || loading} periodDays={TRENDS_PERIOD_DAYS} />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+function StockTab({ batches, warehouses, loading }: { batches: Batch[]; warehouses: Warehouse[]; loading: boolean }) {
+  const totalUnits = batches.reduce((acc, b) => acc + b.quantity, 0);
+  const criticalBatches = batches.filter((b) => ["vencido", "critico"].includes(expiryStatus(b.expiry)));
+  const expiringSoon = batches.filter((b) => {
+    const status = expiryStatus(b.expiry);
+    return status === "critico" || status === "vencido";
+  });
+
+  const stockByWarehouse = warehouses
+    .map((w) => ({
+      name: w.name,
+      value: batches.filter((b) => b.warehouse_id === w.id).reduce((acc, b) => acc + b.quantity, 0),
+    }))
+    .filter((w) => w.value > 0)
+    .sort((a, b) => b.value - a.value);
+
+  const expiryDistribution = (() => {
+    const counts: Record<string, number> = { vencido: 0, critico: 0, proximo: 0, ok: 0 };
+    for (const b of batches) counts[expiryStatus(b.expiry)]++;
+    return Object.entries(counts).map(([key, value]) => ({
+      name: EXPIRY_LABELS[key] ?? key, value, color: EXPIRY_COLORS[key] ?? "var(--color-muted-foreground)",
+    }));
+  })();
+
+  return (
+    <>
+      <div className="grid gap-4 sm:grid-cols-3">
+        {[
+          { label: "Unidades totales", value: totalUnits.toLocaleString("es-AR"), icon: Package,
+            hint: "Suma de todos los lotes", tone: undefined as const },
+          { label: "Lotes vencidos o críticos", value: String(criticalBatches.length), icon: AlertTriangle,
+            hint: criticalBatches.length === 0 ? "Sin lotes problemáticos" : "Requieren acción",
+            tone: "warning" as const },
+          { label: "Vencen próximamente (≤30d)", value: String(expiringSoon.length), icon: CalendarClock,
+            hint: "Lotes con vencimiento en los próximos 30 días",
+            tone: expiringSoon.length > 0 ? "warning" as const : undefined },
+        ].map((s) => (
+          <Card key={s.label} className="border-border/60">
+            <CardContent className="p-5">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{s.label}</p>
+                  <p className="mt-2 text-3xl font-semibold tracking-tight">{s.value}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{s.hint}</p>
+                </div>
+                <div className={`flex h-9 w-9 items-center justify-center rounded-md ${
+                  s.tone === "warning" ? "bg-warning/15 text-warning" : "bg-primary-soft text-primary"
+                }`}>
+                  <s.icon className="h-4 w-4" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader><CardTitle className="flex items-center gap-2 text-base">
+            <Package className="h-4 w-4 text-primary" /> Stock por depósito
+          </CardTitle></CardHeader>
+          <CardContent>
+            {stockByWarehouse.length === 0 ? (
+              <p className="py-10 text-center text-sm text-muted-foreground">Sin stock.</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={stockByWarehouse} layout="vertical" margin={{ left: 0, right: 20, top: 5, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                  <XAxis type="number" tick={{ fontSize: 12 }} />
+                  <YAxis type="category" dataKey="name" width={130} tick={{ fontSize: 12 }} />
+                  <Tooltip formatter={(value: number) => [value.toLocaleString("es-AR"), "Unidades"]} contentStyle={{ borderRadius: "0.5rem" }} />
+                  <Bar dataKey="value" radius={[0, 4, 4, 0]} fill="var(--color-chart-1)" />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle className="flex items-center gap-2 text-base">
+            <AlertTriangle className="h-4 w-4 text-warning" /> Distribución de vencimientos
+          </CardTitle></CardHeader>
+          <CardContent>
+            {batches.length === 0 ? (
+              <p className="py-10 text-center text-sm text-muted-foreground">Sin lotes.</p>
+            ) : (
+              <>
+                <ResponsiveContainer width="100%" height={280}>
+                  <PieChart>
+                    <Pie data={expiryDistribution} dataKey="value" nameKey="name"
+                      cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={2}>
+                      {expiryDistribution.map((e, i) => <Cell key={i} fill={e.color} />)}
+                    </Pie>
+                    <Tooltip contentStyle={{ borderRadius: "0.5rem" }} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="mt-2 flex flex-wrap justify-center gap-3">
+                  {expiryDistribution.map((e) => (
+                    <div key={e.name} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: e.color }} />
+                      {e.name}: {e.value}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </>
+  );
+}
+
+function MovementsTab({ movements, loading }: { movements: Movement[]; loading: boolean }) {
+  const { isMobile, viewMode, setViewMode } = useMobileListView("bo-panel-movements");
+  const [startDate, setStartDate] = useState(toLocalDateInput(-13));
+  const [endDate, setEndDate] = useState(toLocalDateInput(0));
+
+  const filtered = movements.filter((m) => {
+    const d = new Date(m.date);
+    const start = new Date(startDate); start.setHours(0, 0, 0, 0);
+    const end = new Date(endDate); end.setHours(23, 59, 59, 999);
+    return d >= start && d <= end;
+  }).sort((a, b) => +new Date(b.date) - +new Date(a.date));
+
+  const ingressCount = filtered.filter((m) => m.type === "ingreso").length;
+  const egressCount = filtered.filter((m) =>
+    ["venta", "dispensacion", "transferencia", "ajuste"].includes(m.type)).length;
+
+  const dailyMovements = (() => {
+    const start = new Date(startDate); const end = new Date(endDate);
+    const days: Record<string, { date: string; ingreso: number; egreso: number }> = {};
+    const current = new Date(start);
+    while (current <= end) {
+      const key = current.toLocaleDateString("es-AR", { day: "2-digit", month: "short" });
+      days[key] = { date: key, ingreso: 0, egreso: 0 };
+      current.setDate(current.getDate() + 1);
+    }
+    for (const m of filtered) {
+      const key = new Date(m.date).toLocaleDateString("es-AR", { day: "2-digit", month: "short" });
+      if (!days[key]) continue;
+      if (m.type === "ingreso") days[key].ingreso += m.quantity;
+      else days[key].egreso += m.quantity;
+    }
+    return Object.values(days);
+  })();
+
+  const dateRangeLabel = startDate === endDate
+    ? new Date(startDate).toLocaleDateString("es-AR", { day: "numeric", month: "long", year: "numeric" })
+    : `del ${new Date(startDate).toLocaleDateString("es-AR", { day: "numeric", month: "short" })} al ${
+        new Date(endDate).toLocaleDateString("es-AR", { day: "numeric", month: "short", year: "numeric" })}`;
+
+  return (
+    <>
+      <Card className="mb-6 border-border/60">
+        <CardContent className="p-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <Calendar className="h-4 w-4 text-muted-foreground" />
+            <span className="text-xs font-medium text-muted-foreground">Desde</span>
+            <input type="date" value={startDate}
+              onChange={(e) => { if (e.target.value > endDate) setEndDate(e.target.value); setStartDate(e.target.value); }}
+              className="h-8 rounded-md border border-input bg-background px-2 text-sm text-foreground" />
+            <span className="text-xs text-muted-foreground">→</span>
+            <Calendar className="h-4 w-4 text-muted-foreground" />
+            <span className="text-xs font-medium text-muted-foreground">Hasta</span>
+            <input type="date" value={endDate}
+              onChange={(e) => { if (e.target.value < startDate) setStartDate(e.target.value); setEndDate(e.target.value); }}
+              className="h-8 rounded-md border border-input bg-background px-2 text-sm text-foreground" />
+          </div>
+        </CardContent>
+      </Card>
+      <div className="grid gap-4 sm:grid-cols-3">
+        {[
+          { label: "Ingresos", value: String(ingressCount), icon: ArrowDownToLine, hint: `Recepciones ${dateRangeLabel}` },
+          { label: "Salidas", value: String(egressCount), icon: ArrowUpFromLine,
+            hint: `Ventas, dispensaciones, transferencias y ajustes ${dateRangeLabel}`,
+            tone: egressCount > 0 ? "warning" as const : undefined },
+          { label: "Total movimientos", value: String(filtered.length), icon: TrendingUp, hint: `Todos los movimientos ${dateRangeLabel}` },
+        ].map((s) => (
+          <Card key={s.label} className="border-border/60">
+            <CardContent className="p-5">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{s.label}</p>
+                  <p className="mt-2 text-3xl font-semibold tracking-tight">{s.value}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{s.hint}</p>
+                </div>
+                <div className={`flex h-9 w-9 items-center justify-center rounded-md ${
+                  s.tone === "warning" ? "bg-warning/15 text-warning" : "bg-primary-soft text-primary"
+                }`}>
+                  <s.icon className="h-4 w-4" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader><CardTitle className="flex items-center gap-2 text-base">
+            <TrendingUp className="h-4 w-4 text-primary" /> Movimientos diarios
+          </CardTitle></CardHeader>
+          <CardContent>
+            {dailyMovements.every((d) => d.ingreso === 0 && d.egreso === 0) ? (
+              <p className="py-10 text-center text-sm text-muted-foreground">Sin movimientos en el período.</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={260}>
+                <AreaChart data={dailyMovements} margin={{ left: -10, right: 10, top: 5, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <Tooltip contentStyle={{ borderRadius: "0.5rem" }} />
+                  <Area type="monotone" dataKey="ingreso" name="Ingresos" stroke="var(--color-success)"
+                    fill="var(--color-success)" fillOpacity={0.15} strokeWidth={2} />
+                  <Area type="monotone" dataKey="egreso" name="Egresos" stroke="var(--color-destructive)"
+                    fill="var(--color-destructive)" fillOpacity={0.15} strokeWidth={2} />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Clock className="h-4 w-4 text-primary" /> Últimos movimientos
+            </CardTitle>
+            {isMobile && <MobileViewToggle value={viewMode} onChange={setViewMode} />}
+          </CardHeader>
+          <CardContent className="px-0">
+            {filtered.length === 0 ? (
+              <p className="px-6 py-10 text-center text-sm text-muted-foreground">Sin movimientos.</p>
+            ) : isMobile && viewMode === "cards" ? (
+              <div className="space-y-3 px-4 pb-4">
+                {filtered.slice(0, 10).map((m) => (
+                  <Card key={m.id} className="shadow-sm">
+                    <CardContent className="space-y-1.5 p-4 text-xs text-muted-foreground">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-medium capitalize text-foreground">
+                          {MOVEMENT_TYPE_LABEL[m.type] ?? m.type}
+                        </span>
+                        <span className="font-semibold text-foreground">{m.quantity} u</span>
+                      </div>
+                      <p>Medicamento: <span className="font-medium text-foreground">{medName(m.medication_id)}</span></p>
+                      <p>Usuario: <span className="font-medium text-foreground">{m.user_name}</span></p>
+                      <p>{formatDate(m.date)}</p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Tipo</TableHead>
+                    <TableHead>Medicamento</TableHead>
+                    <TableHead className="text-right">Cant.</TableHead>
+                    <TableHead>Usuario</TableHead>
+                    <TableHead>Fecha</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filtered.slice(0, 10).map((m) => (
+                    <TableRow key={m.id}>
+                      <TableCell><span className="text-xs font-medium capitalize text-muted-foreground">
+                        {MOVEMENT_TYPE_LABEL[m.type] ?? m.type}</span></TableCell>
+                      <TableCell className="font-medium"><span className="text-sm">{medName(m.medication_id)}</span></TableCell>
+                      <TableCell className="text-right font-semibold">{m.quantity}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{m.user_name}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{formatDate(m.date)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </>
+  );
+}
+
+function OrdersTab({ orders, loading }: { orders: Order[]; loading: boolean }) {
+  const { isMobile, viewMode, setViewMode } = useMobileListView("bo-panel-orders");
+  const pendingOrders = orders.filter((o) => o.status === "pendiente");
+  const approvedOrders = orders.filter((o) => o.status === "aprobado");
+  const rejectedOrders = orders.filter((o) => o.status === "rechazado");
+  const activeOrders = orders.filter((o) => o.status === "pendiente" || o.status === "aprobado");
+
+  const ordersByStatus = (() => {
+    const counts: Record<string, number> = {};
+    for (const o of orders) {
+      const label = ORDER_STATUS_LABEL[o.status] ?? o.status;
+      counts[label] = (counts[label] ?? 0) + 1;
+    }
+    return Object.entries(counts).map(([name, value]) => ({ name, value }));
+  })();
+
+  const ordersByRoom = (() => {
+    const counts: Record<string, number> = {};
+    for (const o of orders) {
+      if (o.status === "rechazado") continue;
+      const room = o.room || "Sin sala";
+      counts[room] = (counts[room] ?? 0) + 1;
+    }
+    return Object.entries(counts).map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value).slice(0, 8);
+  })();
+
+  return (
+    <>
+      <div className="grid gap-4 sm:grid-cols-3">
+        {[
+          { label: "Pendientes", value: String(pendingOrders.length), icon: ClipboardList, hint: "Pedidos sin procesar" },
+          { label: "Aprobados", value: String(approvedOrders.length), icon: CheckCircle2, hint: "Pedidos aprobados listos para despachar" },
+          { label: "Rechazados", value: String(rejectedOrders.length), icon: XCircle, hint: "Pedidos rechazados",
+            tone: rejectedOrders.length > 0 ? "warning" as const : undefined },
+        ].map((s) => (
+          <Card key={s.label} className="border-border/60">
+            <CardContent className="p-5">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{s.label}</p>
+                  <p className="mt-2 text-3xl font-semibold tracking-tight">{s.value}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{s.hint}</p>
+                </div>
+                <div className={`flex h-9 w-9 items-center justify-center rounded-md ${
+                  s.tone === "warning" ? "bg-warning/15 text-warning" : "bg-primary-soft text-primary"
+                }`}>
+                  <s.icon className="h-4 w-4" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader><CardTitle className="flex items-center gap-2 text-base">
+            <Clock className="h-4 w-4 text-primary" /> Pedidos por estado
+          </CardTitle></CardHeader>
+          <CardContent>
+            {ordersByStatus.length === 0 ? (
+              <p className="py-10 text-center text-sm text-muted-foreground">Sin pedidos.</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={ordersByStatus} margin={{ left: -10, right: 10, top: 5, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                  <Tooltip contentStyle={{ borderRadius: "0.5rem" }} />
+                  <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                    {ordersByStatus.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle className="flex items-center gap-2 text-base">
+            <ClipboardList className="h-4 w-4 text-primary" /> Pedidos por sala
+          </CardTitle></CardHeader>
+          <CardContent>
+            {ordersByRoom.length === 0 ? (
+              <p className="py-10 text-center text-sm text-muted-foreground">Sin pedidos activos por sala.</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={260}>
+                <PieChart>
+                  <Pie data={ordersByRoom} dataKey="value" nameKey="name"
+                    cx="50%" cy="50%" innerRadius={50} outerRadius={90} paddingAngle={2}>
+                    {ordersByRoom.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                  </Pie>
+                  <Tooltip contentStyle={{ borderRadius: "0.5rem" }} />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+            {ordersByRoom.length > 0 && (
+              <div className="mt-2 flex flex-wrap justify-center gap-3">
+                {ordersByRoom.slice(0, 5).map((r, i) => (
+                  <div key={r.name} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }} />
+                    {r.name}: {r.value}
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+      <Card className="mt-6">
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <ClipboardList className="h-4 w-4 text-primary" /> Pedidos activos
+            {activeOrders.length > 0 && <Badge variant="secondary" className="ml-1 text-xs">{activeOrders.length}</Badge>}
+          </CardTitle>
+          {isMobile && <MobileViewToggle value={viewMode} onChange={setViewMode} />}
+        </CardHeader>
+        <CardContent className="px-0">
+          {activeOrders.length === 0 ? (
+            <p className="px-6 py-10 text-center text-sm text-muted-foreground">No hay pedidos activos.</p>
+          ) : isMobile && viewMode === "cards" ? (
+            <div className="space-y-3 px-4 pb-4">
+              {activeOrders.slice(0, 10).map((o) => (
+                <Card key={o.id} className="shadow-sm">
+                  <CardContent className="space-y-1.5 p-4 text-xs text-muted-foreground">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-sm font-semibold text-foreground">{o.patient}</p>
+                      <Badge variant="outline" className={`capitalize ${ORDER_BADGE_COLOR[o.status] ?? ""}`}>
+                        {ORDER_STATUS_LABEL[o.status] ?? o.status}
+                      </Badge>
+                    </div>
+                    <p>Medicamento: <span className="font-medium text-foreground">{medName(o.medication_id)}</span></p>
+                    <p>Cantidad: <span className="font-medium text-foreground">{o.quantity} u</span></p>
+                    <p>Doctor: {o.doctor} · Sala: {o.room}</p>
+                    <p>Solicitud: {formatDate(o.requested_at)}</p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Paciente</TableHead>
+                  <TableHead>Medicamento</TableHead>
+                  <TableHead className="text-right">Cant.</TableHead>
+                  <TableHead>Doctor</TableHead>
+                  <TableHead>Sala</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead>Solicitud</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {activeOrders.slice(0, 10).map((o) => (
+                  <TableRow key={o.id}>
+                    <TableCell className="font-medium">{o.patient}</TableCell>
+                    <TableCell>{medName(o.medication_id)}</TableCell>
+                    <TableCell className="text-right font-semibold">{o.quantity}</TableCell>
+                    <TableCell className="text-muted-foreground">{o.doctor}</TableCell>
+                    <TableCell className="text-muted-foreground">{o.room}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={`capitalize ${ORDER_BADGE_COLOR[o.status] ?? ""}`}>
+                        {ORDER_STATUS_LABEL[o.status] ?? o.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{formatDate(o.requested_at)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </>
+  );
+}
+
+function TransfersTab({ transfers, loading }: { transfers: Transfer[]; loading: boolean }) {
+  const { isMobile, viewMode, setViewMode } = useMobileListView("bo-panel-transfers");
+  const activeTransfers = transfers.filter((t) => !["aceptado", "rechazado"].includes(t.status));
+  const toReceiveTransfers = transfers.filter((t) => t.status === "recibir" || t.status === "despachado");
+  const todayStr = new Date().toDateString();
+  const completedToday = transfers.filter(
+    (t) => (t.status === "aceptado" || t.status === "rechazado") && new Date(t.date).toDateString() === todayStr,
+  ).length;
+
+  const transferPipeline = (() => {
+    const counts: Record<string, number> = {};
+    for (const t of transfers) {
+      const label = TRANSFER_STATUS_LABEL[t.status] ?? t.status;
+      counts[label] = (counts[label] ?? 0) + 1;
+    }
+    const order = ["Solicitado", "Autorizado", "Despachado", "A recibir", "Recibido", "Aceptado", "Rechazado"];
+    return order.filter((s) => counts[s]).map((name) => ({ name, value: counts[name] ?? 0 }));
+  })();
+
+  const transfersByDestination = (() => {
+    const counts: Record<string, number> = {};
+    for (const t of transfers) {
+      const name = warehouseName(t.to_warehouse_id);
+      counts[name] = (counts[name] ?? 0) + 1;
+    }
+    return Object.entries(counts).map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+  })();
+
+  return (
+    <>
+      <div className="grid gap-4 sm:grid-cols-3">
+        {[
+          { label: "Transferencias activas", value: String(activeTransfers.length), icon: ArrowLeftRight,
+            hint: activeTransfers.length === 0 ? "Sin transferencias en curso" : "Solicitadas o en tránsito" },
+          { label: "Pendientes de recepción", value: String(toReceiveTransfers.length), icon: PackageCheck,
+            hint: "Despachadas o listas para recibir",
+            tone: toReceiveTransfers.length > 0 ? "warning" as const : undefined },
+          { label: "Completadas hoy", value: String(completedToday), icon: CircleCheckBig, hint: "Aceptadas o rechazadas en el día" },
+        ].map((s) => (
+          <Card key={s.label} className="border-border/60">
+            <CardContent className="p-5">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{s.label}</p>
+                  <p className="mt-2 text-3xl font-semibold tracking-tight">{s.value}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{s.hint}</p>
+                </div>
+                <div className={`flex h-9 w-9 items-center justify-center rounded-md ${
+                  s.tone === "warning" ? "bg-warning/15 text-warning" : "bg-primary-soft text-primary"
+                }`}>
+                  <s.icon className="h-4 w-4" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader><CardTitle className="flex items-center gap-2 text-base">
+            <ArrowLeftRight className="h-4 w-4 text-primary" /> Pipeline de transferencias
+          </CardTitle></CardHeader>
+          <CardContent>
+            {transferPipeline.length === 0 ? (
+              <p className="py-10 text-center text-sm text-muted-foreground">Sin transferencias.</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={transferPipeline} margin={{ left: -10, right: 10, top: 5, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                  <Tooltip contentStyle={{ borderRadius: "0.5rem" }} />
+                  <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                    {transferPipeline.map((entry) => (
+                      <Cell key={entry.name} fill={PIPELINE_COLORS[entry.name.toLowerCase()] ?? "var(--color-chart-1)"} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle className="flex items-center gap-2 text-base">
+            <PackageCheck className="h-4 w-4 text-primary" /> Transferencias por destino
+          </CardTitle></CardHeader>
+          <CardContent>
+            {transfersByDestination.length === 0 ? (
+              <p className="py-10 text-center text-sm text-muted-foreground">Sin transferencias.</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={260}>
+                <PieChart>
+                  <Pie data={transfersByDestination} dataKey="value" nameKey="name"
+                    cx="50%" cy="50%" innerRadius={50} outerRadius={90} paddingAngle={2}>
+                    {transfersByDestination.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                  </Pie>
+                  <Tooltip contentStyle={{ borderRadius: "0.5rem" }} />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+            {transfersByDestination.length > 0 && (
+              <div className="mt-2 flex flex-wrap justify-center gap-3">
+                {transfersByDestination.slice(0, 5).map((d, i) => (
+                  <div key={d.name} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }} />
+                    {d.name}: {d.value}
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+      <Card className="mt-6">
+        <CardHeader className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <ArrowLeftRight className="h-4 w-4 text-primary" /> Transferencias activas
+          </CardTitle>
+          {isMobile && <MobileViewToggle value={viewMode} onChange={setViewMode} />}
+        </CardHeader>
+        <CardContent className="px-0">
+          {activeTransfers.length === 0 ? (
+            <p className="px-6 py-10 text-center text-sm text-muted-foreground">Sin transferencias activas.</p>
+          ) : isMobile && viewMode === "cards" ? (
+            <div className="space-y-3 px-4 pb-4">
+              {activeTransfers.map((t) => (
+                <Card key={t.id} className="shadow-sm">
+                  <CardContent className="space-y-1.5 p-4 text-xs text-muted-foreground">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-sm font-semibold text-foreground">{medName(t.medication_id)}</p>
+                      <span className="font-mono text-[10px]">{t.transfer_code ?? "—"}</span>
+                    </div>
+                    <p>Origen: {warehouseName(t.from_warehouse_id)} → Destino: {warehouseName(t.to_warehouse_id)}</p>
+                    <div className="flex items-center justify-between">
+                      <span>Cantidad: <span className="font-medium text-foreground">{t.quantity} u</span></span>
+                      <Badge variant="outline" className={`capitalize ${TRANSFER_BADGE_COLOR[t.status] ?? ""}`}>
+                        {TRANSFER_STATUS_LABEL[t.status] ?? t.status}
+                      </Badge>
+                    </div>
+                    <p>Solicitó: {t.requested_by} · {formatDate(t.date)}</p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Código</TableHead>
+                  <TableHead>Medicamento</TableHead>
+                  <TableHead>Origen</TableHead>
+                  <TableHead>Destino</TableHead>
+                  <TableHead className="text-right">Cantidad</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead>Solicitó</TableHead>
+                  <TableHead>Fecha</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {activeTransfers.map((t) => (
+                  <TableRow key={t.id}>
+                    <TableCell className="font-mono text-xs font-medium">{t.transfer_code ?? "—"}</TableCell>
+                    <TableCell className="font-medium">{medName(t.medication_id)}</TableCell>
+                    <TableCell className="text-muted-foreground">{warehouseName(t.from_warehouse_id)}</TableCell>
+                    <TableCell className="text-muted-foreground">{warehouseName(t.to_warehouse_id)}</TableCell>
+                    <TableCell className="text-right font-semibold">{t.quantity}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={`capitalize ${TRANSFER_BADGE_COLOR[t.status] ?? ""}`}>
+                        {TRANSFER_STATUS_LABEL[t.status] ?? t.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{t.requested_by}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{formatDate(t.date)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </>
+  );
+}
+
+const RISK_LABEL: Record<string, string> = {
+  critico: "Crítico",
+  bajo: "Bajo",
+  optimo: "Óptimo",
+  superavit: "Superávit",
+  sin_stock: "Sin stock",
+  sin_consumo: "Sin consumo",
+};
+
+const RISK_COLOR: Record<string, string> = {
+  critico: "bg-destructive/10 text-destructive border-destructive/30",
+  bajo: "bg-warning/10 text-warning border-warning/30",
+  optimo: "bg-success/10 text-success border-success/30",
+  superavit: "bg-primary-soft text-primary border-primary/20",
+  sin_stock: "bg-muted text-muted-foreground border-border",
+  sin_consumo: "bg-muted text-muted-foreground border-border",
+};
+
+function TrendsTab({ trends, loading, periodDays }: { trends: TrendItem[]; loading: boolean; periodDays: number }) {
+  const categories = ["critico", "bajo", "optimo", "superavit", "sin_stock", "sin_consumo"] as const;
+  const counts = categories.reduce(
+    (acc, cat) => {
+      acc[cat] = trends.filter((t) => t.risk_category === cat).length;
+      return acc;
+    },
+    {} as Record<string, number>,
+  );
+
+  const cardInfo = [
+    { key: "critico", label: "Críticos", icon: AlertTriangle, value: counts.critico, hint: "Se agotan en menos de 30 días", tone: "destructive" as const },
+    { key: "bajo", label: "Bajos", icon: CalendarClock, value: counts.bajo, hint: "30 a 60 días de stock", tone: "warning" as const },
+    { key: "optimo", label: "Óptimos", icon: CheckCircle2, value: counts.optimo, hint: "60 a 120 días de stock", tone: "success" as const },
+    { key: "superavit", label: "Superávit", icon: TrendingUp, value: counts.superavit, hint: "Más de 120 días de stock", tone: "primary" as const },
+  ];
+
+  return (
+    <>
+      <div className="mb-3 text-xs text-muted-foreground">
+        Consumo promedio diario calculado con datos de los últimos <span className="font-semibold">{periodDays} días</span>.
+        {typeof import.meta !== "undefined" && import.meta.env?.TRENDS_PERIOD_DAYS && <span> Variable de entorno <code className="rounded bg-muted px-1">TRENDS_PERIOD_DAYS</code>={periodDays}.</span>}
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-4">
+        {cardInfo.map((c) => (
+          <Card key={c.key} className="border-border/60">
+            <CardContent className="p-5">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{c.label}</p>
+                  <p className="mt-2 text-3xl font-semibold tracking-tight">{c.value}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{c.hint}</p>
+                </div>
+                <div className={`flex h-9 w-9 items-center justify-center rounded-md ${
+                  c.tone === "destructive" ? "bg-destructive/10 text-destructive" :
+                  c.tone === "warning" ? "bg-warning/15 text-warning" :
+                  c.tone === "success" ? "bg-success/15 text-success" :
+                  "bg-primary-soft text-primary"
+                }`}>
+                  <c.icon className="h-4 w-4" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <BarChart3 className="h-4 w-4 text-primary" /> Proyección de stock por medicamento
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-0">
+          {loading ? (
+            <p className="px-6 py-10 text-center text-sm text-muted-foreground">Calculando tendencias…</p>
+          ) : trends.length === 0 ? (
+            <p className="px-6 py-10 text-center text-sm text-muted-foreground">Sin datos de consumo en el período.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Medicamento</TableHead>
+                  <TableHead className="text-right">Stock actual</TableHead>
+                  <TableHead className="text-right">Consumo/día</TableHead>
+                  <TableHead className="text-right">Días restantes</TableHead>
+                  <TableHead>Riesgo</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {trends.map((t) => (
+                  <TableRow key={t.medication_id}>
+                    <TableCell className="font-medium">{t.medication_name}</TableCell>
+                    <TableCell className="text-right font-semibold">{t.stock_total.toLocaleString("es-AR")}</TableCell>
+                    <TableCell className="text-right text-muted-foreground">{t.consumed_per_day.toFixed(2)}</TableCell>
+                    <TableCell className="text-right font-semibold">
+                      {t.days_until_empty !== null ? (
+                        t.days_until_empty < 365 ? (
+                          `${Math.floor(t.days_until_empty)} días`
+                        ) : (
+                          "> 1 año"
+                        )
+                      ) : (
+                        "—"
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={`capitalize ${RISK_COLOR[t.risk_category] ?? ""}`}>
+                        {RISK_LABEL[t.risk_category] ?? t.risk_category}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </>
+  );
+}

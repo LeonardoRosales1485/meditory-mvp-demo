@@ -348,7 +348,7 @@ function CatalogPage() {
                 value={form.salePrice}
                 onChange={(e) => setForm({ ...form, salePrice: Number(e.target.value) })}
               />
-              <p className="text-xs text-muted-foreground">Lista de precios del workspace; las ventas guardan el valor vigente al momento de registrar.</p>
+              <p className="text-xs text-muted-foreground">Lista de precios de la Institución; las ventas guardan el valor vigente al momento de registrar.</p>
             </div>
             <DialogFooter>
               <Button type="submit" disabled={saving}>

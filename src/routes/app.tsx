@@ -1,10 +1,16 @@
 import { createFileRoute, Outlet, useNavigate } from "@tanstack/react-router";
-import { useEffect } from "react";
-import { LogOut, User } from "lucide-react";
+import { useEffect, useState } from "react";
+import { LogOut, MessageSquareMore, User } from "lucide-react";
 
 import { AppSidebar } from "@/components/app-sidebar";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,6 +20,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
+import { WorkspaceAssistantChat } from "@/components/workspace-assistant-chat";
 import { WarehouseProvider } from "@/lib/warehouse-context";
 import { useWarehouse } from "@/lib/warehouse-context";
 import { syncUserAndFetchWorkspaceAfterRehydrate, useStore } from "@/lib/store";
@@ -23,7 +30,7 @@ import { ROLE_DISPLAY } from "@/lib/store";
 export const Route = createFileRoute("/app")({
   head: () => ({
     meta: [
-      { title: "Meditory — Workspace" },
+      { title: "Meditory — Institución" },
       { name: "description", content: "Gestión de inventario farmacéutico." },
     ],
   }),
@@ -54,6 +61,7 @@ function AppShell() {
   const session = useStore((s) => s.session);
   const logout = useStore((s) => s.logout);
   const navigate = useNavigate();
+  const [chatOpen, setChatOpen] = useState(false);
 
   const handleLogout = () => {
     logout();
@@ -90,6 +98,36 @@ function AppShell() {
           </main>
         </div>
       </div>
+
+      {/* Floating AI assistant button */}
+      <button
+        type="button"
+        onClick={() => setChatOpen(true)}
+        className="fixed bottom-5 right-5 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform hover:scale-105 active:scale-95"
+        aria-label="Abrir asistente IA"
+      >
+        <MessageSquareMore className="h-5 w-5" />
+      </button>
+
+      <Dialog open={chatOpen} onOpenChange={setChatOpen}>
+        <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <MessageSquareMore className="h-4 w-4 text-primary" />
+              Asistente Meditory
+            </DialogTitle>
+          </DialogHeader>
+          <WorkspaceAssistantChat
+            snapshotInput={{
+              batches: useStore.getState().batches,
+              medications: useStore.getState().medications,
+              warehouses: useStore.getState().warehouses,
+              transfers: useStore.getState().transfers,
+              workspaceName: session?.workspaceName ?? "",
+            }}
+          />
+        </DialogContent>
+      </Dialog>
     </SidebarProvider>
   );
 }

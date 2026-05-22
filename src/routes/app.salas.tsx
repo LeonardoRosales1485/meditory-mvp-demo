@@ -386,7 +386,7 @@ function SalasPage() {
       {showLoading ? (
         <WorkspaceLoadingPlaceholder
           title="Cargando salas"
-          description="Sincronizando alas, salas y camas del workspace…"
+          description="Sincronizando alas, salas y camas de la Institución…"
         />
       ) : (
         <>

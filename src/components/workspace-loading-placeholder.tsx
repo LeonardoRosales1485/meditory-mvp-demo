@@ -7,7 +7,7 @@ type Props = {
 
 export function WorkspaceLoadingPlaceholder({
   title = "Cargando",
-  description = "Obteniendo datos del workspace…",
+  description = "Obteniendo datos de la Institución…",
 }: Props) {
   return (
     <div

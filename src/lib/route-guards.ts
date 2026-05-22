@@ -51,6 +51,18 @@ export function requireAdminOrDoctor() {
   }
 }
 
+export function requireBackofficeAuth() {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = sessionStorage.getItem("meditory-backoffice");
+    if (!raw) throw redirect({ to: "/backoffice/login" });
+    const session = JSON.parse(raw);
+    if (!session?.email) throw redirect({ to: "/backoffice/login" });
+  } catch {
+    throw redirect({ to: "/backoffice/login" });
+  }
+}
+
 export function requireAdminOrVentas() {
   if (typeof window === "undefined") return;
   const session = readSession();

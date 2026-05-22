@@ -8,7 +8,7 @@ export function useMobileListView(routeKey: string) {
   const [viewMode, setViewMode] = useState<MobileListViewMode>("table");
 
   useEffect(() => {
-    const media = window.matchMedia("(max-width: 640px)");
+    const media = window.matchMedia("(max-width: 768px)");
     const apply = () => setIsMobile(media.matches);
     apply();
     media.addEventListener("change", apply);

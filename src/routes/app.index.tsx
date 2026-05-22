@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useState } from "react";
 import {
   Package,
   AlertTriangle,
@@ -6,10 +7,14 @@ import {
   ShoppingCart,
   TrendingUp,
   Clock,
+  BarChart3,
+  LayoutDashboard,
 } from "lucide-react";
 
+import { AppRealtimePanel } from "@/components/app-realtime-panel";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { ExpiryBadge } from "@/components/expiry-badge";
 import { StatusBadge } from "@/components/status-badge";
 import { WorkspaceLoadingPlaceholder } from "@/components/workspace-loading-placeholder";
@@ -22,6 +27,7 @@ export const Route = createFileRoute("/app/")({
 });
 
 function Dashboard() {
+  const [view, setView] = useState<"general" | "analitica">("general");
   const { warehouseIds } = useWarehouse();
   const session = useStore((s) => s.session);
   const workspaceDataLoading = useStore((s) => s.workspaceDataLoading);
@@ -72,8 +78,29 @@ function Dashboard() {
     <div>
       <PageHeader
         title="Panel general"
-        description={`Resumen operativo del workspace ${session?.workspaceName ?? ""}.`}
+        description={`Resumen operativo de la Institución ${session?.workspaceName ?? ""}.`}
       />
+      <div className="mb-6 flex gap-2">
+        <Button
+          variant={view === "general" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setView("general")}
+        >
+          <LayoutDashboard className="mr-1.5 h-4 w-4" />
+          Vista general
+        </Button>
+        <Button
+          variant={view === "analitica" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setView("analitica")}
+        >
+          <BarChart3 className="mr-1.5 h-4 w-4" />
+          Vista analítica
+        </Button>
+      </div>
+
+      {view === "general" ? (
+        <>
       {showInitialLoading ? (
         <WorkspaceLoadingPlaceholder
           title="Cargando panel"
@@ -215,6 +242,10 @@ function Dashboard() {
         </CardContent>
       </Card>
         </>
+      )}
+        </>
+      ) : (
+        <AppRealtimePanel />
       )}
     </div>
   );

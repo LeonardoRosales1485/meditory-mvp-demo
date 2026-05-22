@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
+import { MobileViewToggle } from "@/components/mobile-view-toggle";
 import { PageHeader } from "@/components/page-header";
 import { WorkspaceLoadingPlaceholder } from "@/components/workspace-loading-placeholder";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { medConc, type Medication } from "@/lib/domain-types";
+import { useMobileListView } from "@/lib/use-mobile-list-view";
 import { requireAdminOrVentas } from "@/lib/route-guards";
 import { useStore } from "@/lib/store";
 
@@ -138,6 +140,7 @@ function ListaPreciosPage() {
   const medications = useStore((s) => s.medications);
   const workspaceDataLoading = useStore((s) => s.workspaceDataLoading);
   const [listaPrecioDraftByMedId, setListaPrecioDraftByMedId] = useState<Record<string, string>>({});
+  const { isMobile, viewMode, setViewMode } = useMobileListView("app-lista-precios");
 
   const medicationsSorted = useMemo(
     () =>
@@ -159,7 +162,7 @@ function ListaPreciosPage() {
       {showLoading ? (
         <WorkspaceLoadingPlaceholder
           title="Cargando catálogo"
-          description="Sincronizando medicamentos y precios del workspace…"
+          description="Sincronizando medicamentos y precios de la Institución…"
         />
       ) : (
         <Card>
@@ -173,47 +176,107 @@ function ListaPreciosPage() {
             </p>
           </CardHeader>
           <CardContent className="px-0">
-            <div className="overflow-x-auto px-4 pb-4 sm:px-6">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Medicamento</TableHead>
-                    <TableHead className="hidden sm:table-cell">Concentración</TableHead>
-                    <TableHead className="hidden md:table-cell">Forma</TableHead>
-                    <TableHead className="w-[140px]">Venta mostrador</TableHead>
-                    <TableHead className="text-right">Precio venta ($)</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {medicationsSorted.length === 0 ? (
+            {isMobile && (
+              <div className="px-4 pb-3 pt-1">
+                <MobileViewToggle value={viewMode} onChange={setViewMode} />
+              </div>
+            )}
+            {isMobile && viewMode === "cards" ? (
+              <div className="space-y-3 px-4 pb-4">
+                {medicationsSorted.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-muted-foreground">
+                    No hay medicamentos en el catálogo de este workspace.
+                  </p>
+                ) : (
+                  medicationsSorted.map((m) => {
+                    const inputValue = listaPrecioDraftByMedId[m.id] ?? String(m.salePrice);
+                    const canEdit = role === "admin";
+                    const saleOn = m.saleEnabled !== false;
+                    return (
+                      <Card key={m.id} className="shadow-sm">
+                        <CardContent className="space-y-2 p-4 text-xs text-muted-foreground">
+                          <p className="text-sm font-semibold text-foreground">{m.name}</p>
+                          <p>{medConc(m)} · {m.form}</p>
+                          <div className="flex items-center gap-2">
+                            <span>Venta mostrador:</span>
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 rounded border border-input accent-primary disabled:cursor-not-allowed disabled:opacity-50"
+                              checked={saleOn}
+                              disabled={!canEdit}
+                              aria-label={`Venta en mostrador: ${m.name}`}
+                            />
+                            <span>{saleOn ? "Sí" : "No"}</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span>Precio:</span>
+                            {canEdit ? (
+                              <div className="flex items-center gap-2">
+                                <span className="text-muted-foreground">$</span>
+                                <Input
+                                  className="h-8 w-24 text-right tabular-nums"
+                                  inputMode="decimal"
+                                  value={inputValue}
+                                  onChange={(e) =>
+                                    setListaPrecioDraftByMedId((prev) => ({ ...prev, [m.id]: e.target.value }))
+                                  }
+                                />
+                              </div>
+                            ) : (
+                              <span className="tabular-nums font-semibold text-foreground">
+                                ${Number(m.salePrice).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })
+                )}
+              </div>
+            ) : (
+              <div className="overflow-x-auto px-4 pb-4 sm:px-6">
+                <Table>
+                  <TableHeader>
                     <TableRow>
-                      <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
-                        No hay medicamentos en el catálogo de este workspace.
-                      </TableCell>
+                      <TableHead>Medicamento</TableHead>
+                      <TableHead className="hidden sm:table-cell">Concentración</TableHead>
+                      <TableHead className="hidden md:table-cell">Forma</TableHead>
+                      <TableHead className="w-[140px]">Venta mostrador</TableHead>
+                      <TableHead className="text-right">Precio venta ($)</TableHead>
                     </TableRow>
-                  ) : (
-                    medicationsSorted.map((m) => (
-                      <ListaPrecioRow
-                        key={m.id}
-                        m={m}
-                        canEdit={role === "admin"}
-                        inputValue={listaPrecioDraftByMedId[m.id] ?? String(m.salePrice)}
-                        onInputValueChange={(v) =>
-                          setListaPrecioDraftByMedId((prev) => ({ ...prev, [m.id]: v }))
-                        }
-                        onSavedToServer={(medicationId) =>
-                          setListaPrecioDraftByMedId((prev) => {
-                            const next = { ...prev };
-                            delete next[medicationId];
-                            return next;
-                          })
-                        }
-                      />
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {medicationsSorted.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
+                          No hay medicamentos en el catálogo de este workspace.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      medicationsSorted.map((m) => (
+                        <ListaPrecioRow
+                          key={m.id}
+                          m={m}
+                          canEdit={role === "admin"}
+                          inputValue={listaPrecioDraftByMedId[m.id] ?? String(m.salePrice)}
+                          onInputValueChange={(v) =>
+                            setListaPrecioDraftByMedId((prev) => ({ ...prev, [m.id]: v }))
+                          }
+                          onSavedToServer={(medicationId) =>
+                            setListaPrecioDraftByMedId((prev) => {
+                              const next = { ...prev };
+                              delete next[medicationId];
+                              return next;
+                            })
+                          }
+                        />
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

@@ -151,7 +151,7 @@ function Receipts() {
     <div>
       <PageHeader
         title="Ingreso de mercadería"
-        description={`Registrar nuevas compras. Workspace: ${session?.workspaceName ?? "—"}`}
+        description={`Registrar nuevas compras. Institución: ${session?.workspaceName ?? "—"}`}
         action={
           <Button variant="outline" onClick={() => setMedDialog(true)} disabled={workspaceDataLoading && catalogMedications.length === 0}>
             <FlaskConical className="mr-2 h-4 w-4" />

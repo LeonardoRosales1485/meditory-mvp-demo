@@ -12,6 +12,8 @@ lerna-debug.log*
 *.seed
 *.pid.lock
 
+ai-plans/
+
 node_modules
 dist
 dist-ssr

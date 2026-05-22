@@ -105,7 +105,7 @@ function LoginPage() {
 
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Acceso a workspace</CardTitle>
+            <CardTitle className="text-base">Acceso a Institución</CardTitle>
           </CardHeader>
           <CardContent className="space-y-5">
             {/* Demo quick-access */}

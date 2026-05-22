@@ -321,7 +321,7 @@ function UsuariosPage() {
               <div className="max-h-40 space-y-2 overflow-auto rounded-md border p-2">
                 {warehouses.length === 0 ? (
                   <p className="text-xs text-muted-foreground">
-                    No hay depósitos creados en el workspace.
+                    No hay depósitos creados en la Institución.
                   </p>
                 ) : (
                   warehouses.map((warehouse) => {

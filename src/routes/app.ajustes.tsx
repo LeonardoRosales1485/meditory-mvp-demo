@@ -411,7 +411,7 @@ function AdjustmentsPage() {
                   </div>
                   {showEmptyHistory && (
                     <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
-                      Todavía no hay ajustes registrados en este workspace.
+                      Todavía no hay ajustes registrados en esta Institución.
                     </div>
                   )}
                   {showEmptyHistoryFiltered && (
@@ -470,7 +470,7 @@ function AdjustmentsPage() {
                       {showEmptyHistory && (
                         <TableRow>
                           <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
-                            Todavía no hay ajustes registrados en este workspace.
+                            Todavía no hay ajustes registrados en esta Institución.
                           </TableCell>
                         </TableRow>
                       )}

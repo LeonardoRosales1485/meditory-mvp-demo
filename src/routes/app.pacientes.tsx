@@ -266,7 +266,7 @@ function PacientesPage() {
       <div className="flex flex-col items-start justify-between gap-3 sm:flex-row">
         <div>
           <h1 className="text-xl font-semibold">Pacientes</h1>
-          <p className="text-sm text-muted-foreground">ABM básico de pacientes del workspace.</p>
+          <p className="text-sm text-muted-foreground">ABM básico de pacientes de la Institución.</p>
         </div>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
           <Button variant="secondary" onClick={() => setInternmentOpen(true)} className="w-full sm:w-auto">
@@ -314,7 +314,7 @@ function PacientesPage() {
               {filteredRows.length === 0 ? (
                 <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
                   {sortedPatients.length === 0
-                    ? "Todavía no hay pacientes registrados en este workspace."
+                    ? "Todavía no hay pacientes registrados en esta Institución."
                     : "Ningún paciente coincide con la búsqueda. Probá con otro texto o limpiá el filtro."}
                 </div>
               ) : (
@@ -397,7 +397,7 @@ function PacientesPage() {
                     <TableRow>
                       <TableCell colSpan={7} className="h-28 text-center text-sm text-muted-foreground">
                         {sortedPatients.length === 0
-                          ? "Todavía no hay pacientes registrados en este workspace."
+                          ? "Todavía no hay pacientes registrados en esta Institución."
                           : "Ningún paciente coincide con la búsqueda."}
                       </TableCell>
                     </TableRow>

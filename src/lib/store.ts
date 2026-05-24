@@ -255,7 +255,7 @@ export const useStore = create<State>()(
       user: { name: "L. Rosales", role: "Admin cliente" },
       session: null,
       workspaceDataLoading: false,
-      aiProvider: "groq",
+      aiProvider: "zen",
       setAiProvider: (provider) => set({ aiProvider: provider }),
       chatMessages: [],
       setChatMessages: (messages) => set({ chatMessages: messages.slice(-20) }),
@@ -590,6 +590,14 @@ export const useStore = create<State>()(
     }),
     {
       name: "meditory-store",
+      version: 1,
+      migrate: (persisted) => {
+        const p = persisted as { aiProvider?: string };
+        if (p.aiProvider === "groq") {
+          return { ...p, aiProvider: "zen" };
+        }
+        return persisted;
+      },
       partialize: (s) => ({ session: s.session, aiProvider: s.aiProvider, chatMessages: s.chatMessages }),
     },
   ),

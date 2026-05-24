@@ -6,7 +6,7 @@ import {
 } from "recharts";
 import { Download } from "lucide-react";
 import { toast } from "sonner";
-import { downloadChartAsPng } from "@/lib/utils";
+import { downloadChartAsPng, downloadElementAsPng } from "@/lib/utils";
 import type { ChartSpec } from "@/lib/assistant-tools";
 
 const COLORS = [
@@ -23,16 +23,7 @@ export function ChartRenderer({ spec, height = 260 }: { spec: ChartSpec; height?
       await downloadChartAsPng(chartRef.current, `chart-${title ?? "grafico"}`);
     } catch {
       try {
-        const mod = await import("html2canvas");
-        if (!mod?.default) { toast.error("Error al cargar el generador de imagen"); return; }
-        const scale = Math.min(window.devicePixelRatio || 1, 1.5);
-        const canvas = await mod.default(chartRef.current, { scale, useCORS: true, allowTaint: false });
-        const link = document.createElement("a");
-        link.download = `chart-${(title ?? "grafico").replace(/\s+/g, "-").toLowerCase()}.png`;
-        link.href = canvas.toDataURL("image/png");
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        await downloadElementAsPng(chartRef.current, `chart-${title ?? "grafico"}`);
       } catch {
         toast.error("No se pudo descargar el gráfico", { description: "Ocurrió un error al generar la imagen." });
       }

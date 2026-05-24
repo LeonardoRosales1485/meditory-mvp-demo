@@ -1882,3 +1882,27 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
     return;
   }
 }
+
+export async function updateStockConfig(
+  actor: string,
+  workspaceId: string,
+  medicationId: string,
+  warehouseId: string,
+  minStock: number,
+  optimalStock: number,
+): Promise<void> {
+  await assertMedicationActiveForWorkspace(workspaceId, medicationId);
+  const wh = await getWarehouseById(warehouseId);
+  if (!wh || wh.workspace_id !== workspaceId) throw new Error("El depósito no pertenece a esta institución");
+  const user = await resolveActorUser(workspaceId, actor);
+  if (user.role !== "admin") throw new Error("Solo administradores pueden modificar la configuración de stock");
+  const { error } = await supabaseAdmin
+    .from("medication_stock_config")
+    .upsert({
+      medication_id: medicationId,
+      warehouse_id: warehouseId,
+      min_stock: minStock,
+      optimal_stock: optimalStock,
+    }, { onConflict: "medication_id,warehouse_id" });
+  if (error) throw new Error(`Error al actualizar: ${error.message}`);
+}

@@ -23,7 +23,7 @@ async function downloadCanvas(canvas: HTMLCanvasElement, filename: string): Prom
 }
 
 export async function downloadChartAsPng(container: HTMLElement, filename: string): Promise<void> {
-  const svgEl = container.querySelector<SVGSVGElement>("svg.recharts-surface") ?? container.querySelector<SVGSVGElement>("svg");
+  const svgEl = container.querySelector<SVGSVGElement>("svg.recharts-surface");
   if (svgEl) {
     const rect = svgEl.getBoundingClientRect();
     const width = rect?.width ?? 600;
@@ -56,7 +56,9 @@ export async function downloadChartAsPng(container: HTMLElement, filename: strin
     return;
   }
 
-  const canvas = await captureElement(container);
+  const contentEl = container.querySelector<HTMLElement>("[data-chart-content]");
+  const target = contentEl ?? container;
+  const canvas = await captureElement(target);
   await downloadCanvas(canvas, filename);
 }
 

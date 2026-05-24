@@ -21,6 +21,7 @@ import {
 import { StockCrossTable } from "@/components/stock-cross-table";
 import { LossCalculator } from "@/components/loss-calculator";
 import { WarehouseVolumeSection } from "@/components/warehouse-volume-card";
+import { StockConfigDialog } from "@/components/stock-config-dialog";
 import type { CrossHospitalMedStock, LossCalculationResult, WarehouseVolumeItem, ConsumptionDataPoint } from "@/lib/server/backoffice-service";
 
 export const Route = createFileRoute("/backoffice/estado-hospital")({
@@ -58,6 +59,16 @@ function EstadoHospitalPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const dashboardRef = useRef<HTMLDivElement>(null);
+  const [editConfig, setEditConfig] = useState<{
+    medicationId: string;
+    warehouseId: string;
+    medicationName: string;
+    warehouseName: string;
+    workspaceName: string;
+    qty: number;
+    min: number;
+    opt: number;
+  } | null>(null);
 
   const fetchData = async () => {
     setLoading(true);
@@ -176,21 +187,20 @@ function EstadoHospitalPage() {
       <div id="section-charts">
         <h2 className="text-lg font-semibold mb-4">Análisis Visual</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <StackedBarChart crossStock={crossStock} workspaces={workspaces} delay={0} />
-          <StockDonutChart workspaces={workspaces} delay={0.06} />
-          <HospitalRadarChart workspaces={workspaces} delay={0.12} />
-          <ConsumptionAreaChart data={consumptionData} delay={0.18} />
-          <TopMedsHorizontalChart crossStock={crossStock} delay={0.04} />
-          <StockVsDemandChart crossStock={crossStock} delay={0.1} />
-          <StockTreemap crossStock={crossStock} delay={0} />
-          <StockHeatmap crossStock={crossStock} workspaceNames={workspaceNames} delay={0.06} />
+          <StackedBarChart crossStock={crossStock} workspaces={workspaces} />
+          <StockDonutChart workspaces={workspaces} />
+          <HospitalRadarChart workspaces={workspaces} />
+          <ConsumptionAreaChart data={consumptionData} />
+          <TopMedsHorizontalChart crossStock={crossStock} />
+          <StockVsDemandChart crossStock={crossStock} />
+          <StockTreemap crossStock={crossStock} />
+          <StockHeatmap crossStock={crossStock} workspaceNames={workspaceNames} />
           <LossSankeyChart
             totalStock={totalUnits}
             lossAmount={lossData.totalLossWithoutTransfers}
             savingAmount={lossData.totalSavingWithTransfers}
-            delay={0.12}
           />
-          <CapacityDonutChart warehouses={warehouseSummary} delay={0.18} />
+          <CapacityDonutChart warehouses={warehouseSummary} />
         </div>
       </div>
 
@@ -200,6 +210,9 @@ function EstadoHospitalPage() {
           data={crossStock}
           workspaceNames={workspaceNames}
           onExportPdf={handleExportPdf}
+          onEditConfig={(medicationId, warehouseId, medicationName, workspaceName, qty, min, opt) =>
+            setEditConfig({ medicationId, warehouseId, medicationName, warehouseName: workspaceName, workspaceName, qty, min, opt })
+          }
         />
       </div>
 
@@ -215,6 +228,31 @@ function EstadoHospitalPage() {
       <div id="section-warehouses">
         <WarehouseVolumeSection warehouses={volumeData} />
       </div>
+
+      {editConfig && (
+        <StockConfigDialog
+          open={!!editConfig}
+          onOpenChange={(open) => { if (!open) setEditConfig(null); }}
+          medicationName={editConfig.medicationName}
+          warehouseName={editConfig.warehouseName}
+          workspaceName={editConfig.workspaceName}
+          currentMin={editConfig.min}
+          currentOpt={editConfig.opt}
+          currentQty={editConfig.qty}
+          onSave={async (minStock, optimalStock) => {
+            const { backofficeUpdateStockConfigRpc } = await import("@/lib/server-rpc");
+            await backofficeUpdateStockConfigRpc({
+              data: {
+                medicationId: editConfig.medicationId,
+                warehouseId: editConfig.warehouseId,
+                minStock,
+                optimalStock,
+              },
+            });
+            await fetchData();
+          }}
+        />
+      )}
     </div>
   );
 }

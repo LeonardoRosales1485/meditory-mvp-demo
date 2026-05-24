@@ -3,6 +3,8 @@ import { useNavigate } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import { BarChart3, Bot, Loader2, Send, StopCircle } from "lucide-react";
 import { toast } from "sonner";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 import { Button } from "@/components/ui/button";
 import { ChartRenderer } from "@/components/chart-renderer";
@@ -594,14 +596,6 @@ export function WorkspaceAssistantChat({
     }
   }, [pendingTransfer, createTransfer]);
 
-  function renderText(text: string) {
-    return text.split(/(\*\*.*?\*\*)/g).map((part, i) =>
-      part.startsWith("**") && part.endsWith("**")
-        ? <strong key={i}>{part.slice(2, -2)}</strong>
-        : part
-    );
-  }
-
   return (
     <div className="flex min-h-[420px] flex-col gap-3">
       <div className="min-h-[280px] max-h-[min(55vh,520px)] flex-1 space-y-3 overflow-y-auto rounded-md border bg-muted/20 p-3">
@@ -658,9 +652,22 @@ export function WorkspaceAssistantChat({
                     : "bg-muted rounded-bl-sm"
                 }`}
               >
-                {msg.content.split("\n").map((line, j) => (
-                  <span key={j}>{renderText(line)}{j < msg.content.split("\n").length - 1 && <br />}</span>
-                ))}
+                {msg.role === "user" ? (
+                  msg.content
+                ) : (
+                  <div className="prose prose-sm dark:prose-invert max-w-none
+                    [&_table]:border-collapse [&_td]:border [&_th]:border
+                    [&_td]:px-2 [&_th]:px-2 [&_td]:py-1 [&_th]:py-1
+                    [&_tr]:border [&_hr]:my-2 [&_blockquote]:border-l-2
+                    [&_blockquote]:pl-2 [&_blockquote]:opacity-80
+                    [&_pre]:bg-black/5 [&_pre]:dark:bg-white/5
+                    [&_pre]:rounded [&_pre]:p-2 [&_code]:text-xs"
+                  >
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {msg.content}
+                    </ReactMarkdown>
+                  </div>
+                )}
               </div>
             </motion.div>
           );
@@ -671,7 +678,11 @@ export function WorkspaceAssistantChat({
               <Bot size={12} className="text-primary" />
             </div>
             <div className="max-w-[95%] rounded-2xl rounded-bl-sm px-3 py-2 text-sm bg-muted leading-relaxed">
-              <span className="whitespace-pre-wrap break-words">{streamingText || ""}</span>
+              <div className="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap break-words">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {streamingText || ""}
+                </ReactMarkdown>
+              </div>
               <span className="inline-block w-1 h-3 ml-0.5 bg-primary animate-pulse rounded" />
             </div>
           </motion.div>

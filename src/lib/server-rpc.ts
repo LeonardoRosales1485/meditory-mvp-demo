@@ -261,3 +261,32 @@ export const backofficeGetAssistantFullSnapshotRpc = createServerFn({ method: "G
   .handler(async () => {
     return getAssistantFullSnapshot();
   });
+
+export const backofficeUpdateStockConfigRpc = createServerFn({ method: "POST" })
+  .inputValidator((data: {
+    medicationId: string;
+    warehouseId: string;
+    minStock: number;
+    optimalStock: number;
+  }) => data)
+  .handler(async ({ data }) => {
+    const { updateStockConfig } = await import("@/lib/server/backoffice-service");
+    await updateStockConfig(data.medicationId, data.warehouseId, data.minStock, data.optimalStock);
+    return { ok: true };
+  });
+
+export const updateStockConfigRpc = createServerFn({ method: "POST" })
+  .inputValidator((data: {
+    actor: string;
+    workspaceId: string;
+    medicationId: string;
+    warehouseId: string;
+    minStock: number;
+    optimalStock: number;
+  }) => data)
+  .handler(async ({ data }) => {
+    const { updateStockConfig } = await import("@/lib/server/workspace-service");
+    await updateStockConfig(data.actor, data.workspaceId, data.medicationId,
+      data.warehouseId, data.minStock, data.optimalStock);
+    return { ok: true };
+  });

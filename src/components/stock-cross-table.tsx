@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Download, Search } from "lucide-react";
+import { Download, Search, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { CrossHospitalMedStock } from "@/lib/server/backoffice-service";
@@ -9,6 +9,7 @@ interface StockCrossTableProps {
   data: CrossHospitalMedStock[];
   workspaceNames: string[];
   onExportPdf?: () => void;
+  onEditConfig?: (medicationId: string, warehouseId: string, medicationName: string, workspaceName: string, qty: number, min: number, opt: number) => void;
 }
 
 function cellClass(qty: number, minStock: number, optimalStock: number): string {
@@ -19,36 +20,51 @@ function cellClass(qty: number, minStock: number, optimalStock: number): string 
   return "bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300";
 }
 
-function StockCell({ qty, minStock, optimalStock }: { qty: number; minStock: number; optimalStock: number }) {
+function StockCell({ qty, minStock, optimalStock, medicationId, warehouseId, medicationName, workspaceName, onEditConfig }: {
+  qty: number; minStock: number; optimalStock: number;
+  medicationId?: string; warehouseId?: string; medicationName?: string; workspaceName?: string;
+  onEditConfig?: (medicationId: string, warehouseId: string, medicationName: string, workspaceName: string, qty: number, min: number, opt: number) => void;
+}) {
   const [showTooltip, setShowTooltip] = useState(false);
   const cls = cellClass(qty, minStock, optimalStock);
   const diff = qty - optimalStock;
 
   return (
     <td className="px-3 py-1.5 text-right relative">
-      <div
-        className={`rounded px-2 py-0.5 text-xs font-medium cursor-default ${cls}`}
-        onMouseEnter={() => setShowTooltip(true)}
-        onMouseLeave={() => setShowTooltip(false)}
-      >
-        {qty.toLocaleString("es-AR")}
-        {showTooltip && (
-          <div className="absolute right-0 top-full z-50 w-44 bg-popover border rounded-lg shadow-lg p-2 text-xs text-left mt-1">
-            <p className="font-semibold mb-1 text-foreground">Detalles</p>
-            <p className="text-muted-foreground">Actual: <span className="text-foreground font-medium">{qty.toLocaleString("es-AR")}</span></p>
-            <p className="text-muted-foreground">Mínimo: <span className="text-foreground font-medium">{minStock.toLocaleString("es-AR")}</span></p>
-            <p className="text-muted-foreground">Óptimo: <span className="text-foreground font-medium">{optimalStock.toLocaleString("es-AR")}</span></p>
-            <p className={`font-medium mt-1 ${diff >= 0 ? "text-blue-600" : "text-red-600"}`}>
-              {diff >= 0 ? `+${diff.toLocaleString("es-AR")} superávit` : `${diff.toLocaleString("es-AR")} déficit`}
-            </p>
-          </div>
+      <div className="flex items-center justify-end gap-1">
+        <div
+          className={`rounded px-2 py-0.5 text-xs font-medium cursor-default ${cls}`}
+          onMouseEnter={() => setShowTooltip(true)}
+          onMouseLeave={() => setShowTooltip(false)}
+        >
+          {qty.toLocaleString("es-AR")}
+          {showTooltip && (
+            <div className="absolute right-0 top-full z-50 w-44 bg-popover border rounded-lg shadow-lg p-2 text-xs text-left mt-1">
+              <p className="font-semibold mb-1 text-foreground">Detalles</p>
+              <p className="text-muted-foreground">Actual: <span className="text-foreground font-medium">{qty.toLocaleString("es-AR")}</span></p>
+              <p className="text-muted-foreground">Mínimo: <span className="text-foreground font-medium">{minStock.toLocaleString("es-AR")}</span></p>
+              <p className="text-muted-foreground">Óptimo: <span className="text-foreground font-medium">{optimalStock.toLocaleString("es-AR")}</span></p>
+              <p className={`font-medium mt-1 ${diff >= 0 ? "text-blue-600" : "text-red-600"}`}>
+                {diff >= 0 ? `+${diff.toLocaleString("es-AR")} superávit` : `${diff.toLocaleString("es-AR")} déficit`}
+              </p>
+            </div>
+          )}
+        </div>
+        {onEditConfig && medicationId && warehouseId && (
+          <button
+            onClick={() => onEditConfig(medicationId, warehouseId, medicationName ?? '', workspaceName ?? '', qty, minStock, optimalStock)}
+            className="invisible group-hover:visible p-0.5 rounded hover:bg-muted transition-colors"
+            title="Configurar stock mínimo/óptimo"
+          >
+            <Pencil size={12} className="text-muted-foreground" />
+          </button>
         )}
       </div>
     </td>
   );
 }
 
-export function StockCrossTable({ data, workspaceNames, onExportPdf }: StockCrossTableProps) {
+export function StockCrossTable({ data, workspaceNames, onExportPdf, onEditConfig }: StockCrossTableProps) {
   const [search, setSearch] = useState("");
 
   const filtered = data.filter((m) =>
@@ -105,26 +121,31 @@ export function StockCrossTable({ data, workspaceNames, onExportPdf }: StockCros
             {filtered.map((med, idx) => {
               const total = med.stocks.reduce((s, ws) => s + ws.quantity, 0);
               return (
-                <motion.tr
-                  key={med.medicationName}
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: idx * 0.02 }}
-                  className="border-b last:border-0 hover:bg-muted/40 transition-colors"
-                >
-                  <td className="px-4 py-1.5 font-medium text-sm">{med.medicationName}</td>
-                  {workspaceNames.map((wsName) => {
-                    const stock = med.stocks.find((s) => s.workspaceName === wsName);
-                    if (!stock) return <td key={wsName} className="px-3 py-1.5 text-right text-muted-foreground text-xs">—</td>;
-                    return (
-                      <StockCell
-                        key={wsName}
-                        qty={stock.quantity}
-                        minStock={stock.minStock}
-                        optimalStock={stock.optimalStock}
-                      />
-                    );
-                  })}
+                  <motion.tr
+                    key={med.medicationName}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: idx * 0.02 }}
+                    className="border-b last:border-0 hover:bg-muted/40 transition-colors group"
+                  >
+                    <td className="px-4 py-1.5 font-medium text-sm">{med.medicationName}</td>
+                    {workspaceNames.map((wsName) => {
+                      const stock = med.stocks.find((s) => s.workspaceName === wsName);
+                      if (!stock) return <td key={wsName} className="px-3 py-1.5 text-right text-muted-foreground text-xs">—</td>;
+                      return (
+                        <StockCell
+                          key={wsName}
+                          qty={stock.quantity}
+                          minStock={stock.minStock}
+                          optimalStock={stock.optimalStock}
+                          medicationId={stock.medicationId}
+                          warehouseId={stock.warehouseId}
+                          medicationName={med.medicationName}
+                          workspaceName={wsName}
+                          onEditConfig={onEditConfig}
+                        />
+                      );
+                    })}
                   <td className="px-3 py-1.5 text-right font-bold text-sm">{total.toLocaleString("es-AR")}</td>
                 </motion.tr>
               );

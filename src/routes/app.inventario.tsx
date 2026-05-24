@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ExpiryBadge } from "@/components/expiry-badge";
+import { StockConfigDialog } from "@/components/stock-config-dialog";
 import {
   Select,
   SelectContent,
@@ -81,6 +82,18 @@ function Inventory() {
   const batches = useStore((s) => s.batches);
   const medications = useStore((s) => s.medications);
   const workspaceDataLoading = useStore((s) => s.workspaceDataLoading);
+  const session = useStore((s) => s.session);
+  const isAdmin = session?.role === "admin";
+  const [editConfig, setEditConfig] = useState<{
+    medicationId: string;
+    medicationName: string;
+    warehouseId: string;
+    warehouseName: string;
+    workspaceName: string;
+    qty: number;
+    min: number;
+    opt: number;
+  } | null>(null);
 
   const medicationIdsInScope = useMemo(() => {
     const ids = new Set<string>();
@@ -330,23 +343,49 @@ function Inventory() {
                               {medConc(row.med)} · {row.med.form}
                             </p>
                           </div>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="shrink-0 text-xs"
-                            onClick={() => {
-                              setMedicationFilter(row.med.id);
-                              setInventoryTab("lotes");
-                              void navigate({
-                                to: "/app/inventario",
-                                search: { medicamento: row.med.id },
-                                replace: true,
-                              });
-                            }}
-                          >
-                            Ver lotes
-                          </Button>
+                          <div className="flex gap-2">
+                            {isAdmin && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="shrink-0 text-xs"
+                                onClick={() => {
+                                  const whId = warehouseIds[0] ?? '';
+                                  const wh = warehouses.find((w) => w.id === whId);
+                                  setEditConfig({
+                                    medicationId: row.med.id,
+                                    medicationName: row.med.name,
+                                    warehouseId: whId,
+                                    warehouseName: wh?.name ?? 'Depósito',
+                                    workspaceName: session?.workspaceName ?? '',
+                                    qty: row.total,
+                                    min: 0,
+                                    opt: 0,
+                                  });
+                                }}
+                              >
+                                Config. stock
+                              </Button>
+                            )}
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="shrink-0 text-xs"
+                              onClick={() => {
+                                setMedicationFilter(row.med.id);
+                                setInventoryTab("lotes");
+                                void navigate({
+                                  to: "/app/inventario",
+                                  search: { medicamento: row.med.id },
+                                  replace: true,
+                                });
+                              }}
+                            >
+                              Ver lotes
+                            </Button>
+                          </div>
                         </div>
                         <p className="text-sm">
                           <span className="text-muted-foreground">Total: </span>
@@ -462,6 +501,33 @@ function Inventory() {
           )}
         </CardContent>
       </Card>
+
+      {editConfig && (
+        <StockConfigDialog
+          open={!!editConfig}
+          onOpenChange={(open) => { if (!open) setEditConfig(null); }}
+          medicationName={editConfig.medicationName}
+          warehouseName={editConfig.warehouseName}
+          workspaceName={editConfig.workspaceName}
+          currentMin={editConfig.min}
+          currentOpt={editConfig.opt}
+          currentQty={editConfig.qty}
+          onSave={async (minStock, optimalStock) => {
+            const { updateStockConfigRpc } = await import("@/lib/server-rpc");
+            await updateStockConfigRpc({
+              data: {
+                actor: session?.name ?? '',
+                workspaceId: session?.workspaceId ?? '',
+                medicationId: editConfig.medicationId,
+                warehouseId: editConfig.warehouseId,
+                minStock,
+                optimalStock,
+              },
+            });
+            setEditConfig(null);
+          }}
+        />
+      )}
     </div>
   );
 }

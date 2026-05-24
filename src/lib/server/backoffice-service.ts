@@ -251,6 +251,8 @@ export interface CrossHospitalMedStock {
   medicationName: string;
   salePrice: number;
   stocks: {
+    medicationId: string;
+    warehouseId: string;
     workspaceId: string;
     workspaceName: string;
     quantity: number;
@@ -279,6 +281,7 @@ export async function getCrossHospitalStock(): Promise<CrossHospitalMedStock[]> 
 
   // Agrupar stock por (medicación, workspace)
   const stockByMedWorkspace = new Map<string, Map<string, number>>();
+  const whByMedWorkspace = new Map<string, Map<string, Set<string>>>();
   for (const batch of batches) {
     const wsId = warehouseMap.get(batch.warehouse_id);
     if (!wsId) continue;
@@ -286,6 +289,9 @@ export async function getCrossHospitalStock(): Promise<CrossHospitalMedStock[]> 
     if (!stockByMedWorkspace.has(key)) stockByMedWorkspace.set(key, new Map());
     const wsMap = stockByMedWorkspace.get(key)!;
     wsMap.set(wsId, (wsMap.get(wsId) ?? 0) + batch.quantity);
+    if (!whByMedWorkspace.has(key)) whByMedWorkspace.set(key, new Map());
+    if (!whByMedWorkspace.get(key)!.has(wsId)) whByMedWorkspace.get(key)!.set(wsId, new Set());
+    whByMedWorkspace.get(key)!.get(wsId)!.add(batch.warehouse_id);
   }
 
   // Agrupar stock_config por (medicación, workspace)
@@ -320,7 +326,12 @@ export async function getCrossHospitalStock(): Promise<CrossHospitalMedStock[]> 
       const quantity = stockByMedWorkspace.get(med.id)?.get(ws.id) ?? 0;
       const cfg = cfgByMedWorkspace.get(med.id)?.get(ws.id) ?? { min: 0, opt: 0 };
 
+      const whIds = whByMedWorkspace.get(med.id)?.get(ws.id);
+      const warehouseId = whIds ? [...whIds][0] ?? '' : '';
+
       wsStocks.push({
+        medicationId: med.id,
+        warehouseId,
         workspaceId: ws.id,
         workspaceName: ws.name,
         quantity,
@@ -600,6 +611,23 @@ export async function seedWorkspaceDemo(workspaceId: string, workspaceName: stri
   }
 
   await seedFullDemoWorkspace(workspaceId as typeof KNOWN[number]);
+}
+
+export async function updateStockConfig(
+  medicationId: string,
+  warehouseId: string,
+  minStock: number,
+  optimalStock: number,
+): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from("medication_stock_config")
+    .upsert({
+      medication_id: medicationId,
+      warehouse_id: warehouseId,
+      min_stock: minStock,
+      optimal_stock: optimalStock,
+    }, { onConflict: "medication_id,warehouse_id" });
+  if (error) throw new Error(`Error al actualizar configuración: ${error.message}`);
 }
 
 // ─── Known demo hospitals (023_reset_repopulate.sql) ─────────────────────

@@ -1,6 +1,9 @@
 import { motion } from "framer-motion";
-import { Warehouse } from "lucide-react";
+import { Warehouse, Download } from "lucide-react";
+import { useRef } from "react";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { downloadElementAsPng } from "@/lib/utils";
 import type { WarehouseVolumeItem } from "@/lib/server/backoffice-service";
 
 function ProgressBar({ pct, delay = 0 }: { pct: number; delay?: number }) {
@@ -50,6 +53,17 @@ interface WarehouseVolumeCardProps {
 }
 
 export function WarehouseVolumeSection({ warehouses }: WarehouseVolumeCardProps) {
+  const sectionRef = useRef<HTMLDivElement>(null);
+
+  async function handleDownloadImage() {
+    if (!sectionRef.current) return;
+    try {
+      await downloadElementAsPng(sectionRef.current, "capacidad-depositos");
+    } catch {
+      toast.error("No se pudo descargar la imagen");
+    }
+  }
+
   const byWorkspace = warehouses.reduce<Record<string, WarehouseVolumeItem[]>>((acc, wh) => {
     if (!acc[wh.workspaceName]) acc[wh.workspaceName] = [];
     acc[wh.workspaceName].push(wh);
@@ -62,11 +76,20 @@ export function WarehouseVolumeSection({ warehouses }: WarehouseVolumeCardProps)
   );
 
   return (
-    <div>
-      <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
-        <Warehouse size={18} className="text-muted-foreground" />
-        Capacidad por Depósito
-      </h3>
+    <div ref={sectionRef}>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-semibold text-base flex items-center gap-2">
+          <Warehouse size={18} className="text-muted-foreground" />
+          Capacidad por Depósito
+        </h3>
+        <button
+          onClick={handleDownloadImage}
+          className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-muted"
+          title="Descargar imagen"
+        >
+          <Download size={14} />
+        </button>
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {sorted.map((wsName, wsIdx) => {
           const whs = byWorkspace[wsName] ?? [];

@@ -34,16 +34,7 @@ function ChartCard({ title, children, delay = 0 }: { title: string; children: Re
       await downloadChartAsPng(cardRef.current, `chart-${title}`);
     } catch {
       try {
-        const mod = await import("html2canvas");
-        if (!mod?.default) { toast.error("Error al cargar el generador de imagen"); return; }
-        const scale = Math.min(window.devicePixelRatio || 1, 1.5);
-        const canvas = await mod.default(cardRef.current, { scale, useCORS: true, allowTaint: false });
-        const link = document.createElement("a");
-        link.download = `chart-${title.replace(/\s+/g, "-").toLowerCase()}.png`;
-        link.href = canvas.toDataURL("image/png");
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        await downloadElementAsPng(cardRef.current, `chart-${title}`);
       } catch {
         toast.error("No se pudo descargar el gráfico", { description: "Ocurrió un error al generar la imagen." });
       }
@@ -69,7 +60,7 @@ function ChartCard({ title, children, delay = 0 }: { title: string; children: Re
             <Download size={14} />
           </button>
         </CardHeader>
-        <CardContent className="pt-0">{children}</CardContent>
+        <CardContent className="pt-0"><div data-chart-content>{children}</div></CardContent>
       </Card>
     </motion.div>
   );

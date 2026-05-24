@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { TrendingDown, TrendingUp, ArrowRight, RefreshCw } from "lucide-react";
+import { TrendingDown, TrendingUp, ArrowRight, RefreshCw, FileDown } from "lucide-react";
+import { jsPDF } from "jspdf";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import type { LossCalculationResult } from "@/lib/server/backoffice-service";
 
 interface LossCalculatorProps {
@@ -34,6 +36,59 @@ export function LossCalculator({ lossData, medicationNames }: LossCalculatorProp
   const totalSaving = filtered.reduce((s, m) => s + m.potentialSaving, 0);
   const effectiveLoss = showTransfers ? totalLoss - totalSaving : totalLoss;
 
+  function handleDownloadPdf() {
+    try {
+      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+      const pageW = doc.internal.pageSize.getWidth();
+      let y = 20;
+
+      doc.setFillColor(99, 102, 241);
+      doc.rect(0, 0, pageW, 40, "F");
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(18);
+      doc.setFont("helvetica", "bold");
+      doc.text("Calculadora de Pérdidas por Licitación", pageW / 2, 18, { align: "center" });
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      doc.text("Meditory — Sistema de Gestión Farmacéutica", pageW / 2, 28, { align: "center" });
+      doc.text(`Generado: ${new Date().toLocaleDateString("es-AR")}`, pageW / 2, 35, { align: "center" });
+
+      y = 52;
+      doc.setTextColor(30, 30, 30);
+
+      doc.setFillColor(254, 243, 199);
+      doc.roundedRect(14, y, pageW - 28, 28, 3, 3, "F");
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "bold");
+      doc.text("Resumen", 20, y + 8);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.text(`Pérdida actual (sin transfers): $${effectiveLoss.toLocaleString("es-AR")}`, 20, y + 16);
+      doc.setTextColor(34, 197, 94);
+      doc.text(`Ahorro potencial con transfers: $${totalSaving.toLocaleString("es-AR")}`, 20, y + 22);
+      doc.setTextColor(30, 30, 30);
+
+      y += 40;
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "bold");
+      doc.text("Detalle por medicamento", 14, y);
+      y += 8;
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      for (const item of filtered) {
+        if (y > 270) { doc.addPage(); y = 20; }
+        doc.text(`${item.medicationName}: ${item.surplusHospital} +${item.surplusQuantity} → ${item.deficitHospital} -${item.deficitQuantity}  -$${item.currentLoss.toLocaleString("es-AR")}`, 14, y);
+        y += 5;
+      }
+
+      doc.save(`perdidas-licitacion-${new Date().toISOString().slice(0, 10)}.pdf`);
+    } catch (e) {
+      console.error("Error generating loss PDF:", e);
+      toast.error("No se pudo generar el PDF");
+    }
+  }
+
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -51,6 +106,9 @@ export function LossCalculator({ lossData, medicationNames }: LossCalculatorProp
                 ))}
               </SelectContent>
             </Select>
+            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={handleDownloadPdf}>
+              <FileDown size={12} className="mr-1" />PDF
+            </Button>
             <Button
               variant={showTransfers ? "default" : "outline"}
               size="sm"

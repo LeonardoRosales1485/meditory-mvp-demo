@@ -205,14 +205,15 @@ export function generateStockReportPdf(data: StockReportData): void {
 
 export async function generateDashboardSnapshotPdf(elementId: string): Promise<void> {
   try {
-    const mod = await import("html2canvas");
-    if (!mod?.default) { console.error("html2canvas not available"); return; }
-    const html2canvas = mod.default;
+    const domtoimage = (await import("dom-to-image-more")) as unknown as {
+      toCanvas: (node: HTMLElement, options?: Record<string, unknown>) => Promise<HTMLCanvasElement>;
+    };
     const element = document.getElementById(elementId);
     if (!element) { console.error("Element not found:", elementId); return; }
 
     const scale = Math.min(window.devicePixelRatio || 1, 1.5);
-    const canvas = await html2canvas(element, { scale, useCORS: true, allowTaint: false });
+    const canvas = await domtoimage.toCanvas(element, { scale });
+
     const imgData = canvas.toDataURL("image/png");
 
     const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });

@@ -1,9 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { motion } from "framer-motion";
-import { Activity, RefreshCw, BarChart3, Table, Calculator, Warehouse } from "lucide-react";
+import { Activity, RefreshCw, BarChart3, Table, Calculator, Warehouse, Filter } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { KpiRow } from "@/components/dashboard-kpi-cards";
 import {
   StackedBarChart,
@@ -70,6 +71,8 @@ function EstadoHospitalPage() {
     opt: number;
   } | null>(null);
 
+  const [selectedWs, setSelectedWs] = useState<string>("__all__");
+
   const fetchData = async () => {
     setLoading(true);
     setError("");
@@ -89,6 +92,43 @@ function EstadoHospitalPage() {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
   }, []);
 
+  // ── Filter state (always called – same hook order on every render) ──
+  const workspaces: WorkspaceStat[] = data?.dashboardData?.workspaces ?? [];
+  const selectedWsName = selectedWs === "__all__" ? null : workspaces.find((ws) => ws.id === selectedWs)?.name ?? null;
+
+  const filteredCrossStock = useMemo(() => {
+    if (!data || selectedWs === "__all__") return (data?.crossStock ?? []) as CrossHospitalMedStock[];
+    return (data.crossStock as CrossHospitalMedStock[])
+      .map((m) => ({
+        ...m,
+        stocks: m.stocks.filter((s) => s.workspaceName === selectedWsName),
+      }))
+      .filter((m) => m.stocks.length > 0) as CrossHospitalMedStock[];
+  }, [data, selectedWs, selectedWsName]);
+
+  const filteredVolumeData = useMemo(() => {
+    if (!data || selectedWs === "__all__") return (data?.volumeData ?? []) as WarehouseVolumeItem[];
+    return (data.volumeData as WarehouseVolumeItem[]).filter((v) => v.workspaceName === selectedWsName);
+  }, [data, selectedWs, selectedWsName]);
+
+  const filteredConsumptionData = useMemo(() => {
+    if (!data || selectedWs === "__all__") return (data?.consumptionData ?? []) as ConsumptionDataPoint[];
+    return (data.consumptionData as ConsumptionDataPoint[]).filter((c) => c.workspaceName === selectedWsName);
+  }, [data, selectedWs, selectedWsName]);
+
+  const filteredWorkspaces = useMemo(() => {
+    if (!data || selectedWs === "__all__") return workspaces;
+    return workspaces.filter((ws) => ws.id === selectedWs);
+  }, [data, selectedWs, workspaces]);
+
+  const filteredWorkspaceNames = filteredWorkspaces.map((ws) => ws.name);
+  const filteredWarehouseSummary = filteredVolumeData.slice(0, 9).map((wh) => ({ name: wh.name, pct: wh.occupancyPct }));
+  const filteredTotalUnits = filteredWorkspaces.reduce((s, ws) => s + ws.totalUnits, 0);
+  const filteredCriticalMeds = filteredCrossStock.filter((m) =>
+    m.stocks.some((s) => s.minStock > 0 && s.quantity < s.minStock)
+  ).length;
+
+  // ── Early returns (no new hooks below this line) ──
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
@@ -117,17 +157,9 @@ function EstadoHospitalPage() {
   if (!data) return null;
 
   const { crossStock, lossData, volumeData, consumptionData, dashboardData } = data;
-  const workspaces: WorkspaceStat[] = dashboardData.workspaces ?? [];
-  const workspaceNames = workspaces.map((ws) => ws.name);
-
-  const totalUnits = workspaces.reduce((s, ws) => s + ws.totalUnits, 0);
-  const alemanWs = workspaces.find((ws) => ws.id === "ws-aleman");
-  const alemanUnits = alemanWs?.totalUnits ?? 0;
-  const criticalMeds = crossStock.filter((m) =>
-    m.stocks.some((ws) => ws.minStock > 0 && ws.quantity < ws.minStock)
-  ).length;
-
-  const warehouseSummary = volumeData.slice(0, 9).map((wh) => ({ name: wh.name, pct: wh.occupancyPct }));
+  const topWs = [...workspaces].sort((a, b) => b.totalUnits - a.totalUnits)[0];
+  const topWsUnits = topWs?.totalUnits ?? 0;
+  const topWsName = topWs?.name ?? "Hospital";
 
   const handleExportPdf = async () => {
     try {
@@ -148,12 +180,28 @@ function EstadoHospitalPage() {
             Estado general
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Visión consolidada de los 3 hospitales · Actualizado ahora
+            {selectedWs === "__all__" ? "Visión consolidada de los 3 hospitales" : selectedWsName} · Actualizado ahora
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={fetchData} className="gap-1.5">
-          <RefreshCw size={14} /> Actualizar
-        </Button>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
+            <Filter className="h-4 w-4 text-muted-foreground" />
+            <Select value={selectedWs} onValueChange={setSelectedWs}>
+              <SelectTrigger className="h-8 w-[200px] text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">Todos los hospitales</SelectItem>
+                {workspaces.map((ws) => (
+                  <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button variant="outline" size="sm" onClick={fetchData} className="gap-1.5">
+            <RefreshCw size={14} /> Actualizar
+          </Button>
+        </div>
       </div>
 
       {/* Navegación rápida */}
@@ -175,11 +223,13 @@ function EstadoHospitalPage() {
       {/* KPIs */}
       <div id="section-kpis">
         <KpiRow
-        totalUnits={totalUnits}
+        totalUnits={filteredTotalUnits}
         lossWithoutTransfers={lossData.totalLossWithoutTransfers}
         savingWithTransfers={lossData.totalSavingWithTransfers}
-        criticalMeds={criticalMeds}
-        alemanUnits={alemanUnits}
+        criticalMeds={filteredCriticalMeds}
+        topWsUnits={selectedWs === "__all__" ? topWsUnits : filteredTotalUnits}
+        topWsName={topWsName}
+        selectedWorkspaceName={selectedWsName}
       />
       </div>
 
@@ -187,28 +237,28 @@ function EstadoHospitalPage() {
       <div id="section-charts">
         <h2 className="text-lg font-semibold mb-4">Análisis Visual</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <StackedBarChart crossStock={crossStock} workspaces={workspaces} />
-          <StockDonutChart workspaces={workspaces} />
-          <HospitalRadarChart workspaces={workspaces} />
-          <ConsumptionAreaChart data={consumptionData} />
-          <TopMedsHorizontalChart crossStock={crossStock} />
-          <StockVsDemandChart crossStock={crossStock} />
-          <StockTreemap crossStock={crossStock} />
-          <StockHeatmap crossStock={crossStock} workspaceNames={workspaceNames} />
+          <StackedBarChart crossStock={filteredCrossStock} workspaces={filteredWorkspaces} />
+          <StockDonutChart workspaces={filteredWorkspaces} />
+          <HospitalRadarChart workspaces={filteredWorkspaces} />
+          <ConsumptionAreaChart data={filteredConsumptionData} />
+          <TopMedsHorizontalChart crossStock={filteredCrossStock} />
+          <StockVsDemandChart crossStock={filteredCrossStock} />
+          <StockTreemap crossStock={filteredCrossStock} />
+          <StockHeatmap crossStock={filteredCrossStock} workspaceNames={filteredWorkspaceNames} />
           <LossSankeyChart
-            totalStock={totalUnits}
+            totalStock={filteredTotalUnits}
             lossAmount={lossData.totalLossWithoutTransfers}
             savingAmount={lossData.totalSavingWithTransfers}
           />
-          <CapacityDonutChart warehouses={warehouseSummary} />
+          <CapacityDonutChart warehouses={filteredWarehouseSummary} />
         </div>
       </div>
 
       {/* Tabla Stock Cruzado */}
       <div id="section-stock-table">
         <StockCrossTable
-          data={crossStock}
-          workspaceNames={workspaceNames}
+          data={filteredCrossStock}
+          workspaceNames={filteredWorkspaceNames}
           onExportPdf={handleExportPdf}
           onEditConfig={(medicationId, warehouseId, medicationName, workspaceName, qty, min, opt) =>
             setEditConfig({ medicationId, warehouseId, medicationName, warehouseName: workspaceName, workspaceName, qty, min, opt })
@@ -226,7 +276,7 @@ function EstadoHospitalPage() {
 
       {/* Depósitos por capacidad */}
       <div id="section-warehouses">
-        <WarehouseVolumeSection warehouses={volumeData} />
+        <WarehouseVolumeSection warehouses={filteredVolumeData} />
       </div>
 
       {editConfig && (

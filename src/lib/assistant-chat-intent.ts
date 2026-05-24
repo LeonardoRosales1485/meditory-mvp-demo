@@ -61,6 +61,38 @@ export function isQuantityQuestionWithoutNavIntent(userText: string): boolean {
   return asksHowMuch || asksHay || asksDisponible;
 }
 
+/** Detecta si el usuario quiere iniciar un flujo de venta */
+export function isSaleIntent(userText: string): boolean {
+  const t = normalizeIntentText(userText);
+  return (
+    /\b(quiero vender|vender|vende|venda|vendi|venta|cobrar|cobrame|cobrarle)\b/.test(t) ||
+    /\b(registrar\s+(una\s+)?venta|hacer\s+(una\s+)?venta|facturar)\b/.test(t)
+  );
+}
+
+/** Detecta si el usuario quiere iniciar un flujo de dispensación */
+export function isDispensationIntent(userText: string): boolean {
+  const t = normalizeIntentText(userText);
+  return (
+    /\b(dispensar|dispensa|dispensame|entregar\s+medicacion|administrar\s+medicacion)\b/.test(t) ||
+    /\b(dar\s+medicamento|darle\s+medicamento|suministrar)\b/.test(t)
+  );
+}
+
+/** Detecta si el usuario quiere iniciar un flujo de pedido */
+export function isOrderIntent(userText: string): boolean {
+  const t = normalizeIntentText(userText);
+  return (
+    /\b(pedir\s+medicacion|solicitar\s+medicacion|crear\s+(un\s+)?pedido|hacer\s+(un\s+)?pedido)\b/.test(t) ||
+    /\b(necesito\s+medicacion|requiero|solicito)\b/.test(t)
+  );
+}
+
+/** Detecta si el usuario está en medio de un workflow (respondiendo a una pregunta del asistente) */
+export function isWorkflowResponse(activeWorkflowId: string | null): boolean {
+  return activeWorkflowId !== null;
+}
+
 /** Respuesta del modelo sin cifras útiles (p. ej. solo "Listo" o solo aviso de navegación). */
 export function isWeakModelStockReply(visibleText: string): boolean {
   const t = visibleText.replace(/\n\n_[\s\S]*$/s, "").trim();

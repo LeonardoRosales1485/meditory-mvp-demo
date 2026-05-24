@@ -15,7 +15,7 @@ function BackofficeConfigAsistentePage() {
 
   const providerInfo = aiProvider === "groq"
     ? { model: "llama-3.3-70b-versatile", icon: Globe, desc: "Groq (principal)" }
-    : { model: "big-pickle / minimax-m2.5-free", icon: Brain, desc: "OpenCode Zen (fallback gratuito)" };
+    : { model: "deepseek-v4-flash-free", icon: Brain, desc: "OpenCode Zen (fallback gratuito)" };
 
   const Icon = providerInfo.icon;
 

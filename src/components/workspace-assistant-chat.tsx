@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "framer-motion";
-import { BarChart3, Bot, Loader2, Send, StopCircle } from "lucide-react";
+import { BarChart3, Bot, Loader2, Send, StopCircle, Lightbulb, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -23,6 +23,10 @@ import {
   isQuantityQuestionWithoutNavIntent,
   isTransferPipelineInfoQuestion,
   isWeakModelStockReply,
+  isSaleIntent,
+  isDispensationIntent,
+  isOrderIntent,
+  isWorkflowResponse,
 } from "@/lib/assistant-chat-intent";
 import {
   assistantTools,
@@ -36,6 +40,17 @@ import {
   parseListUsersArgs,
   parseCreateUserArgs,
   parseDeleteUserArgs,
+  parseCreateSaleArgs,
+  parseCreateDispensationArgs,
+  parseCreateOrderArgs,
+  parseProcessOrderArgs,
+  parseAdvanceTransferArgs,
+  parseRejectTransferArgs,
+  parseManageMedicationArgs,
+  parseManageWarehouseArgs,
+  parseManagePatientArgs,
+  parseUpdateStockConfigArgs,
+  parseGenerateReportArgs,
   stripBareToolJsonFromAssistantContent,
   validateTransferAgainstBatches,
   type ChartSpec,
@@ -44,7 +59,28 @@ import {
   type AddStockArgs,
   type CreateUserArgs,
   type DeleteUserArgs,
+  type CreateSaleArgs,
+  type CreateDispensationArgs,
+  type CreateOrderArgs,
+  type ProcessOrderArgs,
+  type AdvanceTransferArgs,
+  type RejectTransferArgs,
+  type ManageMedicationArgs,
+  type ManageWarehouseArgs,
+  type ManagePatientArgs,
+  type UpdateStockConfigArgs,
+  type GenerateReportArgs,
 } from "@/lib/assistant-tools";
+import { getTopSuggestions, type Suggestion, type ProactivityInput } from "@/lib/assistant-proactivity";
+import {
+  WORKFLOWS,
+  getCurrentStepPrompt,
+  validateWorkflowStep,
+  advanceWorkflow,
+  type ActiveWorkflow,
+  type WorkflowContext,
+} from "@/lib/assistant-workflows";
+import { generateStockReport, generateExpiriesReport, generateMovementsReport, downloadReport, type ReportData } from "@/lib/assistant-reports";
 import { streamAiChat, type ChatMessage } from "@/lib/ai-chat";
 import { medName, warehouseName } from "@/lib/domain-types";
 import { useStore } from "@/lib/store";
@@ -99,17 +135,29 @@ TONO: hablá siempre en **español** claro, cordial y profesional, como un/a col
 FORMATO: respondé en **prosa** (oraciones). **Nunca** devuelvas solo JSON, bloques de herramienta sueltos ni cadenas tipo \`{"name":"navigate"…};{"name":"create_transfer"…}\`. Si usás datos numéricos, copiá cifras coherentes con el snapshot.
 
 HERRAMIENTAS disponibles:
-1) **navigate** — SOLO si el usuario pidió explícitamente ir, abrir, mostrar o entrar a una pantalla. Rutas internas válidas empiezan con **/app/** (ej. /app/transferencias).
+1) **navigate** — SOLO si el usuario pidió explícitamente ir, abrir, mostrar o entrar a una pantalla.
 2) **create_transfer** — SOLO si el usuario pidió explícitamente "transferir", "mover", "crear transferencia" o "solicitar traslado" entre depósitos.
-3) **render_chart** — SOLO si el usuario pidió explícitamente "mostrar gráfico", "graficar", "chart", "pastel", "barras", "torta". Tipos: bar, pie, area, line. Incluí title y data [{name, value}]. Máximo 20 ítems.
-4) **add_stock** — SOLO si el usuario pidió explícitamente agregar, cargar o aumentar stock. Usá los IDs reales del snapshot. Si un medicamento existe en múltiples lotes/depósitos, preguntar cuál corresponde.
+3) **render_chart** — SOLO si el usuario pidió explícitamente "mostrar gráfico", "graficar", "chart", "pastel", "barras", "torta".
+4) **add_stock** — SOLO si el usuario pidió explícitamente agregar, cargar o aumentar stock.
 5) **list_users** — Cuando el usuario pregunte por usuarios, empleados o personal del hospital.
-6) **create_user** — SOLO si el usuario pidió explícitamente crear/agregar un usuario con nombre, email, rol.
-7) **delete_user** — SOLO si el usuario pidió explícitamente eliminar/borrar un usuario. Requiere confirmación.
+6) **create_user** — SOLO si el usuario pidió explícitamente crear/agregar un usuario.
+7) **delete_user** — SOLO si el usuario pidió explícitamente eliminar/borrar un usuario.
+8) **create_sale** — SOLO si el usuario pidió explícitamente vender, cobrar o facturar un medicamento. Incluir medicationId, warehouseId, quantity, price.
+9) **create_dispensation** — SOLO si el usuario pidió explícitamente dispensar, entregar o administrar medicación a un paciente.
+10) **create_order** — SOLO si el usuario pidió explícitamente pedir, solicitar o crear un pedido de medicación desde una sala.
+11) **process_order** — SOLO si el usuario pidió explícitamente aprobar, despachar, recibir o administrar un pedido existente.
+12) **advance_transfer** — SOLO si el usuario pidió explícitamente autorizar, despachar, recibir o aceptar una transferencia.
+13) **reject_transfer** — SOLO si el usuario pidió explícitamente rechazar, cancelar o devolver una transferencia.
+14) **manage_medication** — SOLO si el usuario pidió explícitamente agregar, crear o editar un medicamento.
+15) **manage_warehouse** — SOLO si el usuario pidió explícitamente agregar, crear o editar un depósito.
+16) **manage_patient** — SOLO si el usuario pidió explícitamente internar, registrar o modificar un paciente.
+17) **update_stock_config** — SOLO si el usuario pidió explícitamente configurar stock mínimo/óptimo.
+18) **generate_report** — SOLO si el usuario pidió explícitamente generar, descargar o exportar un reporte PDF.
+19) **list_users** — Cuando el usuario pregunte por usuarios.
 
 Consultas **solo informativas** (cantidades, listados, estados): respondé con texto desde el snapshot; **no** llames herramientas.
 
-Para agregar stock: usar SIEMPRE la tool add_stock con los IDs del snapshot. Si hay múltiples lotes o depósitos, preguntar en texto cuál corresponde y luego llamar la tool.
+Para acciones con varios pasos (venta, dispensación, pedido): SIEMPRE guiá al usuario paso a paso. Preguntá cada dato de a uno, confirmá antes de ejecutar.
 
 Si no tenés datos suficientes, decilo y sugerí la pantalla correspondiente según el caso.`;
 
@@ -120,12 +168,29 @@ type UiMessage =
   | { role: "action_result"; success: boolean; message: string }
   | { role: "pending_confirm"; label: string; toolName: string; data: unknown };
 
-function buildWorkspaceSystemPrompt(snapshotJson: string, users: { id: string; name: string; email: string; role: string; workspaceId: string }[]): string {
+function buildWorkspaceSystemPrompt(snapshotJson: string, users: { id: string; name: string; email: string; role: string; workspaceId: string }[], snapshotInput: AssistantWorkspaceSnapshotInput): string {
   const usersText = users.length > 0
     ? `\n\n### Usuarios de la institución\n${users.map((u) => `- ${u.name} <${u.email}> rol:${u.role} (id: ${u.id})`).join("\n")}`
     : "";
 
-  return `${SYSTEM_INSTRUCTIONS}\n\n${MODULE_KNOWLEDGE}\n\n### Datos de la institución (IDs para acciones)\n\ninstitucion_snapshot:\n${snapshotJson}${usersText}`;
+  let extra = "";
+  if (snapshotInput.orders && snapshotInput.orders.length > 0) {
+    const pending = snapshotInput.orders.filter((o) => o.status === "pendiente");
+    if (pending.length > 0) {
+      extra += `\n\n### Pedidos pendientes (${pending.length})\n`;
+      extra += pending.slice(0, 5).map((o) =>
+        `- ${snapshotInput.medications.find((m) => m.id === o.medicationId)?.name ?? o.medicationId}: ${o.quantity} u. para ${o.patient} (${o.room}) — estado: ${o.status}`
+      ).join("\n");
+    }
+  }
+  if (snapshotInput.patients && snapshotInput.patients.length > 0) {
+    extra += `\n\n### Pacientes internados (${snapshotInput.patients.length})\n`;
+    extra += snapshotInput.patients.slice(0, 5).map((p) =>
+      `- ${p.firstName} ${p.lastName} — sala: ${p.room} — médico: ${p.assignedDoctor}`
+    ).join("\n");
+  }
+
+  return `${SYSTEM_INSTRUCTIONS}\n\n${MODULE_KNOWLEDGE}\n\n### Datos de la institución (IDs para acciones)\n\ninstitucion_snapshot:\n${snapshotJson}${usersText}${extra}`;
 }
 
 const WELCOME_MSG: UiMessage = { role: "assistant", content: "Hola, soy **Medi**, el asistente del sistema Meditory. Preguntame sobre stock, usuarios, o lo que necesites de la institución actual." };
@@ -215,6 +280,176 @@ async function executeConfirmedAction(
         const args = data as DeleteUserArgs;
         await rpc.backofficeDeleteUserRpc({ data: { id: args.userId } });
         addMsg({ role: "action_result", success: true, message: "Usuario eliminado correctamente." });
+        break;
+      }
+      case "create_sale": {
+        const args = data as CreateSaleArgs;
+        const store = await import("@/lib/store");
+        await store.useStore.getState().addSale({
+          medicationId: args.medicationId,
+          warehouseId: args.warehouseId,
+          quantity: args.quantity,
+          price: args.price,
+          prescription: args.prescription,
+        });
+        addMsg({ role: "action_result", success: true, message: `Venta registrada: ${args.quantity} u. por $${(args.price * args.quantity).toLocaleString("es-AR")}.` });
+        break;
+      }
+      case "create_dispensation": {
+        const args = data as CreateDispensationArgs;
+        const store = await import("@/lib/store");
+        await store.useStore.getState().addDispensation({
+          medicationId: args.medicationId,
+          warehouseId: args.warehouseId,
+          quantity: args.quantity,
+          doctor: args.doctor,
+          patient: args.patient,
+          room: args.room,
+          treatment: args.treatment,
+        });
+        addMsg({ role: "action_result", success: true, message: `Dispensación registrada: ${args.quantity} u. a ${args.patient}.` });
+        break;
+      }
+      case "create_order": {
+        const args = data as CreateOrderArgs;
+        const store = await import("@/lib/store");
+        await store.useStore.getState().createOrder({
+          medicationId: args.medicationId,
+          sourceBatchId: "",
+          warehouseId: args.warehouseId,
+          quantity: args.quantity,
+          patient: args.patient,
+          room: args.room,
+          reason: args.reason,
+          doctorName: args.doctorName,
+        });
+        addMsg({ role: "action_result", success: true, message: `Pedido creado: ${args.quantity} u. para ${args.patient}.` });
+        break;
+      }
+      case "process_order": {
+        const args = data as ProcessOrderArgs;
+        const store = await import("@/lib/store");
+        await store.useStore.getState().processOrder(args.orderId, args.action, args.reason);
+        addMsg({ role: "action_result", success: true, message: `Pedido ${args.action}: ${args.orderId}.` });
+        break;
+      }
+      case "advance_transfer": {
+        const args = data as AdvanceTransferArgs;
+        const store = await import("@/lib/store");
+        await store.useStore.getState().advanceTransfer(args.transferId);
+        addMsg({ role: "action_result", success: true, message: `Transferencia avanzada: ${args.transferId}.` });
+        break;
+      }
+      case "reject_transfer": {
+        const args = data as RejectTransferArgs;
+        const store = await import("@/lib/store");
+        await store.useStore.getState().rejectTransfer(args.transferId, args.reason, args.outcome);
+        addMsg({ role: "action_result", success: true, message: `Transferencia ${args.outcome === "devolver" ? "devuelta" : "descartada"}: ${args.transferId}.` });
+        break;
+      }
+      case "manage_medication": {
+        const args = data as ManageMedicationArgs;
+        const store = await import("@/lib/store");
+        if (args.medicationId) {
+          await store.useStore.getState().updateMedication(args.medicationId, {
+            name: args.name,
+            activeIngredient: args.activeIngredient,
+            concentrationValue: args.concentrationValue,
+            concentrationUnit: args.concentrationUnit,
+            form: args.form,
+            salePrice: args.salePrice,
+          });
+          addMsg({ role: "action_result", success: true, message: `Medicamento "${args.name}" actualizado.` });
+        } else {
+          await store.useStore.getState().addMedication({
+            name: args.name,
+            activeIngredient: args.activeIngredient,
+            concentrationValue: args.concentrationValue,
+            concentrationUnit: args.concentrationUnit,
+            form: args.form,
+            salePrice: args.salePrice ?? 0,
+          });
+          addMsg({ role: "action_result", success: true, message: `Medicamento "${args.name}" creado.` });
+        }
+        break;
+      }
+      case "manage_warehouse": {
+        const args = data as ManageWarehouseArgs;
+        const store = await import("@/lib/store");
+        if (args.warehouseId) {
+          await store.useStore.getState().updateWarehouse(args.warehouseId, { name: args.name, type: args.type });
+          addMsg({ role: "action_result", success: true, message: `Depósito "${args.name}" actualizado.` });
+        } else {
+          await store.useStore.getState().addWarehouse({ name: args.name, type: args.type });
+          addMsg({ role: "action_result", success: true, message: `Depósito "${args.name}" creado.` });
+        }
+        break;
+      }
+      case "manage_patient": {
+        const args = data as ManagePatientArgs;
+        const store = await import("@/lib/store");
+        if (args.patientId) {
+          await store.useStore.getState().updatePatient(args.patientId, {
+            firstName: args.firstName,
+            lastName: args.lastName,
+            insurance: args.insurance,
+            diagnosis: args.diagnosis,
+            assignedDoctor: args.assignedDoctor,
+            room: args.room,
+          });
+          addMsg({ role: "action_result", success: true, message: `Paciente ${args.firstName} ${args.lastName} actualizado.` });
+        } else {
+          await store.useStore.getState().addPatient({
+            firstName: args.firstName,
+            lastName: args.lastName,
+            insurance: args.insurance,
+            diagnosis: args.diagnosis,
+            assignedDoctor: args.assignedDoctor,
+            room: args.room,
+          });
+          addMsg({ role: "action_result", success: true, message: `Paciente ${args.firstName} ${args.lastName} internado.` });
+        }
+        break;
+      }
+      case "update_stock_config": {
+        const args = data as UpdateStockConfigArgs;
+        await rpc.backofficeUpdateStockConfigRpc({
+          data: {
+            medicationId: args.medicationId,
+            warehouseId: args.warehouseId,
+            minStock: args.minStock,
+            optimalStock: args.optimalStock,
+          }
+        });
+        addMsg({ role: "action_result", success: true, message: `Stock configurado: mínimo ${args.minStock}, óptimo ${args.optimalStock}.` });
+        break;
+      }
+      case "generate_report": {
+        const args = data as GenerateReportArgs;
+        const store = await import("@/lib/store");
+        const state = store.useStore.getState();
+        const reportData: ReportData = {
+          workspaceName: state.session?.workspaceName ?? "",
+          medications: state.medications,
+          warehouses: state.warehouses,
+          batches: state.batches,
+          movements: state.movements,
+        };
+        let doc: import("jspdf").jsPDF;
+        const filename = args.title ?? `reporte-${args.reportType}-${Date.now()}`;
+        switch (args.reportType) {
+          case "stock":
+            doc = generateStockReport(reportData, args.title);
+            break;
+          case "expiries":
+            doc = generateExpiriesReport(reportData, args.title);
+            break;
+          case "movements":
+            doc = generateMovementsReport(reportData, args.periodDays ?? 30, args.title);
+            break;
+        }
+        downloadReport(doc, `${filename}.pdf`);
+        addMsg({ role: "action_result", success: true, message: `Reporte "${args.reportType}" descargado.` });
         break;
       }
       default:
@@ -335,6 +570,106 @@ function processToolCalls(
         addMsg({ role: "pending_confirm", label, toolName: "delete_user", data: args });
       }
       lines.push("_(Confirmación pendiente.)_");
+    } else if (name === "create_sale") {
+      const args = parseCreateSaleArgs(raw);
+      if (!args) {
+        addMsg({ role: "action_result", success: false, message: "Parámetros inválidos para venta." });
+      } else {
+        const label = `Vender ${args.quantity} u. a $${args.price}/u. (total: $${(args.price * args.quantity).toLocaleString("es-AR")})`;
+        addMsg({ role: "pending_confirm", label, toolName: "create_sale", data: args });
+      }
+      lines.push("_(Confirmación pendiente.)_");
+    } else if (name === "create_dispensation") {
+      const args = parseCreateDispensationArgs(raw);
+      if (!args) {
+        addMsg({ role: "action_result", success: false, message: "Parámetros inválidos para dispensación." });
+      } else {
+        const label = `Dispensar ${args.quantity} u. de medicación a ${args.patient} (Dr. ${args.doctor})`;
+        addMsg({ role: "pending_confirm", label, toolName: "create_dispensation", data: args });
+      }
+      lines.push("_(Confirmación pendiente.)_");
+    } else if (name === "create_order") {
+      const args = parseCreateOrderArgs(raw);
+      if (!args) {
+        addMsg({ role: "action_result", success: false, message: "Parámetros inválidos para pedido." });
+      } else {
+        const label = `Crear pedido de ${args.quantity} u. para ${args.patient} (${args.room}) — Motivo: ${args.reason}`;
+        addMsg({ role: "pending_confirm", label, toolName: "create_order", data: args });
+      }
+      lines.push("_(Confirmación pendiente.)_");
+    } else if (name === "process_order") {
+      const args = parseProcessOrderArgs(raw);
+      if (!args) {
+        addMsg({ role: "action_result", success: false, message: "Parámetros inválidos para procesar pedido." });
+      } else {
+        const actionLabel: Record<string, string> = { aprobar: "Aprobar", despachar: "Despachar", confirmar_recepcion: "Confirmar recepción", administrar: "Administrar", rechazar: "Rechazar" };
+        const label = `${actionLabel[args.action] ?? args.action} pedido ${args.orderId}`;
+        addMsg({ role: "pending_confirm", label, toolName: "process_order", data: args });
+      }
+      lines.push("_(Confirmación pendiente.)_");
+    } else if (name === "advance_transfer") {
+      const args = parseAdvanceTransferArgs(raw);
+      if (!args) {
+        addMsg({ role: "action_result", success: false, message: "ID de transferencia inválido." });
+      } else {
+        const label = `Avanzar transferencia ${args.transferId}`;
+        addMsg({ role: "pending_confirm", label, toolName: "advance_transfer", data: args });
+      }
+      lines.push("_(Confirmación pendiente.)_");
+    } else if (name === "reject_transfer") {
+      const args = parseRejectTransferArgs(raw);
+      if (!args) {
+        addMsg({ role: "action_result", success: false, message: "Parámetros inválidos para rechazar transferencia." });
+      } else {
+        const label = `Rechazar transferencia ${args.transferId}: ${args.reason} (${args.outcome === "devolver" ? "devolver stock" : "descartar stock"})`;
+        addMsg({ role: "pending_confirm", label, toolName: "reject_transfer", data: args });
+      }
+      lines.push("_(Confirmación pendiente.)_");
+    } else if (name === "manage_medication") {
+      const args = parseManageMedicationArgs(raw);
+      if (!args) {
+        addMsg({ role: "action_result", success: false, message: "Parámetros inválidos para medicamento." });
+      } else {
+        const label = args.medicationId ? `Actualizar medicamento "${args.name}"` : `Crear medicamento "${args.name}"`;
+        addMsg({ role: "pending_confirm", label, toolName: "manage_medication", data: args });
+      }
+      lines.push("_(Confirmación pendiente.)_");
+    } else if (name === "manage_warehouse") {
+      const args = parseManageWarehouseArgs(raw);
+      if (!args) {
+        addMsg({ role: "action_result", success: false, message: "Parámetros inválidos para depósito." });
+      } else {
+        const label = args.warehouseId ? `Actualizar depósito "${args.name}"` : `Crear depósito "${args.name}" [${args.type}]`;
+        addMsg({ role: "pending_confirm", label, toolName: "manage_warehouse", data: args });
+      }
+      lines.push("_(Confirmación pendiente.)_");
+    } else if (name === "manage_patient") {
+      const args = parseManagePatientArgs(raw);
+      if (!args) {
+        addMsg({ role: "action_result", success: false, message: "Parámetros inválidos para paciente." });
+      } else {
+        const label = args.patientId ? `Actualizar paciente ${args.firstName} ${args.lastName}` : `Internar paciente ${args.firstName} ${args.lastName}`;
+        addMsg({ role: "pending_confirm", label, toolName: "manage_patient", data: args });
+      }
+      lines.push("_(Confirmación pendiente.)_");
+    } else if (name === "update_stock_config") {
+      const args = parseUpdateStockConfigArgs(raw);
+      if (!args) {
+        addMsg({ role: "action_result", success: false, message: "Parámetros inválidos para configurar stock." });
+      } else {
+        const label = `Configurar stock: mínimo ${args.minStock}, óptimo ${args.optimalStock}`;
+        addMsg({ role: "pending_confirm", label, toolName: "update_stock_config", data: args });
+      }
+      lines.push("_(Confirmación pendiente.)_");
+    } else if (name === "generate_report") {
+      const args = parseGenerateReportArgs(raw);
+      if (!args) {
+        addMsg({ role: "action_result", success: false, message: "Tipo de reporte inválido." });
+      } else {
+        const label = `Generar reporte: ${args.reportType}${args.title ? ` — ${args.title}` : ""}`;
+        addMsg({ role: "pending_confirm", label, toolName: "generate_report", data: args });
+      }
+      lines.push("_(Confirmación pendiente.)_");
     } else {
       lines.push(`Herramienta desconocida ignorada: ${name ?? "?"}`);
     }
@@ -418,14 +753,32 @@ export function WorkspaceAssistantChat({
   const [streamingText, setStreamingText] = useState("");
   const [pendingTransfer, setPendingTransfer] = useState<CreateTransferToolArgs | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [activeWorkflow, setActiveWorkflow] = useState<ActiveWorkflow | null>(null);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const abortRef = useRef<AbortController | null>(null);
   const chartGeneratedRef = useRef(false);
+
+  const proactivityInput = useMemo((): ProactivityInput => ({
+    medications: snapshotInput.medications,
+    warehouses: snapshotInput.warehouses,
+    batches: snapshotInput.batches,
+    orders: snapshotInput.orders ?? [],
+    transfers: snapshotInput.transfers,
+    patients: snapshotInput.patients ?? [],
+    stockConfigs: snapshotInput.stockConfigs ?? [],
+    stockByMedicationWarehouse: {},
+  }), [snapshotInput]);
 
   const snapshotJson = useMemo(() => buildWorkspaceAssistantContext(snapshotInput), [snapshotInput]);
   const workspaceUsers = useMemo(
     () => storeUsers.filter((u) => u.workspaceId === session?.workspaceId),
     [storeUsers, session?.workspaceId],
   );
+
+  useEffect(() => {
+    const top = getTopSuggestions(proactivityInput, 3);
+    setSuggestions(top);
+  }, [proactivityInput]);
 
   const openTransferDialog = useCallback((args: CreateTransferToolArgs) => {
     setPendingTransfer(args);
@@ -451,6 +804,123 @@ export function WorkspaceAssistantChat({
     setInput("");
     const userMsg: UiMessage = { role: "user", content: text };
     setMessages((m) => [...m, userMsg]);
+
+    // ─── Workflow: si hay un workflow activo, procesar como respuesta al paso actual ───
+    if (activeWorkflow) {
+      const wfCtx: WorkflowContext = {
+        medications: proactivityInput.medications,
+        warehouses: proactivityInput.warehouses,
+        patients: proactivityInput.patients.map((p) => ({ id: p.id, firstName: p.firstName, lastName: p.lastName, room: p.room })),
+        batches: proactivityInput.batches,
+        orders: proactivityInput.orders,
+        transfers: proactivityInput.transfers,
+        rooms: (snapshotInput.rooms ?? []).map((r) => ({ id: r.id, fullNumber: r.fullNumber })),
+        stockByMedication: {},
+      };
+      for (const b of proactivityInput.batches) {
+        wfCtx.stockByMedication[b.medicationId] = (wfCtx.stockByMedication[b.medicationId] ?? 0) + b.quantity;
+      }
+
+      const err = validateWorkflowStep(activeWorkflow, text, wfCtx);
+      if (err) {
+        setMessages((m) => [...m, { role: "assistant", content: err }]);
+        return;
+      }
+
+      const result = advanceWorkflow(activeWorkflow, text, wfCtx);
+      if ("done" in result) {
+        setActiveWorkflow(null);
+        setMessages((m) => [...m, { role: "assistant", content: "Procesando..." }]);
+        const def = WORKFLOWS[activeWorkflow.workflowId];
+        if (def) {
+          const execResult = await def.execute(activeWorkflow.collected, wfCtx);
+          setMessages((m) => {
+            const filtered = m.filter((mm) => !("content" in mm && (mm as { content: string }).content === "Procesando..."));
+            return [...filtered, { role: "action_result", success: execResult.success, message: execResult.message }];
+          });
+          // Refresh suggestions after action
+          const freshState = useStore.getState();
+          const newInput: ProactivityInput = {
+            ...proactivityInput,
+            batches: freshState.batches,
+            orders: freshState.orders ?? [],
+            patients: freshState.patients ?? [],
+          };
+          setSuggestions(getTopSuggestions(newInput, 3));
+        }
+      } else {
+        setActiveWorkflow(result.wf);
+        setMessages((m) => [...m, { role: "assistant", content: result.response }]);
+      }
+      return;
+    }
+
+    // ─── Detectar intents de workflow ───
+    if (isSaleIntent(text) && !activeWorkflow) {
+      const wf = WORKFLOWS.sale;
+      const ctx: WorkflowContext = {
+        medications: proactivityInput.medications,
+        warehouses: proactivityInput.warehouses,
+        patients: proactivityInput.patients.map((p) => ({ id: p.id, firstName: p.firstName, lastName: p.lastName, room: p.room })),
+        batches: proactivityInput.batches,
+        orders: proactivityInput.orders,
+        transfers: proactivityInput.transfers,
+        rooms: (snapshotInput.rooms ?? []).map((r) => ({ id: r.id, fullNumber: r.fullNumber })),
+        stockByMedication: {},
+      };
+      for (const b of proactivityInput.batches) {
+        ctx.stockByMedication[b.medicationId] = (ctx.stockByMedication[b.medicationId] ?? 0) + b.quantity;
+      }
+      const newWf: ActiveWorkflow = { workflowId: "sale", currentStep: 0, collected: {} };
+      const prompt = getCurrentStepPrompt(newWf, ctx);
+      setActiveWorkflow(newWf);
+      setMessages((m) => [...m, { role: "assistant", content: prompt ?? "OK, empecemos. ¿Qué medicamento?" }]);
+      return;
+    }
+    if (isDispensationIntent(text) && !activeWorkflow) {
+      const wf = WORKFLOWS.dispensation;
+      const ctx: WorkflowContext = {
+        medications: proactivityInput.medications,
+        warehouses: proactivityInput.warehouses,
+        patients: proactivityInput.patients.map((p) => ({ id: p.id, firstName: p.firstName, lastName: p.lastName, room: p.room })),
+        batches: proactivityInput.batches,
+        orders: proactivityInput.orders,
+        transfers: proactivityInput.transfers,
+        rooms: (snapshotInput.rooms ?? []).map((r) => ({ id: r.id, fullNumber: r.fullNumber })),
+        stockByMedication: {},
+      };
+      for (const b of proactivityInput.batches) {
+        ctx.stockByMedication[b.medicationId] = (ctx.stockByMedication[b.medicationId] ?? 0) + b.quantity;
+      }
+      const newWf: ActiveWorkflow = { workflowId: "dispensation", currentStep: 0, collected: {} };
+      const prompt = getCurrentStepPrompt(newWf, ctx);
+      setActiveWorkflow(newWf);
+      setMessages((m) => [...m, { role: "assistant", content: prompt ?? "OK, empecemos. ¿A qué paciente?" }]);
+      return;
+    }
+    if (isOrderIntent(text) && !activeWorkflow) {
+      const wf = WORKFLOWS.order;
+      const ctx: WorkflowContext = {
+        medications: proactivityInput.medications,
+        warehouses: proactivityInput.warehouses,
+        patients: proactivityInput.patients.map((p) => ({ id: p.id, firstName: p.firstName, lastName: p.lastName, room: p.room })),
+        batches: proactivityInput.batches,
+        orders: proactivityInput.orders,
+        transfers: proactivityInput.transfers,
+        rooms: (snapshotInput.rooms ?? []).map((r) => ({ id: r.id, fullNumber: r.fullNumber })),
+        stockByMedication: {},
+      };
+      for (const b of proactivityInput.batches) {
+        ctx.stockByMedication[b.medicationId] = (ctx.stockByMedication[b.medicationId] ?? 0) + b.quantity;
+      }
+      const newWf: ActiveWorkflow = { workflowId: "order", currentStep: 0, collected: {} };
+      const prompt = getCurrentStepPrompt(newWf, ctx);
+      setActiveWorkflow(newWf);
+      setMessages((m) => [...m, { role: "assistant", content: prompt ?? "OK, empecemos. ¿Qué medicamento se necesita?" }]);
+      return;
+    }
+
+    // ─── LLM call (existing flow) ───
     setStreaming(true);
     setStreamingText("");
 
@@ -460,7 +930,7 @@ export function WorkspaceAssistantChat({
     try {
       const recentMessages = messages.slice(-12);
       const history: ChatMessage[] = [
-        { role: "system", content: buildWorkspaceSystemPrompt(snapshotJson, workspaceUsers) },
+        { role: "system", content: buildWorkspaceSystemPrompt(snapshotJson, workspaceUsers, snapshotInput) },
         ...recentMessages.flatMap((msg): ChatMessage[] =>
           msg.role === "user"
             ? [{ role: "user", content: msg.content }]
@@ -475,12 +945,12 @@ export function WorkspaceAssistantChat({
       const collectedToolCalls: OllamaToolCall[] = [];
 
       const aiProvider = useStore.getState().aiProvider;
-      const model = aiProvider === "zen" ? "big-pickle" : "llama3.1:8b";
+      const model = aiProvider === "zen" ? "deepseek-v4-flash-free" : "llama3.1:8b";
 
       for await (const event of streamAiChat({
         model,
         messages: history,
-        tools: aiProvider !== "zen" ? assistantTools : undefined,
+        tools: assistantTools,
         signal: ac.signal,
         provider: aiProvider,
       })) {
@@ -558,6 +1028,16 @@ export function WorkspaceAssistantChat({
       chartGeneratedRef.current = false;
 
       setMessages((m) => [...m, { role: "assistant", content: assistantText }]);
+
+      // Refresh suggestions after response
+      const freshState = useStore.getState();
+      const newInput: ProactivityInput = {
+        ...proactivityInput,
+        batches: freshState.batches,
+        orders: freshState.orders ?? [],
+        patients: freshState.patients ?? [],
+      };
+      setSuggestions(getTopSuggestions(newInput, 3));
     } catch (e) {
       const err = e instanceof Error ? e.message : String(e);
       if (err.includes("abort") || err.includes("Abort")) return;
@@ -569,7 +1049,7 @@ export function WorkspaceAssistantChat({
       setStreamingText("");
       abortRef.current = null;
     }
-  }, [input, streaming, messages, snapshotJson, snapshotInput, navigate, batches, openTransferDialog, addChart, workspaceUsers]);
+  }, [input, streaming, messages, snapshotJson, snapshotInput, navigate, batches, openTransferDialog, addChart, workspaceUsers, activeWorkflow, proactivityInput]);
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
@@ -697,9 +1177,50 @@ export function WorkspaceAssistantChat({
         )}
       </div>
 
+      {activeWorkflow && (
+        <div className="rounded-md border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 px-3 py-2 text-sm text-blue-700 dark:text-blue-300">
+          <span className="font-medium">Flujo activo: {WORKFLOWS[activeWorkflow.workflowId]?.name}</span>
+          {" — "}Paso {activeWorkflow.currentStep + 1} de {WORKFLOWS[activeWorkflow.workflowId]?.steps.length ?? 0}
+          <button
+            onClick={() => { setActiveWorkflow(null); setMessages((m) => [...m, { role: "assistant", content: "Flujo cancelado." }]); }}
+            className="ml-2 underline text-xs"
+          >
+            Cancelar
+          </button>
+        </div>
+      )}
+      {suggestions.length > 0 && !activeWorkflow && (
+        <div className="flex flex-wrap gap-1.5">
+          {suggestions.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => {
+                setInput(s.action);
+                // Auto-send after brief delay
+                setTimeout(() => {
+                  const ta = document.querySelector("textarea");
+                  if (ta) {
+                    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+                    nativeInputValueSetter?.call(ta, s.action);
+                    ta.dispatchEvent(new Event("input", { bubbles: true }));
+                  }
+                }, 50);
+              }}
+              className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-950/50 transition-colors"
+            >
+              <Sparkles className="h-3 w-3" />
+              {s.label}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
         <Textarea
-          placeholder="Ej.: ¿Cuántas unidades tenemos de paracetamol? ¿Hay lotes críticos?"
+          placeholder={
+            activeWorkflow
+              ? "Respondé al asistente para continuar..."
+              : "Ej.: ¿Cuántas unidades tenemos de paracetamol? ¿Hay lotes críticos?"
+          }
           value={input}
           onChange={(e) => setInput(e.target.value)}
           rows={3}
@@ -726,7 +1247,7 @@ export function WorkspaceAssistantChat({
       </div>
       <p className="text-[11px] text-muted-foreground">
         Asistente vía <code className="rounded bg-muted px-0.5">{aiProvider === "zen" ? "OpenCode Zen" : "Groq"}</code>{" "}
-        (modelo: <span className="font-mono">{aiProvider === "zen" ? "big-pickle" : "llama3.1:8b"}</span>).
+        (modelo: <span className="font-mono">{aiProvider === "zen" ? "deepseek-v4-flash-free" : "llama3.1:8b"}</span>).
         <span className="ml-2 text-amber-500">
           {aiProvider === "groq" ? "Free-tier ~12k tokens/min" : "Modelos gratuitos"}
         </span>

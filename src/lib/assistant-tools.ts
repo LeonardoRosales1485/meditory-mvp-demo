@@ -152,6 +152,220 @@ export const assistantTools = [
       },
     },
   },
+  {
+    type: "function" as const,
+    function: {
+      name: "create_sale",
+      description:
+        "Registra una venta al público de un medicamento. Usar SOLO cuando el usuario pida explícitamente vender, cobrar o facturar un medicamento. Requiere medicationId, warehouseId, quantity, price (precio unitario) del snapshot. Prescription y doctor son opcionales para venta con receta. Requiere confirmación.",
+      parameters: {
+        type: "object",
+        properties: {
+          medicationId: { type: "string", description: "ID del medicamento a vender (del snapshot)" },
+          warehouseId: { type: "string", description: "ID del depósito de ventas (del snapshot)" },
+          quantity: { type: "number", description: "Cantidad a vender (entero positivo)" },
+          price: { type: "number", description: "Precio unitario de venta" },
+          prescription: { type: "string", description: "Número de receta (opcional)" },
+          doctor: { type: "string", description: "Nombre del médico (opcional, si hay receta)" },
+        },
+        required: ["medicationId", "warehouseId", "quantity", "price"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "create_dispensation",
+      description:
+        "Registra una dispensación de medicamento a un paciente internado. Usar SOLO cuando el usuario pida explícitamente dispensar, entregar o administrar medicación a un paciente. Requiere medicationId, warehouseId, quantity, doctor, patient, room, treatment del snapshot. Requiere confirmación.",
+      parameters: {
+        type: "object",
+        properties: {
+          medicationId: { type: "string", description: "ID del medicamento a dispensar (del snapshot)" },
+          warehouseId: { type: "string", description: "ID del depósito desde donde se dispensa (del snapshot)" },
+          quantity: { type: "number", description: "Cantidad a dispensar (entero positivo)" },
+          doctor: { type: "string", description: "Nombre del médico que prescribe" },
+          patient: { type: "string", description: "Nombre o ID del paciente (del snapshot)" },
+          room: { type: "string", description: "Sala/habitación del paciente (del snapshot)" },
+          treatment: { type: "string", description: "Indicación o tratamiento" },
+        },
+        required: ["medicationId", "warehouseId", "quantity", "doctor", "patient", "room", "treatment"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "create_order",
+      description:
+        "Crea un pedido de medicación desde una sala/paciente. Usar SOLO cuando el usuario pida explícitamente pedir, solicitar o crear un pedido de medicación. Requiere medicationId, warehouseId, quantity, patient, room, reason del snapshot. doctorName es opcional. Requiere confirmación.",
+      parameters: {
+        type: "object",
+        properties: {
+          medicationId: { type: "string", description: "ID del medicamento solicitado (del snapshot)" },
+          warehouseId: { type: "string", description: "ID del depósito destino (del snapshot)" },
+          quantity: { type: "number", description: "Cantidad solicitada (entero positivo)" },
+          patient: { type: "string", description: "Nombre o ID del paciente" },
+          room: { type: "string", description: "Sala/habitación (del snapshot)" },
+          reason: { type: "string", description: "Motivo del pedido" },
+          doctorName: { type: "string", description: "Nombre del médico solicitante (opcional)" },
+        },
+        required: ["medicationId", "warehouseId", "quantity", "patient", "room", "reason"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "process_order",
+      description:
+        "Avanza un pedido de medicación al siguiente estado. Usar SOLO cuando el usuario pida explícitamente aprobar, despachar, confirmar recepción, administrar o procesar un pedido. Action puede ser: aprobar, despachar, confirmar_recepcion, administrar. Requiere orderId del snapshot. Requiere confirmación.",
+      parameters: {
+        type: "object",
+        properties: {
+          orderId: { type: "string", description: "ID del pedido a procesar (del snapshot)" },
+          action: {
+            type: "string",
+            enum: ["aprobar", "despachar", "confirmar_recepcion", "administrar", "rechazar"],
+            description: "Acción a ejecutar sobre el pedido"
+          },
+          reason: { type: "string", description: "Motivo (obligatorio si se rechaza)" },
+        },
+        required: ["orderId", "action"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "advance_transfer",
+      description:
+        "Avanza una transferencia al siguiente estado del flujo. Usar SOLO cuando el usuario pida explícitamente autorizar, despachar, recibir o aceptar una transferencia existente. Requiere transferId del snapshot. Requiere confirmación.",
+      parameters: {
+        type: "object",
+        properties: {
+          transferId: { type: "string", description: "ID de la transferencia a avanzar (del snapshot)" },
+        },
+        required: ["transferId"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "reject_transfer",
+      description:
+        "Rechaza una transferencia con opción de devolver el stock al origen o descartarlo. Usar SOLO cuando el usuario pida explícitamente rechazar, cancelar o devolver una transferencia. Requiere transferId, reason y outcome (devolver o descartar). Requiere confirmación.",
+      parameters: {
+        type: "object",
+        properties: {
+          transferId: { type: "string", description: "ID de la transferencia a rechazar (del snapshot)" },
+          reason: { type: "string", description: "Motivo del rechazo" },
+          outcome: { type: "string", enum: ["devolver", "descartar"], description: "Qué hacer con el stock: devolver al origen o descartar" },
+        },
+        required: ["transferId", "reason", "outcome"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "manage_medication",
+      description:
+        "Crea o actualiza un medicamento en el catálogo. Usar SOLO cuando el usuario pida explícitamente agregar, crear, editar o modificar un medicamento. Para crear: incluir name, activeIngredient, concentrationValue, concentrationUnit, form. Para actualizar: incluir medicationId y los campos a modificar. Requiere confirmación.",
+      parameters: {
+        type: "object",
+        properties: {
+          medicationId: { type: "string", description: "ID del medicamento a actualizar (omitir si es nuevo)" },
+          name: { type: "string", description: "Nombre del medicamento" },
+          activeIngredient: { type: "string", description: "Principio activo" },
+          concentrationValue: { type: "number", description: "Valor de concentración" },
+          concentrationUnit: { type: "string", enum: ["mg", "mcg", "ml", "L", "g", "unidad"], description: "Unidad de concentración" },
+          form: { type: "string", description: "Forma farmacéutica (comprimido, jarabe, inyectable, etc.)" },
+          salePrice: { type: "number", description: "Precio de venta unitario (opcional)" },
+          saleEnabled: { type: "boolean", description: "Si está habilitado para venta (opcional)" },
+        },
+        required: ["name", "activeIngredient", "concentrationValue", "concentrationUnit", "form"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "manage_warehouse",
+      description:
+        "Crea o actualiza un depósito/almacén. Usar SOLO cuando el usuario pida explícitamente agregar, crear, editar o modificar un depósito. Para crear: incluir name, type. Para actualizar: incluir warehouseId y los campos a modificar. Requiere confirmación.",
+      parameters: {
+        type: "object",
+        properties: {
+          warehouseId: { type: "string", description: "ID del depósito a actualizar (omitir si es nuevo)" },
+          name: { type: "string", description: "Nombre del depósito" },
+          type: { type: "string", enum: ["central", "interna", "ventas"], description: "Tipo de depósito" },
+        },
+        required: ["name", "type"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "manage_patient",
+      description:
+        "Crea o actualiza un paciente internado. Usar SOLO cuando el usuario pida explícitamente internar, registrar, ingresar o modificar un paciente. Para crear: incluir firstName, lastName, insurance, diagnosis, assignedDoctor, room. Para actualizar: incluir patientId y los campos a modificar. Requiere confirmación.",
+      parameters: {
+        type: "object",
+        properties: {
+          patientId: { type: "string", description: "ID del paciente a actualizar (omitir si es nuevo)" },
+          firstName: { type: "string", description: "Nombre del paciente" },
+          lastName: { type: "string", description: "Apellido del paciente" },
+          insurance: { type: "string", description: "Obra social / seguro" },
+          diagnosis: { type: "string", description: "Diagnóstico" },
+          assignedDoctor: { type: "string", description: "Médico a cargo" },
+          room: { type: "string", description: "Sala/habitación" },
+        },
+        required: ["firstName", "lastName", "insurance", "diagnosis", "assignedDoctor", "room"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "update_stock_config",
+      description:
+        "Configura los niveles de stock mínimo y óptimo para un medicamento en un depósito específico. Usar SOLO cuando el usuario pida explícitamente configurar, ajustar o cambiar niveles de stock mínimo/óptimo. Requiere medicationId, warehouseId, minStock y optimalStock del snapshot. Requiere confirmación.",
+      parameters: {
+        type: "object",
+        properties: {
+          medicationId: { type: "string", description: "ID del medicamento (del snapshot)" },
+          warehouseId: { type: "string", description: "ID del depósito (del snapshot)" },
+          minStock: { type: "number", description: "Stock mínimo (entero no negativo)" },
+          optimalStock: { type: "number", description: "Stock óptimo (entero, debe ser >= minStock)" },
+        },
+        required: ["medicationId", "warehouseId", "minStock", "optimalStock"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "generate_report",
+      description:
+        "Genera un reporte PDF descargable. Usar SOLO cuando el usuario pida explícitamente generar, descargar, exportar o imprimir un reporte/informe. Tipos: stock (stock actual por depósito), expiries (lotes próximos a vencer), movements (movimientos por período).",
+      parameters: {
+        type: "object",
+        properties: {
+          reportType: {
+            type: "string",
+            enum: ["stock", "expiries", "movements"],
+            description: "Tipo de reporte: stock (stock actual), expiries (vencimientos), movements (movimientos)"
+          },
+          title: { type: "string", description: "Título del reporte (opcional)" },
+          periodDays: { type: "number", description: "Días hacia atrás para incluir (solo movements, opcional, default 30)" },
+        },
+        required: ["reportType"],
+      },
+    },
+  },
 ];
 
 /** Rutas internas permitidas para la tool `navigate` (evita open redirect). */
@@ -298,6 +512,91 @@ export type DeleteUserArgs = {
   userId: string;
 };
 
+export type CreateSaleArgs = {
+  medicationId: string;
+  warehouseId: string;
+  quantity: number;
+  price: number;
+  prescription?: string;
+  doctor?: string;
+};
+
+export type CreateDispensationArgs = {
+  medicationId: string;
+  warehouseId: string;
+  quantity: number;
+  doctor: string;
+  patient: string;
+  room: string;
+  treatment: string;
+};
+
+export type CreateOrderArgs = {
+  medicationId: string;
+  warehouseId: string;
+  quantity: number;
+  patient: string;
+  room: string;
+  reason: string;
+  doctorName?: string;
+};
+
+export type ProcessOrderArgs = {
+  orderId: string;
+  action: "aprobar" | "despachar" | "confirmar_recepcion" | "administrar" | "rechazar";
+  reason?: string;
+};
+
+export type AdvanceTransferArgs = {
+  transferId: string;
+};
+
+export type RejectTransferArgs = {
+  transferId: string;
+  reason: string;
+  outcome: "devolver" | "descartar";
+};
+
+export type ManageMedicationArgs = {
+  medicationId?: string;
+  name: string;
+  activeIngredient: string;
+  concentrationValue: number;
+  concentrationUnit: "mg" | "mcg" | "ml" | "L" | "g" | "unidad";
+  form: string;
+  salePrice?: number;
+  saleEnabled?: boolean;
+};
+
+export type ManageWarehouseArgs = {
+  warehouseId?: string;
+  name: string;
+  type: "central" | "interna" | "ventas";
+};
+
+export type ManagePatientArgs = {
+  patientId?: string;
+  firstName: string;
+  lastName: string;
+  insurance: string;
+  diagnosis: string;
+  assignedDoctor: string;
+  room: string;
+};
+
+export type UpdateStockConfigArgs = {
+  medicationId: string;
+  warehouseId: string;
+  minStock: number;
+  optimalStock: number;
+};
+
+export type GenerateReportArgs = {
+  reportType: "stock" | "expiries" | "movements";
+  title?: string;
+  periodDays?: number;
+};
+
 export function parseAddStockArgs(raw: unknown): AddStockArgs | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
@@ -345,6 +644,166 @@ export function parseDeleteUserArgs(raw: unknown): DeleteUserArgs | null {
   return { userId };
 }
 
+export function parseCreateSaleArgs(raw: unknown): CreateSaleArgs | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const medicationId = typeof o.medicationId === "string" ? o.medicationId.trim() : "";
+  const warehouseId = typeof o.warehouseId === "string" ? o.warehouseId.trim() : "";
+  const quantity = typeof o.quantity === "number" ? o.quantity : Number(o.quantity);
+  const price = typeof o.price === "number" ? o.price : Number(o.price);
+  if (!medicationId || !warehouseId) return null;
+  if (!Number.isFinite(quantity) || quantity <= 0 || quantity > 1_000_000) return null;
+  if (!Number.isFinite(price) || price <= 0 || price > 9_999_999) return null;
+  return {
+    medicationId,
+    warehouseId,
+    quantity: Math.floor(quantity),
+    price: Math.round(price * 100) / 100,
+    prescription: typeof o.prescription === "string" ? o.prescription.trim() : undefined,
+    doctor: typeof o.doctor === "string" ? o.doctor.trim() : undefined,
+  };
+}
+
+export function parseCreateDispensationArgs(raw: unknown): CreateDispensationArgs | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const medicationId = typeof o.medicationId === "string" ? o.medicationId.trim() : "";
+  const warehouseId = typeof o.warehouseId === "string" ? o.warehouseId.trim() : "";
+  const quantity = typeof o.quantity === "number" ? o.quantity : Number(o.quantity);
+  const doctor = typeof o.doctor === "string" ? o.doctor.trim() : "";
+  const patient = typeof o.patient === "string" ? o.patient.trim() : "";
+  const room = typeof o.room === "string" ? o.room.trim() : "";
+  const treatment = typeof o.treatment === "string" ? o.treatment.trim() : "";
+  if (!medicationId || !warehouseId || !doctor || !patient || !room || !treatment) return null;
+  if (!Number.isFinite(quantity) || quantity <= 0 || quantity > 1_000_000) return null;
+  return { medicationId, warehouseId, quantity: Math.floor(quantity), doctor, patient, room, treatment };
+}
+
+export function parseCreateOrderArgs(raw: unknown): CreateOrderArgs | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const medicationId = typeof o.medicationId === "string" ? o.medicationId.trim() : "";
+  const warehouseId = typeof o.warehouseId === "string" ? o.warehouseId.trim() : "";
+  const quantity = typeof o.quantity === "number" ? o.quantity : Number(o.quantity);
+  const patient = typeof o.patient === "string" ? o.patient.trim() : "";
+  const room = typeof o.room === "string" ? o.room.trim() : "";
+  const reason = typeof o.reason === "string" ? o.reason.trim() : "";
+  if (!medicationId || !warehouseId || !patient || !room || !reason) return null;
+  if (!Number.isFinite(quantity) || quantity <= 0 || quantity > 1_000_000) return null;
+  return {
+    medicationId, warehouseId, quantity: Math.floor(quantity), patient, room, reason,
+    doctorName: typeof o.doctorName === "string" ? o.doctorName.trim() : undefined,
+  };
+}
+
+export function parseProcessOrderArgs(raw: unknown): ProcessOrderArgs | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const orderId = typeof o.orderId === "string" ? o.orderId.trim() : "";
+  const action = typeof o.action === "string" ? o.action.trim() : "";
+  const validActions = ["aprobar", "despachar", "confirmar_recepcion", "administrar", "rechazar"];
+  if (!orderId || !validActions.includes(action)) return null;
+  return {
+    orderId,
+    action: action as ProcessOrderArgs["action"],
+    reason: typeof o.reason === "string" ? o.reason.trim() : undefined,
+  };
+}
+
+export function parseAdvanceTransferArgs(raw: unknown): AdvanceTransferArgs | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const transferId = typeof o.transferId === "string" ? o.transferId.trim() : "";
+  if (!transferId) return null;
+  return { transferId };
+}
+
+export function parseRejectTransferArgs(raw: unknown): RejectTransferArgs | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const transferId = typeof o.transferId === "string" ? o.transferId.trim() : "";
+  const reason = typeof o.reason === "string" ? o.reason.trim() : "";
+  const outcome = typeof o.outcome === "string" ? o.outcome.trim() : "";
+  if (!transferId || !reason || !["devolver", "descartar"].includes(outcome)) return null;
+  return { transferId, reason, outcome: outcome as RejectTransferArgs["outcome"] };
+}
+
+export function parseManageMedicationArgs(raw: unknown): ManageMedicationArgs | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const name = typeof o.name === "string" ? o.name.trim() : "";
+  const activeIngredient = typeof o.activeIngredient === "string" ? o.activeIngredient.trim() : "";
+  const form = typeof o.form === "string" ? o.form.trim() : "";
+  const concentrationUnit = typeof o.concentrationUnit === "string" ? o.concentrationUnit.trim() : "";
+  const concentrationValue = typeof o.concentrationValue === "number" ? o.concentrationValue : Number(o.concentrationValue);
+  if (!name || !activeIngredient || !form || !["mg", "mcg", "ml", "L", "g", "unidad"].includes(concentrationUnit)) return null;
+  if (!Number.isFinite(concentrationValue) || concentrationValue <= 0) return null;
+  return {
+    medicationId: typeof o.medicationId === "string" ? o.medicationId.trim() : undefined,
+    name,
+    activeIngredient,
+    concentrationValue,
+    concentrationUnit: concentrationUnit as ManageMedicationArgs["concentrationUnit"],
+    form,
+    salePrice: typeof o.salePrice === "number" ? o.salePrice : undefined,
+    saleEnabled: typeof o.saleEnabled === "boolean" ? o.saleEnabled : undefined,
+  };
+}
+
+export function parseManageWarehouseArgs(raw: unknown): ManageWarehouseArgs | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const name = typeof o.name === "string" ? o.name.trim() : "";
+  const type = typeof o.type === "string" ? o.type.trim() : "";
+  if (!name || !["central", "interna", "ventas"].includes(type)) return null;
+  return {
+    warehouseId: typeof o.warehouseId === "string" ? o.warehouseId.trim() : undefined,
+    name,
+    type: type as ManageWarehouseArgs["type"],
+  };
+}
+
+export function parseManagePatientArgs(raw: unknown): ManagePatientArgs | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const firstName = typeof o.firstName === "string" ? o.firstName.trim() : "";
+  const lastName = typeof o.lastName === "string" ? o.lastName.trim() : "";
+  const insurance = typeof o.insurance === "string" ? o.insurance.trim() : "";
+  const diagnosis = typeof o.diagnosis === "string" ? o.diagnosis.trim() : "";
+  const assignedDoctor = typeof o.assignedDoctor === "string" ? o.assignedDoctor.trim() : "";
+  const room = typeof o.room === "string" ? o.room.trim() : "";
+  if (!firstName || !lastName || !insurance || !diagnosis || !assignedDoctor || !room) return null;
+  return {
+    patientId: typeof o.patientId === "string" ? o.patientId.trim() : undefined,
+    firstName, lastName, insurance, diagnosis, assignedDoctor, room,
+  };
+}
+
+export function parseUpdateStockConfigArgs(raw: unknown): UpdateStockConfigArgs | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const medicationId = typeof o.medicationId === "string" ? o.medicationId.trim() : "";
+  const warehouseId = typeof o.warehouseId === "string" ? o.warehouseId.trim() : "";
+  const minStock = typeof o.minStock === "number" ? o.minStock : Number(o.minStock);
+  const optimalStock = typeof o.optimalStock === "number" ? o.optimalStock : Number(o.optimalStock);
+  if (!medicationId || !warehouseId) return null;
+  if (!Number.isFinite(minStock) || minStock < 0 || minStock > 1_000_000) return null;
+  if (!Number.isFinite(optimalStock) || optimalStock < minStock || optimalStock > 1_000_000) return null;
+  return { medicationId, warehouseId, minStock: Math.floor(minStock), optimalStock: Math.floor(optimalStock) };
+}
+
+export function parseGenerateReportArgs(raw: unknown): GenerateReportArgs | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const reportType = typeof o.reportType === "string" ? o.reportType.trim() : "";
+  if (!["stock", "expiries", "movements"].includes(reportType)) return null;
+  return {
+    reportType: reportType as GenerateReportArgs["reportType"],
+    title: typeof o.title === "string" ? o.title.trim() : undefined,
+    periodDays: typeof o.periodDays === "number" ? o.periodDays : undefined,
+  };
+}
+
 /** Parte respuestas tipo `{...};{...}` donde cada trozo es JSON de navigate/create_transfer. */
 function splitConcatenatedJsonObjects(t: string): string[] {
   const s = t.trim();
@@ -366,16 +825,16 @@ function splitConcatenatedJsonObjects(t: string): string[] {
 export function stripBareToolJsonFromAssistantContent(content: string): string {
   const t = content.trim();
   if (!t || t.length > 8000) return content;
-  if (!/"name"\s*:\s*"(navigate|create_transfer|render_chart|add_stock|list_users|create_user|delete_user)"/i.test(t)) return content;
+  if (!/"name"\s*:\s*"(navigate|create_transfer|render_chart|add_stock|list_users|create_user|delete_user|create_sale|create_dispensation|create_order|process_order|advance_transfer|reject_transfer|manage_medication|manage_warehouse|manage_patient|update_stock_config|generate_report)"/i.test(t)) return content;
   const chunks = splitConcatenatedJsonObjects(t);
   let toolish = 0;
   for (const ch of chunks) {
     try {
       const o = JSON.parse(ch) as { name?: string };
-      if (o && typeof o === "object" && ["navigate", "create_transfer", "render_chart", "add_stock", "list_users", "create_user", "delete_user"].includes(o.name ?? "")) toolish++;
+      if (o && typeof o === "object" && ["navigate", "create_transfer", "render_chart", "add_stock", "list_users", "create_user", "delete_user", "create_sale", "create_dispensation", "create_order", "process_order", "advance_transfer", "reject_transfer", "manage_medication", "manage_warehouse", "manage_patient", "update_stock_config", "generate_report"].includes(o.name ?? "")) toolish++;
       else return content;
     } catch {
-      if (chunks.length > 1 && t.length < 4000 && /"name"\s*:\s*"(navigate|create_transfer|add_stock|list_users|create_user|delete_user)"/i.test(t)) {
+      if (chunks.length > 1 && t.length < 4000 && /"name"\s*:\s*"(navigate|create_transfer|add_stock|list_users|create_user|delete_user|create_sale|create_dispensation|create_order|process_order|advance_transfer|reject_transfer|manage_medication|manage_warehouse|manage_patient|update_stock_config|generate_report)"/i.test(t)) {
         return "";
       }
       return content;

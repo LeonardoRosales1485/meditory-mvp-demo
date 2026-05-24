@@ -2,7 +2,7 @@ import { createFileRoute, Outlet, useNavigate, Link, useLocation } from "@tansta
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Building2, Users, Database, LogOut, ShieldCheck, Menu, X, Activity,
-  ShoppingCart, Settings, ArrowUp, FlaskConical,
+  ShoppingCart, Settings, ArrowUp, FlaskConical, ClipboardList,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,6 +29,7 @@ export const Route = createFileRoute("/backoffice")({
 const NAV_ITEMS = [
   { to: "/backoffice/estado-hospital", label: "Estado general", icon: Activity },
   { to: "/backoffice/compras", label: "Compras / Licitación", icon: ShoppingCart },
+  { to: "/backoffice/gestion-pedidos", label: "Pedidos medicos", icon: ClipboardList },
   { to: "/backoffice/panel-en-vivo", label: "Panel en vivo", icon: Activity },
   { to: "/backoffice/workspaces", label: "Instituciones", icon: Building2 },
   { to: "/backoffice/usuarios", label: "Usuarios", icon: Users },
@@ -151,8 +152,8 @@ function BackofficeLayout() {
         </button>
       )}
 
-      {/* Asistente Medi (reemplaza al botón anterior en backoffice) */}
-      <DemoAssistantChat />
+      {/* Asistente Medi — oculto en gestión de pedidos (usa panel lateral) */}
+      {!pathname.includes("/gestion-pedidos") && <DemoAssistantChat />}
     </div>
   );
 }

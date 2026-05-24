@@ -16,11 +16,33 @@ import {
   parseListUsersArgs,
   parseCreateUserArgs,
   parseDeleteUserArgs,
+  parseCreateSaleArgs,
+  parseCreateDispensationArgs,
+  parseCreateOrderArgs,
+  parseProcessOrderArgs,
+  parseAdvanceTransferArgs,
+  parseRejectTransferArgs,
+  parseManageMedicationArgs,
+  parseManageWarehouseArgs,
+  parseManagePatientArgs,
+  parseUpdateStockConfigArgs,
+  parseGenerateReportArgs,
   type ChartSpec,
   type OllamaToolCall,
   type AddStockArgs,
   type CreateUserArgs,
   type DeleteUserArgs,
+  type CreateSaleArgs,
+  type CreateDispensationArgs,
+  type CreateOrderArgs,
+  type ProcessOrderArgs,
+  type AdvanceTransferArgs,
+  type RejectTransferArgs,
+  type ManageMedicationArgs,
+  type ManageWarehouseArgs,
+  type ManagePatientArgs,
+  type UpdateStockConfigArgs,
+  type GenerateReportArgs,
 } from "@/lib/assistant-tools";
 import type { LossCalculationResult, CrossHospitalMedStock, WarehouseVolumeItem, AssistantFullSnapshot } from "@/lib/server/backoffice-service";
 
@@ -29,6 +51,7 @@ interface DemoAssistantChatProps {
   crossStock?: CrossHospitalMedStock[] | null;
   volumeData?: WarehouseVolumeItem[] | null;
   totalUnits?: number;
+  variant?: "floating" | "sidepanel";
 }
 
 type Message =
@@ -357,6 +380,177 @@ async function executeConfirmedAction(
         rpc.backofficeGetAssistantFullSnapshotRpc().then(setFullSnapshot).catch(console.error);
         break;
       }
+      case "create_sale": {
+        const args = data as CreateSaleArgs;
+        const store = await import("@/lib/store");
+        await store.useStore.getState().addSale({
+          medicationId: args.medicationId,
+          warehouseId: args.warehouseId,
+          quantity: args.quantity,
+          price: args.price,
+          prescription: args.prescription,
+        });
+        addMsg({ role: "action_result", success: true, message: `Venta registrada: ${args.quantity} u. por $${(args.price * args.quantity).toLocaleString("es-AR")}.` });
+        break;
+      }
+      case "create_dispensation": {
+        const args = data as CreateDispensationArgs;
+        const store = await import("@/lib/store");
+        await store.useStore.getState().addDispensation({
+          medicationId: args.medicationId,
+          warehouseId: args.warehouseId,
+          quantity: args.quantity,
+          doctor: args.doctor,
+          patient: args.patient,
+          room: args.room,
+          treatment: args.treatment,
+        });
+        addMsg({ role: "action_result", success: true, message: `Dispensación registrada: ${args.quantity} u. a ${args.patient}.` });
+        break;
+      }
+      case "create_order": {
+        const args = data as CreateOrderArgs;
+        const store = await import("@/lib/store");
+        await store.useStore.getState().createOrder({
+          medicationId: args.medicationId,
+          sourceBatchId: "",
+          warehouseId: args.warehouseId,
+          quantity: args.quantity,
+          patient: args.patient,
+          room: args.room,
+          reason: args.reason,
+          doctorName: args.doctorName,
+        });
+        addMsg({ role: "action_result", success: true, message: `Pedido creado: ${args.quantity} u. para ${args.patient}.` });
+        break;
+      }
+      case "process_order": {
+        const args = data as ProcessOrderArgs;
+        const store = await import("@/lib/store");
+        await store.useStore.getState().processOrder(args.orderId, args.action, args.reason);
+        addMsg({ role: "action_result", success: true, message: `Pedido ${args.action}: ${args.orderId}.` });
+        break;
+      }
+      case "advance_transfer": {
+        const args = data as AdvanceTransferArgs;
+        const store = await import("@/lib/store");
+        await store.useStore.getState().advanceTransfer(args.transferId);
+        addMsg({ role: "action_result", success: true, message: `Transferencia avanzada: ${args.transferId}.` });
+        break;
+      }
+      case "reject_transfer": {
+        const args = data as RejectTransferArgs;
+        const store = await import("@/lib/store");
+        await store.useStore.getState().rejectTransfer(args.transferId, args.reason, args.outcome);
+        addMsg({ role: "action_result", success: true, message: `Transferencia ${args.outcome === "devolver" ? "devuelta" : "descartada"}: ${args.transferId}.` });
+        break;
+      }
+      case "manage_medication": {
+        const args = data as ManageMedicationArgs;
+        const store = await import("@/lib/store");
+        if (args.medicationId) {
+          await store.useStore.getState().updateMedication(args.medicationId, {
+            name: args.name,
+            activeIngredient: args.activeIngredient,
+            concentrationValue: args.concentrationValue,
+            concentrationUnit: args.concentrationUnit,
+            form: args.form,
+            salePrice: args.salePrice,
+          });
+          addMsg({ role: "action_result", success: true, message: `Medicamento "${args.name}" actualizado.` });
+        } else {
+          await store.useStore.getState().addMedication({
+            name: args.name,
+            activeIngredient: args.activeIngredient,
+            concentrationValue: args.concentrationValue,
+            concentrationUnit: args.concentrationUnit,
+            form: args.form,
+            salePrice: args.salePrice ?? 0,
+          });
+          addMsg({ role: "action_result", success: true, message: `Medicamento "${args.name}" creado.` });
+        }
+        break;
+      }
+      case "manage_warehouse": {
+        const args = data as ManageWarehouseArgs;
+        const store = await import("@/lib/store");
+        if (args.warehouseId) {
+          await store.useStore.getState().updateWarehouse(args.warehouseId, { name: args.name, type: args.type });
+          addMsg({ role: "action_result", success: true, message: `Depósito "${args.name}" actualizado.` });
+        } else {
+          await store.useStore.getState().addWarehouse({ name: args.name, type: args.type });
+          addMsg({ role: "action_result", success: true, message: `Depósito "${args.name}" creado.` });
+        }
+        break;
+      }
+      case "manage_patient": {
+        const args = data as ManagePatientArgs;
+        const store = await import("@/lib/store");
+        if (args.patientId) {
+          await store.useStore.getState().updatePatient(args.patientId, {
+            firstName: args.firstName,
+            lastName: args.lastName,
+            insurance: args.insurance,
+            diagnosis: args.diagnosis,
+            assignedDoctor: args.assignedDoctor,
+            room: args.room,
+          });
+          addMsg({ role: "action_result", success: true, message: `Paciente ${args.firstName} ${args.lastName} actualizado.` });
+        } else {
+          await store.useStore.getState().addPatient({
+            firstName: args.firstName,
+            lastName: args.lastName,
+            insurance: args.insurance,
+            diagnosis: args.diagnosis,
+            assignedDoctor: args.assignedDoctor,
+            room: args.room,
+          });
+          addMsg({ role: "action_result", success: true, message: `Paciente ${args.firstName} ${args.lastName} internado.` });
+        }
+        break;
+      }
+      case "update_stock_config": {
+        const args = data as UpdateStockConfigArgs;
+        await rpc.backofficeUpdateStockConfigRpc({
+          data: {
+            medicationId: args.medicationId,
+            warehouseId: args.warehouseId,
+            minStock: args.minStock,
+            optimalStock: args.optimalStock,
+          }
+        });
+        addMsg({ role: "action_result", success: true, message: `Stock configurado: mínimo ${args.minStock}, óptimo ${args.optimalStock}.` });
+        break;
+      }
+      case "generate_report": {
+        const args = data as GenerateReportArgs;
+        const store = await import("@/lib/store");
+        const state = store.useStore.getState();
+        const { generateStockReport, generateExpiriesReport, generateMovementsReport, downloadReport } = await import("@/lib/assistant-reports");
+        const reportData = {
+          workspaceName: state.session?.workspaceName ?? "",
+          medications: state.medications,
+          warehouses: state.warehouses,
+          batches: state.batches,
+          movements: state.movements,
+        };
+        let doc: import("jspdf").jsPDF;
+        const filename = args.title ?? `reporte-${args.reportType}-${Date.now()}`;
+        switch (args.reportType) {
+          case "stock":
+            doc = generateStockReport(reportData, args.title);
+            break;
+          case "expiries":
+            doc = generateExpiriesReport(reportData, args.title);
+            break;
+          case "movements":
+            doc = generateMovementsReport(reportData, args.periodDays ?? 30, args.title);
+            break;
+        }
+        downloadReport(doc, `${filename}.pdf`);
+        addMsg({ role: "action_result", success: true, message: `Reporte "${args.reportType}" descargado.` });
+        break;
+      }
       default:
         addMsg({ role: "action_result", success: false, message: "Acción desconocida." });
     }
@@ -370,8 +564,8 @@ export const CHAT_PRESET_EVENT = "chat-preset";
 
 const WELCOME_MSG: Message = { role: "assistant", content: "Hola, soy **Medi**, el asistente del sistema Meditory. Preguntame sobre stock, pérdidas, compras o lo que necesites." };
 
-export function DemoAssistantChat(props: DemoAssistantChatProps) {
-  const [open, setOpen] = useState(false);
+export function DemoAssistantChat({ variant = "floating", ...props }: DemoAssistantChatProps) {
+  const [open, setOpen] = useState(variant === "sidepanel");
   const storedMessages = useStore((s) => s.chatMessages);
   const setStoredMessages = useStore((s) => s.setChatMessages);
   const [messages, setMessages] = useState<Message[]>(() =>
@@ -382,6 +576,7 @@ export function DemoAssistantChat(props: DemoAssistantChatProps) {
   const [streamingText, setStreamingText] = useState("");
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const [internalData, setInternalData] = useState<DemoAssistantChatProps | null>(null);
   const [fullSnapshot, setFullSnapshot] = useState<AssistantFullSnapshot | null>(null);
 
@@ -391,10 +586,14 @@ export function DemoAssistantChat(props: DemoAssistantChatProps) {
   const dataReadyRef = useRef(false);
   dataReadyRef.current = !!internalData;
 
-  // Auto-scroll al abrir o al recibir mensajes
+  // Auto-scroll al abrir o al recibir mensajes (solo dentro del contenedor)
   useEffect(() => {
     if (!open) return;
-    const timer = setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+    const timer = setTimeout(() => {
+      if (scrollRef.current) {
+        scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+      }
+    }, 50);
     return () => clearTimeout(timer);
   }, [open, messages, streamingText]);
 
@@ -437,15 +636,15 @@ export function DemoAssistantChat(props: DemoAssistantChatProps) {
       ];
 
       const aiProvider = useStore.getState().aiProvider;
-      const model = aiProvider === "zen" ? "big-pickle" : "llama-3.3-70b-versatile";
+      const model = aiProvider === "zen" ? "deepseek-v4-flash-free" : "llama-3.3-70b-versatile";
 
-      console.debug("[chat] prompt chars:", chatMessages.reduce((s, m) => s + m.content.length, 0), "tools:", aiProvider !== "zen" ? "enabled" : "disabled (zen)");
+      console.debug("[chat] prompt chars:", chatMessages.reduce((s, m) => s + m.content.length, 0));
       let fullText = "";
       const collectedToolCalls: OllamaToolCall[] = [];
       for await (const event of streamAiChat({
         model,
         messages: chatMessages,
-        tools: aiProvider !== "zen" ? assistantTools : undefined,
+        tools: assistantTools,
         signal: abortRef.current.signal,
         provider: aiProvider,
       })) {
@@ -521,6 +720,95 @@ export function DemoAssistantChat(props: DemoAssistantChatProps) {
             const user = fullSnapshot?.users.find((u) => u.id === args.userId);
             const label = `Eliminar usuario "${user?.name ?? args.userId}" <${user?.email ?? ""}> de ${user?.workspaceName ?? ""}`;
             nextMessages.push({ role: "pending_confirm", label, toolName: "delete_user", data: args });
+          }
+        } else if (name === "create_sale") {
+          const args = parseCreateSaleArgs(parsedArgs);
+          if (!args) {
+            nextMessages.push({ role: "action_result", success: false, message: "Parámetros inválidos para venta." });
+          } else {
+            const label = `Vender ${args.quantity} u. a $${args.price}/u. (total: $${(args.price * args.quantity).toLocaleString("es-AR")})`;
+            nextMessages.push({ role: "pending_confirm", label, toolName: "create_sale", data: args });
+          }
+        } else if (name === "create_dispensation") {
+          const args = parseCreateDispensationArgs(parsedArgs);
+          if (!args) {
+            nextMessages.push({ role: "action_result", success: false, message: "Parámetros inválidos para dispensación." });
+          } else {
+            const label = `Dispensar ${args.quantity} u. de medicación a ${args.patient} (Dr. ${args.doctor})`;
+            nextMessages.push({ role: "pending_confirm", label, toolName: "create_dispensation", data: args });
+          }
+        } else if (name === "create_order") {
+          const args = parseCreateOrderArgs(parsedArgs);
+          if (!args) {
+            nextMessages.push({ role: "action_result", success: false, message: "Parámetros inválidos para pedido." });
+          } else {
+            const label = `Crear pedido de ${args.quantity} u. para ${args.patient} (${args.room})`;
+            nextMessages.push({ role: "pending_confirm", label, toolName: "create_order", data: args });
+          }
+        } else if (name === "process_order") {
+          const args = parseProcessOrderArgs(parsedArgs);
+          if (!args) {
+            nextMessages.push({ role: "action_result", success: false, message: "Parámetros inválidos para procesar pedido." });
+          } else {
+            const actionLabel: Record<string, string> = { aprobar: "Aprobar", despachar: "Despachar", confirmar_recepcion: "Confirmar recepción", administrar: "Administrar", rechazar: "Rechazar" };
+            const label = `${actionLabel[args.action] ?? args.action} pedido ${args.orderId}`;
+            nextMessages.push({ role: "pending_confirm", label, toolName: "process_order", data: args });
+          }
+        } else if (name === "advance_transfer") {
+          const args = parseAdvanceTransferArgs(parsedArgs);
+          if (!args) {
+            nextMessages.push({ role: "action_result", success: false, message: "ID de transferencia inválido." });
+          } else {
+            const label = `Avanzar transferencia ${args.transferId}`;
+            nextMessages.push({ role: "pending_confirm", label, toolName: "advance_transfer", data: args });
+          }
+        } else if (name === "reject_transfer") {
+          const args = parseRejectTransferArgs(parsedArgs);
+          if (!args) {
+            nextMessages.push({ role: "action_result", success: false, message: "Parámetros inválidos para rechazar transferencia." });
+          } else {
+            const label = `Rechazar transferencia ${args.transferId}: ${args.reason}`;
+            nextMessages.push({ role: "pending_confirm", label, toolName: "reject_transfer", data: args });
+          }
+        } else if (name === "manage_medication") {
+          const args = parseManageMedicationArgs(parsedArgs);
+          if (!args) {
+            nextMessages.push({ role: "action_result", success: false, message: "Parámetros inválidos para medicamento." });
+          } else {
+            const label = args.medicationId ? `Actualizar medicamento "${args.name}"` : `Crear medicamento "${args.name}"`;
+            nextMessages.push({ role: "pending_confirm", label, toolName: "manage_medication", data: args });
+          }
+        } else if (name === "manage_warehouse") {
+          const args = parseManageWarehouseArgs(parsedArgs);
+          if (!args) {
+            nextMessages.push({ role: "action_result", success: false, message: "Parámetros inválidos para depósito." });
+          } else {
+            const label = args.warehouseId ? `Actualizar depósito "${args.name}"` : `Crear depósito "${args.name}" [${args.type}]`;
+            nextMessages.push({ role: "pending_confirm", label, toolName: "manage_warehouse", data: args });
+          }
+        } else if (name === "manage_patient") {
+          const args = parseManagePatientArgs(parsedArgs);
+          if (!args) {
+            nextMessages.push({ role: "action_result", success: false, message: "Parámetros inválidos para paciente." });
+          } else {
+            const label = args.patientId ? `Actualizar paciente ${args.firstName} ${args.lastName}` : `Internar paciente ${args.firstName} ${args.lastName}`;
+            nextMessages.push({ role: "pending_confirm", label, toolName: "manage_patient", data: args });
+          }
+        } else if (name === "update_stock_config") {
+          const args = parseUpdateStockConfigArgs(parsedArgs);
+          if (!args) {
+            nextMessages.push({ role: "action_result", success: false, message: "Parámetros inválidos para configurar stock." });
+          } else {
+            const label = `Configurar stock: mínimo ${args.minStock}, óptimo ${args.optimalStock}`;
+            nextMessages.push({ role: "pending_confirm", label, toolName: "update_stock_config", data: args });
+          }
+        } else if (name === "generate_report") {
+          const args = parseGenerateReportArgs(parsedArgs);
+          if (!args) {
+            nextMessages.push({ role: "action_result", success: false, message: "Tipo de reporte inválido." });
+          } else {
+            const label = `Generar reporte: ${args.reportType}${args.title ? ` — ${args.title}` : ""}`;
+            nextMessages.push({ role: "pending_confirm", label, toolName: "generate_report", data: args });
           }
         }
       }
@@ -599,6 +887,126 @@ export function DemoAssistantChat(props: DemoAssistantChatProps) {
     });
   }, [props, internalData]);
 
+  const chatPanel = (
+    <div
+      className={`flex flex-col overflow-hidden bg-card border rounded-xl ${variant === "sidepanel" ? "h-full" : ""}`}
+      style={variant === "floating" ? { maxHeight: "min(75dvh, 700px)" } : { height: "100%" }}
+    >
+      {/* Header */}
+      <div className="flex items-center gap-2.5 px-4 py-3 border-b bg-primary text-primary-foreground shrink-0">
+        <div className="w-8 h-8 rounded-full bg-primary-foreground/20 flex items-center justify-center">
+          <Bot size={16} />
+        </div>
+        <div className="flex-1">
+          <p className="text-sm font-semibold">Medi</p>
+          <p className="text-[10px] opacity-70">Asistente Meditory</p>
+        </div>
+        {variant === "floating" && (
+          <button onClick={() => setOpen(false)} className="opacity-70 hover:opacity-100">
+            <Minimize2 size={16} />
+          </button>
+        )}
+      </div>
+
+      {/* Mensajes */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3 min-h-0">
+        {messages.map((msg, i) => {
+          if (msg.role === "chart") {
+            return (
+              <div key={i} className="w-full">
+                <ChartRenderer spec={msg.spec} height={300} />
+              </div>
+            );
+          }
+          if (msg.role === "action_result") {
+            return (
+              <div key={i} className={`rounded-lg p-3 text-sm ${msg.success ? "bg-green-50 border border-green-200 text-green-800 dark:bg-green-950/30 dark:border-green-800 dark:text-green-300" : "bg-red-50 border border-red-200 text-red-800 dark:bg-red-950/30 dark:border-red-800 dark:text-red-300"}`}>
+                {msg.success ? "✓ " : "✗ "}{msg.message}
+              </div>
+            );
+          }
+          if (msg.role === "pending_confirm") {
+            return (
+              <PendingConfirmBubble
+                key={i}
+                msg={msg}
+                onConfirm={() => {
+                  executeConfirmedAction(msg.toolName, msg.data, (m) => {
+                    setMessages((prev) => [...prev, m]);
+                  }, setFullSnapshot);
+                  setMessages((prev) => prev.filter((_, idx) => idx !== i));
+                }}
+                onCancel={() => {
+                  setMessages((prev) => prev.filter((_, idx) => idx !== i));
+                  setMessages((prev) => [...prev, { role: "assistant", content: "Acción cancelada." }]);
+                }}
+              />
+            );
+          }
+          return (
+          <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+            {msg.role === "assistant" && (
+              <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center mr-1.5 mt-0.5 shrink-0">
+                <Bot size={12} className="text-primary" />
+              </div>
+            )}
+            <div
+              className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm leading-relaxed ${
+                msg.role === "user"
+                  ? "bg-primary text-primary-foreground rounded-br-sm"
+                  : "bg-muted rounded-bl-sm"
+              }`}
+            >
+              {msg.role === "user"
+                  ? msg.content
+                   : <div className="prose prose-sm dark:prose-invert max-w-none [&_table]:border-collapse [&_td]:border [&_th]:border [&_td]:px-2 [&_th]:px-2 [&_td]:py-1 [&_th]:py-1 [&_tr]:border [&_hr]:my-2 [&_blockquote]:border-l-2 [&_blockquote]:pl-2 [&_blockquote]:opacity-80 [&_pre]:bg-black/5 [&_pre]:dark:bg-white/5 [&_pre]:rounded [&_pre]:p-2 [&_code]:text-xs"><ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown></div>}
+            </div>
+          </div>
+        );
+        })}
+        {streaming && streamingText && (
+          <div className="flex justify-start">
+            <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center mr-1.5 mt-0.5 shrink-0">
+              <Bot size={12} className="text-primary" />
+            </div>
+            <div className="max-w-[80%] rounded-2xl rounded-bl-sm px-3 py-2 text-sm bg-muted leading-relaxed">
+              {streamingText}
+              <span className="inline-block w-1 h-3 ml-0.5 bg-primary animate-pulse rounded" />
+            </div>
+          </div>
+        )}
+        {streaming && !streamingText && (
+          <div className="flex justify-start items-center gap-1 ml-8">
+            {[0, 0.15, 0.3].map((delay, i) => (
+              <motion.div key={i} className="w-2 h-2 rounded-full bg-muted-foreground/40"
+                animate={{ y: [0, -6, 0] }} transition={{ repeat: Infinity, duration: 0.7, delay }} />
+            ))}
+          </div>
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Input */}
+      <div className="border-t p-3 flex gap-2 shrink-0">
+        <Input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (() => { const t = input.trim(); if (t) { setInput(""); sendMessage(t); } })()}
+          placeholder="Preguntame algo..."
+          className="text-sm h-9"
+          disabled={streaming}
+        />
+        <Button size="sm" onClick={() => { const t = input.trim(); if (t) { setInput(""); sendMessage(t); } }} disabled={!input.trim() || streaming} className="h-9 w-9 p-0 shrink-0">
+          <Send size={14} />
+        </Button>
+      </div>
+    </div>
+  );
+
+  if (variant === "sidepanel") {
+    return chatPanel;
+  }
+
   return (
     <>
       {/* Botón flotante */}
@@ -625,115 +1033,9 @@ export function DemoAssistantChat(props: DemoAssistantChatProps) {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
             transition={{ duration: 0.2 }}
-            className="fixed bottom-6 right-6 z-50 w-80 sm:w-[520px] lg:w-[640px] bg-card border rounded-2xl shadow-2xl flex flex-col overflow-hidden"
-            style={{ maxHeight: "min(75dvh, 700px)" }}
+            className="fixed bottom-6 right-6 z-50 w-80 sm:w-[520px] lg:w-[640px]"
           >
-            {/* Header */}
-            <div className="flex items-center gap-2.5 px-4 py-3 border-b bg-primary text-primary-foreground">
-              <div className="w-8 h-8 rounded-full bg-primary-foreground/20 flex items-center justify-center">
-                <Bot size={16} />
-              </div>
-              <div className="flex-1">
-                <p className="text-sm font-semibold">Medi</p>
-                <p className="text-[10px] opacity-70">Asistente Meditory</p>
-              </div>
-              <button onClick={() => setOpen(false)} className="opacity-70 hover:opacity-100">
-                <Minimize2 size={16} />
-              </button>
-            </div>
-
-            {/* Mensajes */}
-            <div className="flex-1 overflow-y-auto p-3 space-y-3 min-h-0">
-              {messages.map((msg, i) => {
-                if (msg.role === "chart") {
-                  return (
-                    <div key={i} className="w-full">
-                      <ChartRenderer spec={msg.spec} height={300} />
-                    </div>
-                  );
-                }
-                if (msg.role === "action_result") {
-                  return (
-                    <div key={i} className={`rounded-lg p-3 text-sm ${msg.success ? "bg-green-50 border border-green-200 text-green-800 dark:bg-green-950/30 dark:border-green-800 dark:text-green-300" : "bg-red-50 border border-red-200 text-red-800 dark:bg-red-950/30 dark:border-red-800 dark:text-red-300"}`}>
-                      {msg.success ? "✓ " : "✗ "}{msg.message}
-                    </div>
-                  );
-                }
-                if (msg.role === "pending_confirm") {
-                  return (
-                    <PendingConfirmBubble
-                      key={i}
-                      msg={msg}
-                      onConfirm={() => {
-                        executeConfirmedAction(msg.toolName, msg.data, (m) => {
-                          setMessages((prev) => [...prev, m]);
-                        }, setFullSnapshot);
-                        setMessages((prev) => prev.filter((_, idx) => idx !== i));
-                      }}
-                      onCancel={() => {
-                        setMessages((prev) => prev.filter((_, idx) => idx !== i));
-                        setMessages((prev) => [...prev, { role: "assistant", content: "Acción cancelada." }]);
-                      }}
-                    />
-                  );
-                }
-                return (
-                <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                  {msg.role === "assistant" && (
-                    <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center mr-1.5 mt-0.5 shrink-0">
-                      <Bot size={12} className="text-primary" />
-                    </div>
-                  )}
-                  <div
-                    className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm leading-relaxed ${
-                      msg.role === "user"
-                        ? "bg-primary text-primary-foreground rounded-br-sm"
-                        : "bg-muted rounded-bl-sm"
-                    }`}
-                  >
-                    {msg.role === "user"
-                        ? msg.content
-                        : <ReactMarkdown remarkPlugins={[remarkGfm]} className="prose prose-sm dark:prose-invert max-w-none [&_table]:border-collapse [&_td]:border [&_th]:border [&_td]:px-2 [&_th]:px-2 [&_td]:py-1 [&_th]:py-1 [&_tr]:border [&_hr]:my-2 [&_blockquote]:border-l-2 [&_blockquote]:pl-2 [&_blockquote]:opacity-80 [&_pre]:bg-black/5 [&_pre]:dark:bg-white/5 [&_pre]:rounded [&_pre]:p-2 [&_code]:text-xs">{msg.content}</ReactMarkdown>}
-                  </div>
-                </div>
-              );
-              })}
-              {streaming && streamingText && (
-                <div className="flex justify-start">
-                  <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center mr-1.5 mt-0.5 shrink-0">
-                    <Bot size={12} className="text-primary" />
-                  </div>
-                  <div className="max-w-[80%] rounded-2xl rounded-bl-sm px-3 py-2 text-sm bg-muted leading-relaxed">
-                    {streamingText}
-                    <span className="inline-block w-1 h-3 ml-0.5 bg-primary animate-pulse rounded" />
-                  </div>
-                </div>
-              )}
-              {streaming && !streamingText && (
-                <div className="flex justify-start items-center gap-1 ml-8">
-                  {[0, 0.15, 0.3].map((delay, i) => (
-                    <motion.div key={i} className="w-2 h-2 rounded-full bg-muted-foreground/40"
-                      animate={{ y: [0, -6, 0] }} transition={{ repeat: Infinity, duration: 0.7, delay }} />
-                  ))}
-                </div>
-              )}
-              <div ref={bottomRef} />
-            </div>
-
-            {/* Input */}
-            <div className="border-t p-3 flex gap-2">
-              <Input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (() => { const t = input.trim(); if (t) { setInput(""); sendMessage(t); } })()}
-                placeholder="Preguntame algo..."
-                className="text-sm h-9"
-                disabled={streaming}
-              />
-              <Button size="sm" onClick={() => { const t = input.trim(); if (t) { setInput(""); sendMessage(t); } }} disabled={!input.trim() || streaming} className="h-9 w-9 p-0 shrink-0">
-                <Send size={14} />
-              </Button>
-            </div>
+            {chatPanel}
           </motion.div>
         )}
       </AnimatePresence>

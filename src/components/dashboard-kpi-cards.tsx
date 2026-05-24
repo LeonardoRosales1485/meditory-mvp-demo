@@ -111,17 +111,20 @@ interface KpiRowProps {
   lossWithoutTransfers: number;
   savingWithTransfers: number;
   criticalMeds: number;
-  alemanUnits: number;
+  topWsUnits: number;
+  topWsName: string;
+  selectedWorkspaceName?: string | null;
 }
 
-export function KpiRow({ totalUnits, lossWithoutTransfers, savingWithTransfers, criticalMeds, alemanUnits }: KpiRowProps) {
+export function KpiRow({ totalUnits, lossWithoutTransfers, savingWithTransfers, criticalMeds, topWsUnits, topWsName, selectedWorkspaceName }: KpiRowProps) {
+  const isFiltered = !!selectedWorkspaceName;
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
       <KpiCard
         value={totalUnits}
-        label="Total Unidades (global)"
-        sublabel="3 hospitales"
-        tooltip="Suma de todas las unidades en stock en los 3 hospitales y sus depósitos (Central, Interna y Ventas). Incluye todos los medicamentos activos."
+        label={isFiltered ? `Unidades — ${selectedWorkspaceName}` : "Total Unidades (global)"}
+        sublabel={isFiltered ? undefined : "3 hospitales"}
+        tooltip={isFiltered ? `Suma de todas las unidades en stock en ${selectedWorkspaceName}.` : "Suma de todas las unidades en stock en los 3 hospitales y sus depósitos (Central, Interna y Ventas). Incluye todos los medicamentos activos."}
         color="blue"
         icon={<TrendingUp size={18} />}
         delay={0}
@@ -161,8 +164,8 @@ export function KpiRow({ totalUnits, lossWithoutTransfers, savingWithTransfers, 
       <KpiCard
         value={criticalMeds}
         label="Medicamentos críticos"
-        sublabel="Por debajo del mínimo"
-        tooltip="Cantidad de medicamentos con stock actual por debajo del mínimo configurado en al menos uno de los 3 hospitales. Requieren atención inmediata o licitación urgente."
+        sublabel={isFiltered ? `En ${selectedWorkspaceName}` : "Por debajo del mínimo"}
+        tooltip={isFiltered ? `Medicamentos con stock por debajo del mínimo en ${selectedWorkspaceName}.` : "Cantidad de medicamentos con stock actual por debajo del mínimo configurado en al menos uno de los 3 hospitales. Requieren atención inmediata o licitación urgente."}
         color="yellow"
         icon={<AlertTriangle size={18} />}
         delay={0.3}
@@ -174,13 +177,13 @@ export function KpiRow({ totalUnits, lossWithoutTransfers, savingWithTransfers, 
         }
       />
       <KpiCard
-        value={alemanUnits}
-        label="Hospital Alemán"
-        sublabel="#1 en stock del sistema"
-        tooltip="Unidades totales en los 3 depósitos del Hospital Alemán. Concentra la mayor parte del stock del sistema y es la fuente principal de sobrestock transferible."
+        value={topWsUnits}
+        label={isFiltered ? selectedWorkspaceName : topWsName}
+        sublabel={isFiltered ? undefined : "#1 en stock del sistema"}
+        tooltip={isFiltered ? `Unidades totales en ${selectedWorkspaceName}.` : `Unidades totales en los depósitos de ${topWsName}. Concentra la mayor parte del stock del sistema y es la fuente principal de sobrestock transferible.`}
         color="green"
         icon={<Trophy size={18} />}
-        highlight
+        highlight={!isFiltered}
         delay={0.4}
       />
     </div>

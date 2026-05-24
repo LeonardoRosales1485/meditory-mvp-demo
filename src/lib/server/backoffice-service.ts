@@ -603,14 +603,11 @@ export async function resetWorkspaceData(workspaceId: string) {
 }
 
 export async function seedWorkspaceDemo(workspaceId: string, workspaceName: string) {
-  const KNOWN = ["ws-aleman", "ws-francisco", "ws-blanco"] as const;
-
-  if (!KNOWN.includes(workspaceId as typeof KNOWN[number])) {
+  if (["ws-aleman", "ws-francisco", "ws-blanco"].includes(workspaceId)) {
+    await seedFullDemoWorkspace(workspaceId as "ws-aleman" | "ws-francisco" | "ws-blanco");
+  } else {
     await seedGenericWorkspace(workspaceId, workspaceName);
-    return;
   }
-
-  await seedFullDemoWorkspace(workspaceId as typeof KNOWN[number]);
 }
 
 export async function updateStockConfig(
@@ -1111,9 +1108,15 @@ async function generateDummyMovements(
   const now = Date.now();
 
   const userMap: Record<string, { admin: string; ventas: string; doctor: string; tecnico: string }> = {
-    "ws-aleman":    { admin: "Admin Demo",    ventas: "María Pérez",  doctor: "Doctor Demo",    tecnico: "Luis Sosa" },
-    "ws-francisco": { admin: "Admin Demo",    ventas: "Carlos Ruiz",  doctor: "Doctor Demo",    tecnico: "Patricia Vega" },
-    "ws-blanco":    { admin: "Admin Blanco",  ventas: "Admin Blanco", doctor: "Admin Blanco",   tecnico: "Téc. Blanco" },
+    "ws-aleman":    { admin: "Admin Demo",      ventas: "María Pérez",     doctor: "Doctor Demo",      tecnico: "Luis Sosa" },
+    "ws-francisco": { admin: "Admin Demo",      ventas: "Carlos Ruiz",     doctor: "Doctor Demo",      tecnico: "Patricia Vega" },
+    "ws-blanco":    { admin: "Admin Blanco",    ventas: "Admin Blanco",    doctor: "Admin Blanco",     tecnico: "Téc. Blanco" },
+    "ws-padilla":   { admin: "Admin Padilla",   ventas: "Ventas Padilla",  doctor: "Dr. Padilla",      tecnico: "Téc. Padilla" },
+    "ws-ninez":     { admin: "Admin Niño Jesús",ventas: "Ventas Niñez",    doctor: "Dr. Niño Jesús",   tecnico: "Téc. Niñez" },
+    "ws-mujer":     { admin: "Admin Mujer",     ventas: "Ventas Mujer",    doctor: "Dra. Mujer",       tecnico: "Téc. Mujer" },
+    "ws-evaperon":  { admin: "Admin Eva Perón", ventas: "Ventas Eva Perón",doctor: "Dr. Eva Perón",    tecnico: "Téc. Eva Perón" },
+    "ws-concepcion":{ admin: "Admin Concepción",ventas: "Ventas Concepción",doctor: "Dr. Concepción",  tecnico: "Téc. Concepción" },
+    "ws-este":      { admin: "Admin Este",      ventas: "Ventas Este",     doctor: "Dra. Este",        tecnico: "Téc. Este" },
   };
   const u = userMap[ws] ?? userMap["ws-blanco"];
 
@@ -1299,6 +1302,23 @@ async function seedGenericWorkspace(workspaceId: string, workspaceName: string) 
   const whCentralId = `wh-${workspaceId}-central`;
   const whInternaId = `wh-${workspaceId}-interna`;
   const whVentasId = `wh-${workspaceId}-ventas`;
+  const prefix = workspaceId.replace("ws-", "");
+  const emailPrefix = "hospital" + prefix;
+  const slug = "HOSPITAL" + prefix.toUpperCase();
+
+  await db(
+    supabaseAdmin.from("workspaces").upsert({ id: workspaceId, name: workspaceName, slug }, { onConflict: "id", ignoreDuplicates: true }),
+  );
+
+  const users = [
+    { id: `u-admin-${prefix}`, workspace_id: workspaceId, name: `Admin ${workspaceName}`, email: `${emailPrefix}admin@user.com`, role: "admin" },
+    { id: `u-ventas-${prefix}`, workspace_id: workspaceId, name: `Ventas ${workspaceName}`, email: `${emailPrefix}ventas@user.com`, role: "ventas" },
+    { id: `u-doctor-${prefix}`, workspace_id: workspaceId, name: `Doctor ${workspaceName}`, email: `${emailPrefix}doctor@user.com`, role: "doctor" },
+    { id: `u-tec-${prefix}`, workspace_id: workspaceId, name: `Téc. ${workspaceName}`, email: `${emailPrefix}tecnico@user.com`, role: "tecnico" },
+  ];
+  for (const u of users) {
+    await db(supabaseAdmin.from("workspace_users").upsert(u, { onConflict: "id", ignoreDuplicates: true })).catch(() => {});
+  }
 
   await db(
     supabaseAdmin.from("warehouses").upsert([
@@ -1367,6 +1387,19 @@ async function seedGenericWorkspace(workspaceId: string, workspaceName: string) 
       ).catch(() => {});
     }
   }
+
+  // ── Warehouse capacities ──
+  for (const [whId, volume] of [[whCentralId, 500], [whInternaId, 200], [whVentasId, 150]] as const) {
+    await db(supabaseAdmin.from("warehouses").update({ volume }).eq("id", whId)).catch(() => {});
+  }
+
+  // ── Dummy movements ──
+  const medKeyList = meds.map((m) => ({ key: m.key, name: m.name }));
+  await generateDummyMovements(
+    workspaceId, workspaceId, medKeyList,
+    (key: string) => `med-${workspaceId}-${key}`,
+    whCentralId, whInternaId, whVentasId,
+  );
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1531,4 +1564,18 @@ export async function getAssistantFullSnapshot(): Promise<AssistantFullSnapshot>
     })),
     totalUnits: batches.reduce((s, b) => s + (b.quantity ?? 0), 0),
   };
+}
+
+export interface MedicationRef {
+  id: string;
+  name: string;
+  form: string;
+  concentrationValue: number;
+  concentrationUnit: string;
+}
+
+export async function getAllMedications(): Promise<MedicationRef[]> {
+  return db<MedicationRef[]>(
+    supabaseAdmin.from("medications").select("id, name, form, concentration_value, concentration_unit"),
+  );
 }

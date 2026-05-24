@@ -25,6 +25,7 @@ import {
   addStockDirectly,
   addStockWithPurchase,
   getAssistantFullSnapshot,
+  getAllMedications,
 } from "./server/backoffice-service";
 
 export const fetchWorkspaceDataRpc = createServerFn({ method: "POST" })
@@ -249,6 +250,10 @@ export const backofficeSeedWorkspaceRpc = createServerFn({ method: "POST" })
     await seedWorkspaceDemo(data.workspaceId, data.workspaceName);
     return { ok: true };
   });
+
+export const backofficeGetAllMedicationsRpc = createServerFn({ method: "GET" }).handler(async () => {
+  return getAllMedications();
+});
 
 // ─── RPCs Asistente con Acciones ──────────────────────────────────────────
 

@@ -236,6 +236,12 @@ function parseEmail(email: string): Session | null {
     hospitalaleman:   { id: "ws-aleman",    name: "Hospital Alemán" },
     hospitalfrancisco: { id: "ws-francisco", name: "Hospital Francisco" },
     hospitalblanco: { id: "ws-blanco", name: "Hospital Blanco" },
+    hospitalpadilla:    { id: "ws-padilla",    name: "Hospital Ángel C. Padilla" },
+    hospitalninez:      { id: "ws-ninez",      name: "Hospital del Niño Jesús" },
+    hospitalmujer:      { id: "ws-mujer",      name: "Hospital de la Mujer" },
+    hospitalevaperon:   { id: "ws-evaperon",   name: "Hospital Eva Perón" },
+    hospitalconcepcion: { id: "ws-concepcion", name: "Hospital Regional de Concepción" },
+    hospitaleste:       { id: "ws-este",       name: "Hospital de la Comunidad - Este" },
   };
   const ws = map[prefix];
   if (!ws) return null;

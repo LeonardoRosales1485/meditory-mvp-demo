@@ -19,6 +19,7 @@ import { Route as BackofficeWorkspacesRouteImport } from './routes/backoffice.wo
 import { Route as BackofficeUsuariosRouteImport } from './routes/backoffice.usuarios'
 import { Route as BackofficePanelEnVivoRouteImport } from './routes/backoffice.panel-en-vivo'
 import { Route as BackofficeLoginRouteImport } from './routes/backoffice.login'
+import { Route as BackofficeGestionPedidosRouteImport } from './routes/backoffice.gestion-pedidos'
 import { Route as BackofficeEstadoHospitalRouteImport } from './routes/backoffice.estado-hospital'
 import { Route as BackofficeEsquemaRouteImport } from './routes/backoffice.esquema'
 import { Route as BackofficeDemoToolsRouteImport } from './routes/backoffice.demo-tools'
@@ -94,6 +95,12 @@ const BackofficeLoginRoute = BackofficeLoginRouteImport.update({
   path: '/login',
   getParentRoute: () => BackofficeRoute,
 } as any)
+const BackofficeGestionPedidosRoute =
+  BackofficeGestionPedidosRouteImport.update({
+    id: '/gestion-pedidos',
+    path: '/gestion-pedidos',
+    getParentRoute: () => BackofficeRoute,
+  } as any)
 const BackofficeEstadoHospitalRoute =
   BackofficeEstadoHospitalRouteImport.update({
     id: '/estado-hospital',
@@ -246,6 +253,7 @@ export interface FileRoutesByFullPath {
   '/backoffice/demo-tools': typeof BackofficeDemoToolsRoute
   '/backoffice/esquema': typeof BackofficeEsquemaRoute
   '/backoffice/estado-hospital': typeof BackofficeEstadoHospitalRoute
+  '/backoffice/gestion-pedidos': typeof BackofficeGestionPedidosRoute
   '/backoffice/login': typeof BackofficeLoginRoute
   '/backoffice/panel-en-vivo': typeof BackofficePanelEnVivoRoute
   '/backoffice/usuarios': typeof BackofficeUsuariosRoute
@@ -280,6 +288,7 @@ export interface FileRoutesByTo {
   '/backoffice/demo-tools': typeof BackofficeDemoToolsRoute
   '/backoffice/esquema': typeof BackofficeEsquemaRoute
   '/backoffice/estado-hospital': typeof BackofficeEstadoHospitalRoute
+  '/backoffice/gestion-pedidos': typeof BackofficeGestionPedidosRoute
   '/backoffice/login': typeof BackofficeLoginRoute
   '/backoffice/panel-en-vivo': typeof BackofficePanelEnVivoRoute
   '/backoffice/usuarios': typeof BackofficeUsuariosRoute
@@ -317,6 +326,7 @@ export interface FileRoutesById {
   '/backoffice/demo-tools': typeof BackofficeDemoToolsRoute
   '/backoffice/esquema': typeof BackofficeEsquemaRoute
   '/backoffice/estado-hospital': typeof BackofficeEstadoHospitalRoute
+  '/backoffice/gestion-pedidos': typeof BackofficeGestionPedidosRoute
   '/backoffice/login': typeof BackofficeLoginRoute
   '/backoffice/panel-en-vivo': typeof BackofficePanelEnVivoRoute
   '/backoffice/usuarios': typeof BackofficeUsuariosRoute
@@ -355,6 +365,7 @@ export interface FileRouteTypes {
     | '/backoffice/demo-tools'
     | '/backoffice/esquema'
     | '/backoffice/estado-hospital'
+    | '/backoffice/gestion-pedidos'
     | '/backoffice/login'
     | '/backoffice/panel-en-vivo'
     | '/backoffice/usuarios'
@@ -389,6 +400,7 @@ export interface FileRouteTypes {
     | '/backoffice/demo-tools'
     | '/backoffice/esquema'
     | '/backoffice/estado-hospital'
+    | '/backoffice/gestion-pedidos'
     | '/backoffice/login'
     | '/backoffice/panel-en-vivo'
     | '/backoffice/usuarios'
@@ -425,6 +437,7 @@ export interface FileRouteTypes {
     | '/backoffice/demo-tools'
     | '/backoffice/esquema'
     | '/backoffice/estado-hospital'
+    | '/backoffice/gestion-pedidos'
     | '/backoffice/login'
     | '/backoffice/panel-en-vivo'
     | '/backoffice/usuarios'
@@ -510,6 +523,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/backoffice/login'
       preLoaderRoute: typeof BackofficeLoginRouteImport
+      parentRoute: typeof BackofficeRoute
+    }
+    '/backoffice/gestion-pedidos': {
+      id: '/backoffice/gestion-pedidos'
+      path: '/gestion-pedidos'
+      fullPath: '/backoffice/gestion-pedidos'
+      preLoaderRoute: typeof BackofficeGestionPedidosRouteImport
       parentRoute: typeof BackofficeRoute
     }
     '/backoffice/estado-hospital': {
@@ -737,6 +757,7 @@ interface BackofficeRouteChildren {
   BackofficeDemoToolsRoute: typeof BackofficeDemoToolsRoute
   BackofficeEsquemaRoute: typeof BackofficeEsquemaRoute
   BackofficeEstadoHospitalRoute: typeof BackofficeEstadoHospitalRoute
+  BackofficeGestionPedidosRoute: typeof BackofficeGestionPedidosRoute
   BackofficeLoginRoute: typeof BackofficeLoginRoute
   BackofficePanelEnVivoRoute: typeof BackofficePanelEnVivoRoute
   BackofficeUsuariosRoute: typeof BackofficeUsuariosRoute
@@ -750,6 +771,7 @@ const BackofficeRouteChildren: BackofficeRouteChildren = {
   BackofficeDemoToolsRoute: BackofficeDemoToolsRoute,
   BackofficeEsquemaRoute: BackofficeEsquemaRoute,
   BackofficeEstadoHospitalRoute: BackofficeEstadoHospitalRoute,
+  BackofficeGestionPedidosRoute: BackofficeGestionPedidosRoute,
   BackofficeLoginRoute: BackofficeLoginRoute,
   BackofficePanelEnVivoRoute: BackofficePanelEnVivoRoute,
   BackofficeUsuariosRoute: BackofficeUsuariosRoute,

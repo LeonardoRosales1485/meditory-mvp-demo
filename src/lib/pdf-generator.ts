@@ -1,5 +1,215 @@
 import { jsPDF } from "jspdf";
 
+function splitTextToLines(doc: jsPDF, text: string, maxWidth: number): string[] {
+  const words = text.split(" ");
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    const testLine = line ? line + " " + word : word;
+    if (doc.getTextWidth(testLine) > maxWidth && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = testLine;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+function drawSectionTitle(doc: jsPDF, x: number, y: number, title: string): number {
+  doc.setFillColor(99, 102, 241);
+  doc.setDrawColor(99, 102, 241);
+  doc.rect(x, y - 4, 3, 10, "F");
+  doc.setTextColor(30, 30, 30);
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "bold");
+  doc.text(title, x + 6, y + 2);
+  return y + 8;
+}
+
+function drawBodyText(doc: jsPDF, text: string, x: number, y: number, maxWidth: number, maxY: number, pageH: number): number {
+  const lines = splitTextToLines(doc, text, maxWidth);
+  doc.setFontSize(8);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(60, 60, 60);
+  for (const line of lines) {
+    if (y + 5 > maxY) {
+      doc.setTextColor(150);
+      doc.setFontSize(6);
+      doc.text(`Meditory MVP — Página ${doc.getNumberOfPages()}`, doc.internal.pageSize.getWidth() / 2, pageH - 5, { align: "center" });
+      doc.addPage();
+      y = 14;
+      doc.setTextColor(60, 60, 60);
+      doc.setFontSize(8);
+      doc.setFont("helvetica", "normal");
+    }
+    doc.text(line, x, y + 3);
+    y += 4.5;
+  }
+  return y + 3;
+}
+
+function drawBulletList(doc: jsPDF, items: string[], x: number, y: number, maxWidth: number, maxY: number, pageH: number): number {
+  doc.setFontSize(8.5);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(30, 30, 30);
+  for (const item of items) {
+    if (y + 5 > maxY) {
+      doc.setTextColor(150);
+      doc.setFontSize(6);
+      doc.text(`Meditory MVP — Página ${doc.getNumberOfPages()}`, doc.internal.pageSize.getWidth() / 2, pageH - 5, { align: "center" });
+      doc.addPage();
+      y = 14;
+      doc.setTextColor(30, 30, 30);
+      doc.setFontSize(8.5);
+      doc.setFont("helvetica", "normal");
+    }
+    const bullet = "•  " + item;
+    const lines = splitTextToLines(doc, bullet, maxWidth);
+    for (const line of lines) {
+      if (y + 5 > maxY) {
+        doc.setTextColor(150);
+        doc.setFontSize(6);
+        doc.text(`Meditory MVP — Página ${doc.getNumberOfPages()}`, doc.internal.pageSize.getWidth() / 2, pageH - 5, { align: "center" });
+        doc.addPage();
+        y = 14;
+        doc.setTextColor(30, 30, 30);
+        doc.setFontSize(8.5);
+        doc.setFont("helvetica", "normal");
+      }
+      doc.text(line, x, y + 3);
+      y += 5;
+    }
+    y += 0.5;
+  }
+  return y + 3;
+}
+
+export interface ChartReportData {
+  title: string;
+  chartImageData: string;
+  workspaceNames: string[];
+  date: string;
+  analysis: string;
+  recommendations: string[];
+  tips?: string[];
+}
+
+export async function generateChartReportPdf(data: ChartReportData): Promise<void> {
+  try {
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const margin = 14;
+    const contentWidth = pageW - margin * 2;
+    const maxY = pageH - 14;
+
+    // ── Header ──
+    doc.setFillColor(99, 102, 241);
+    doc.rect(0, 0, pageW, 22, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(15);
+    doc.setFont("helvetica", "bold");
+    doc.text("Meditory MVP", pageW / 2, 8, { align: "center" });
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.text(data.title, pageW / 2, 15.5, { align: "center" });
+
+    const wsLabel = data.workspaceNames.length > 0 ? data.workspaceNames.join(" · ") : "Todos los hospitales";
+    doc.setFontSize(7);
+    doc.text(`${wsLabel} · ${data.date}`, pageW / 2, 20, { align: "center" });
+
+    let y = 28;
+
+    // ── Chart Image ──
+    const imgWidth = contentWidth;
+    const imgHeight = Math.min(imgWidth * 0.5, 100);
+    try {
+      doc.addImage(data.chartImageData, "PNG", margin, y, imgWidth, imgHeight);
+      y += imgHeight + 6;
+    } catch {
+      doc.setDrawColor(200);
+      doc.setFillColor(245, 245, 250);
+      doc.roundedRect(margin, y, imgWidth, 50, 3, 3, "FD");
+      doc.setTextColor(150);
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "italic");
+      doc.text("(vista previa del gráfico)", pageW / 2, y + 27, { align: "center" });
+      y += 56;
+    }
+
+    // ── Línea separadora ──
+    doc.setDrawColor(220, 220, 230);
+    doc.line(margin, y, pageW - margin, y);
+    y += 6;
+
+    // ── Análisis ──
+    if (y + 8 > maxY) { doc.addPage(); y = 14; }
+    y = drawSectionTitle(doc, margin, y, "Análisis");
+    if (y + 8 > maxY) { doc.addPage(); y = 14; }
+    y = drawBodyText(doc, data.analysis, margin, y, contentWidth, maxY, pageH);
+    y += 2;
+
+    // ── Línea separadora ──
+    if (y + 4 < maxY) {
+      doc.setDrawColor(220, 220, 230);
+      doc.line(margin, y, pageW - margin, y);
+      y += 6;
+    }
+
+    // ── Recomendaciones ──
+    if (data.recommendations.length > 0) {
+      if (y + 8 > maxY) { doc.addPage(); y = 14; }
+      y = drawSectionTitle(doc, margin, y, "Recomendaciones");
+      if (y + 8 > maxY) { doc.addPage(); y = 14; }
+      y = drawBulletList(doc, data.recommendations, margin, y, contentWidth, maxY, pageH);
+      y += 2;
+    }
+
+    // ── Tips ──
+    if (data.tips && data.tips.length > 0) {
+      if (y + 8 > maxY) { doc.addPage(); y = 14; }
+      doc.setFillColor(255, 247, 237);
+      doc.setDrawColor(251, 191, 36);
+      doc.roundedRect(margin, y - 2, contentWidth, 18, 3, 3, "FD");
+      doc.setTextColor(180, 100, 10);
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "bold");
+      doc.text("💡 Tips", margin + 4, y + 4);
+      doc.setTextColor(130, 80, 20);
+      doc.setFontSize(7.5);
+      doc.setFont("helvetica", "normal");
+      let tipY = y + 4;
+      for (const tip of data.tips) {
+        const lines = splitTextToLines(doc, "•  " + tip, contentWidth - 10);
+        for (const line of lines) {
+          if (tipY + 5 > maxY) break;
+          doc.text(line, margin + 4, tipY + 5);
+          tipY += 4.5;
+        }
+      }
+      y = tipY + 6;
+    }
+
+    // ── Footer on all pages ──
+    const pageCount = doc.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setTextColor(160);
+      doc.setFontSize(6);
+      doc.setFont("helvetica", "normal");
+      doc.text(`Meditory MVP — Sistema de Gestión Farmacéutica · Página ${i} de ${pageCount}`, pageW / 2, pageH - 5, { align: "center" });
+    }
+
+    const safeTitle = data.title.replace(/[^a-zA-Z0-9-_]/g, "-").toLowerCase();
+    doc.save(`reporte-${safeTitle}-${new Date().toISOString().slice(0, 10)}.pdf`);
+  } catch (e) {
+    console.error("Error generating chart report PDF:", e);
+    throw e;
+  }
+}
+
 export interface OrderPdfData {
   items: {
     medicationName: string;
@@ -31,7 +241,7 @@ export function generateOrderPdf(data: OrderPdfData): void {
   doc.text("Orden de Compra Optimizada", pageW / 2, 18, { align: "center" });
   doc.setFontSize(11);
   doc.setFont("helvetica", "normal");
-  doc.text("Meditory — Sistema de Gestión Farmacéutica", pageW / 2, 28, { align: "center" });
+  doc.text("Meditory MVP — Sistema de Gestión Farmacéutica", pageW / 2, 28, { align: "center" });
   doc.text(`Generado: ${data.generatedAt}`, pageW / 2, 35, { align: "center" });
 
   y = 52;
@@ -140,7 +350,7 @@ export function generateStockReportPdf(data: StockReportData): void {
   doc.text("Reporte de Stock Cruzado", pageW / 2, 16, { align: "center" });
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
-  doc.text(`Meditory · ${new Date().toLocaleDateString("es-AR")}`, pageW / 2, 28, { align: "center" });
+  doc.text(`Meditory MVP · ${new Date().toLocaleDateString("es-AR")}`, pageW / 2, 28, { align: "center" });
 
   y = 48;
   doc.setTextColor(30, 30, 30);
@@ -225,7 +435,7 @@ export async function generateDashboardSnapshotPdf(elementId: string): Promise<v
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(11);
     doc.setFont("helvetica", "bold");
-    doc.text(`Meditory — Snapshot del Dashboard · ${new Date().toLocaleDateString("es-AR")}`, pageW / 2, 9, { align: "center" });
+    doc.text(`Meditory MVP — Snapshot del Dashboard · ${new Date().toLocaleDateString("es-AR")}`, pageW / 2, 9, { align: "center" });
 
     const imgW = pageW - 10;
     const imgH = (canvas.height / canvas.width) * imgW;

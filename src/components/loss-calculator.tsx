@@ -50,7 +50,7 @@ export function LossCalculator({ lossData, medicationNames }: LossCalculatorProp
       doc.text("Calculadora de Pérdidas por Licitación", pageW / 2, 18, { align: "center" });
       doc.setFontSize(10);
       doc.setFont("helvetica", "normal");
-      doc.text("Meditory — Sistema de Gestión Farmacéutica", pageW / 2, 28, { align: "center" });
+      doc.text("Meditory MVP — Sistema de Gestión Farmacéutica", pageW / 2, 28, { align: "center" });
       doc.text(`Generado: ${new Date().toLocaleDateString("es-AR")}`, pageW / 2, 35, { align: "center" });
 
       y = 52;

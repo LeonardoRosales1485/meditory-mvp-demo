@@ -470,7 +470,7 @@ export function DemoAssistantChat(props: DemoAssistantChatProps) {
           fullText = event.content || fullText;
           break;
         } else if (event.type === "error") {
-          fullText = "Ups, tuve un problema conectándome. Probá de nuevo en un segundo.";
+          fullText = `Ups, tuve un problema conectándome: ${event.message}`;
           break;
         }
       }

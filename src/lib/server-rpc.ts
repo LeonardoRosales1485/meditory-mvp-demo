@@ -157,34 +157,55 @@ export const aiChatRpc = createServerFn({ method: "POST" })
 
     const baseUrl = cfg.baseUrl;
     const apiKey = cfg.apiKey;
+    console.debug("[aiChatRpc] provider:", provider, "model:", data.model, "hasApiKey:", !!apiKey, "toolsCount:", data.tools?.length ?? 0);
+
+    if (!apiKey) {
+      throw new Error(`${provider.toUpperCase()}_API_KEY no está configurada en el servidor`);
+    }
+
     const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+    headers["Authorization"] = `Bearer ${apiKey}`;
+
+    const bodyPayload = {
+      model: data.model,
+      messages: data.messages,
+      ...(data.tools?.length ? { tools: data.tools } : {}),
+      max_tokens: 1024,
+      stream: false,
+    };
+    console.debug("[aiChatRpc] request body keys:", Object.keys(bodyPayload).join(", "));
 
     const res = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
       headers,
-      body: JSON.stringify({
-        model: data.model,
-        messages: data.messages,
-        tools: data.tools?.length ? data.tools : undefined,
-        max_tokens: 1024,
-        stream: false,
-      }),
+      body: JSON.stringify(bodyPayload),
     });
 
     if (!res.ok) {
       const text = await res.text().catch(() => "");
+      console.error("[aiChatRpc] HTTP error:", res.status, text.slice(0, 500));
       throw new Error(`LLM API error ${res.status}: ${text.slice(0, 500)}`);
     }
 
     const json = await res.json() as {
       choices?: { message?: { content?: string; tool_calls?: unknown[] } }[];
+      error?: { message?: string };
     };
+    console.debug("[aiChatRpc] raw response:", JSON.stringify(json).slice(0, 2000));
 
-    return {
-      content: json.choices?.[0]?.message?.content ?? "",
-      tool_calls: json.choices?.[0]?.message?.tool_calls ?? [],
-    };
+    if (json.error) {
+      console.error("[aiChatRpc] API error in body:", json.error.message);
+    }
+
+    const choice = json.choices?.[0];
+    const content = choice?.message?.content ?? "";
+    const tool_calls = choice?.message?.tool_calls ?? [];
+
+    if (!content && (!tool_calls || tool_calls.length === 0)) {
+      console.warn("[aiChatRpc] empty response — choices:", JSON.stringify(json.choices));
+    }
+
+    return { content, tool_calls };
   });
 
 // ─────────────────────────────────────────────────────────────

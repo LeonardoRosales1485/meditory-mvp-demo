@@ -17,6 +17,8 @@ import {
   Warehouse,
   Wrench,
   BedDouble,
+  BarChart3,
+  Settings,
 } from "lucide-react";
 
 import {
@@ -65,10 +67,13 @@ const internmentItems: Item[] = [
 ];
 
 const controlItems: Item[] = [
-  { title: "Vencimientos", url: "/app/vencimientos", icon: AlertTriangle, roles: NON_DOCTOR },
-  { title: "Auditoría",    url: "/app/auditoria",    icon: ScrollText,    roles: ADMIN },
-  { title: "Usuarios",     url: "/app/usuarios",     icon: Users,         roles: ADMIN },
-  { title: "Demo Tools",   url: "/app/demo-tools",   icon: Wrench,        roles: ADMIN },
+  { title: "Stock Cruzado",     url: "/app/stock-hospital",  icon: BarChart3,    roles: ADMIN_TECNICO },
+  { title: "Vencimientos",      url: "/app/vencimientos",    icon: AlertTriangle, roles: NON_DOCTOR },
+  { title: "Auditoría",         url: "/app/auditoria",       icon: ScrollText,    roles: ADMIN },
+  { title: "Config. Asistente", url: "/app/config-asistente", icon: Settings,     roles: ADMIN },
+  { title: "Usuarios",          url: "/app/usuarios",        icon: Users,         roles: ADMIN },
+  { title: "Demo Tools",        url: "/app/demo-tools",      icon: Wrench,        roles: ADMIN },
+  { title: "Demo Charts",       url: "/app/demo-charts",     icon: BarChart3,     roles: ADMIN },
 ];
 
 export function AppSidebar() {

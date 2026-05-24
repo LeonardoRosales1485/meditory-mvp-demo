@@ -1,8 +1,8 @@
 import { createFileRoute, Outlet, useNavigate, Link, useLocation } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  LayoutDashboard, Building2, Users, Database, LogOut, ShieldCheck, Menu, X, Activity,
-  MessageSquareMore,
+  Building2, Users, Database, LogOut, ShieldCheck, Menu, X, Activity,
+  ShoppingCart, Settings, ArrowUp, FlaskConical,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { WorkspaceAssistantChat } from "@/components/workspace-assistant-chat";
+import { DemoAssistantChat } from "@/components/demo-assistant-chat";
 import { useBackofficeStore } from "@/lib/backoffice-store";
 import { requireBackofficeAuth } from "@/lib/route-guards";
 
@@ -26,10 +27,13 @@ export const Route = createFileRoute("/backoffice")({
 });
 
 const NAV_ITEMS = [
-  { to: "/backoffice", label: "Dashboard", icon: LayoutDashboard, end: true },
+  { to: "/backoffice/estado-hospital", label: "Estado general", icon: Activity },
+  { to: "/backoffice/compras", label: "Compras / Licitación", icon: ShoppingCart },
   { to: "/backoffice/panel-en-vivo", label: "Panel en vivo", icon: Activity },
   { to: "/backoffice/workspaces", label: "Instituciones", icon: Building2 },
   { to: "/backoffice/usuarios", label: "Usuarios", icon: Users },
+  { to: "/backoffice/demo-tools", label: "Demo tools", icon: FlaskConical },
+  { to: "/backoffice/config-asistente", label: "Config. Asistente", icon: Settings },
   { to: "/backoffice/esquema", label: "Esquema DB", icon: Database },
 ];
 
@@ -40,9 +44,25 @@ function BackofficeLayout() {
   const { pathname } = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const mainRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     useBackofficeStore.getState().hydrate();
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    const el = mainRef.current;
+    if (!el) return;
+    const onScroll = () => setShowScrollTop(el.scrollTop > 400);
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+
+  const scrollToTop = useCallback(() => {
+    mainRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
 
   function handleLogout() {
@@ -53,7 +73,7 @@ function BackofficeLayout() {
   const isLoginRoute = pathname === "/backoffice/login";
 
   if (isLoginRoute) return <Outlet />;
-  if (!session) return null;
+  if (!mounted || !session) return null;
 
   return (
     <div className="flex h-svh min-h-0 w-full overflow-hidden bg-background">
@@ -89,7 +109,7 @@ function BackofficeLayout() {
             <Link
               key={item.to}
               to={item.to}
-              activeOptions={item.end ? { exact: true } : undefined}
+              activeOptions={undefined}
               onClick={() => setSidebarOpen(false)}
               className="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground [&.active]:bg-primary/10 [&.active]:text-primary"
             >
@@ -115,35 +135,24 @@ function BackofficeLayout() {
           </button>
           <span className="text-sm font-medium">{session.name}</span>
         </header>
-        <main className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
+        <main ref={mainRef} className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
           <Outlet />
         </main>
       </div>
 
-      {/* Chat floating button */}
-      <button
-        onClick={() => setChatOpen(true)}
-        className="fixed bottom-6 right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-colors hover:bg-primary/90"
-      >
-        <MessageSquareMore className="h-5 w-5" />
-      </button>
+      {/* Scroll to top */}
+      {showScrollTop && (
+        <button
+          onClick={scrollToTop}
+          className="fixed bottom-24 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full border bg-card text-muted-foreground shadow-lg transition-all hover:border-primary/40 hover:text-primary hover:shadow-xl active:scale-90"
+          aria-label="Volver al inicio"
+        >
+          <ArrowUp size={18} />
+        </button>
+      )}
 
-      <Dialog open={chatOpen} onOpenChange={setChatOpen}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle>Asistente IA</DialogTitle>
-          </DialogHeader>
-          <WorkspaceAssistantChat
-            snapshotInput={{
-              batches: [],
-              medications: [],
-              warehouses: [],
-              transfers: [],
-              workspaceName: "Backoffice",
-            }}
-          />
-        </DialogContent>
-      </Dialog>
+      {/* Asistente Medi (reemplaza al botón anterior en backoffice) */}
+      <DemoAssistantChat />
     </div>
   );
 }

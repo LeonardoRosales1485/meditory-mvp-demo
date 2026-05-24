@@ -1,5 +1,6 @@
 import type { OllamaToolCall } from "@/lib/assistant-tools";
 import { aiChatRpc } from "@/lib/server-rpc";
+import { useStore } from "@/lib/store";
 
 export type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 
@@ -9,22 +10,28 @@ export type AiChatStreamEvent =
   | { type: "done"; content: string; tool_calls: OllamaToolCall[] }
   | { type: "error"; message: string };
 
+type AiChatResult = { content?: string; tool_calls?: unknown[] };
+
 export async function* streamAiChat(input: {
   model: string;
   messages: ChatMessage[];
   tools?: unknown[];
   signal?: AbortSignal;
+  provider?: string;
 }): AsyncGenerator<AiChatStreamEvent> {
   try {
     if (input.signal?.aborted) return;
+
+    const provider = input.provider ?? useStore.getState().aiProvider;
 
     const result = await aiChatRpc({
       data: {
         model: input.model,
         messages: input.messages,
         tools: input.tools,
+        provider,
       },
-    });
+    }) as AiChatResult;
 
     if (input.signal?.aborted) return;
 
@@ -40,6 +47,6 @@ export async function* streamAiChat(input: {
     yield { type: "done", content: result.content ?? "", tool_calls: toolCalls };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    yield { type: "error", message };
+    yield { type: "error", message: msg };
   }
 }

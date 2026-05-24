@@ -1,4 +1,4 @@
-import type { Batch, Medication, Warehouse, TransferRequest } from "./domain-types";
+import { expiryStatus, type Batch, type Medication, type Warehouse, type TransferRequest } from "./domain-types";
 
 export interface AssistantWorkspaceSnapshotInput {
   batches: Batch[];
@@ -80,6 +80,35 @@ function summary(snapshot: AssistantWorkspaceSnapshotInput) {
   return { pendingCount, towardReceiptUnits };
 }
 
+function stockByWarehouse(snapshot: AssistantWorkspaceSnapshotInput): { name: string; value: number }[] {
+  const whMap = new Map(snapshot.warehouses.map((w) => [w.id, w]));
+  const acc: Record<string, number> = {};
+  for (const b of snapshot.batches) {
+    const whName = whMap.get(b.warehouseId)?.name ?? b.warehouseId;
+    acc[whName] = (acc[whName] ?? 0) + b.quantity;
+  }
+  return Object.entries(acc)
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value);
+}
+
+function expiryDistribution(snapshot: AssistantWorkspaceSnapshotInput): { name: string; value: number }[] {
+  const acc: Record<string, number> = { vencido: 0, critico: 0, proximo: 0, ok: 0 };
+  for (const b of snapshot.batches) {
+    const status = expiryStatus(b.expiry);
+    acc[status] = (acc[status] ?? 0) + b.quantity;
+  }
+  return Object.entries(acc).map(([name, value]) => ({ name, value }));
+}
+
+function transferStatusDistribution(snapshot: AssistantWorkspaceSnapshotInput): { name: string; value: number }[] {
+  const acc: Record<string, number> = {};
+  for (const t of snapshot.transfers) {
+    acc[t.status] = (acc[t.status] ?? 0) + t.quantity;
+  }
+  return Object.entries(acc).map(([name, value]) => ({ name, value }));
+}
+
 function wareHouseMap(snapshot: AssistantWorkspaceSnapshotInput) {
   const whMap = new Map(snapshot.warehouses.map((w) => [w.id, w]));
   const result: Record<string, { name: string; type: string; unit: string }> = {};
@@ -96,6 +125,9 @@ export function buildWorkspaceAssistantContext(
     workspaceName: snapshotInput.workspaceName,
     stockByMedicationId: stockByMedicationId(snapshotInput),
     topMedicationsByUnits: topMedicationsByUnits(snapshotInput),
+    stockByWarehouse: stockByWarehouse(snapshotInput),
+    expiryDistribution: expiryDistribution(snapshotInput),
+    transferStatusDistribution: transferStatusDistribution(snapshotInput),
     batchesSample: batchesSample(snapshotInput),
     pendingTransfers: pendingTransfers(snapshotInput),
     summary: summary(snapshotInput),

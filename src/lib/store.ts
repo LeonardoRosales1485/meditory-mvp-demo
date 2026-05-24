@@ -121,6 +121,10 @@ interface State {
   session: Session | null;
   /** True mientras se ejecuta fetch de datos del workspace (post-login, F5, tras mutaciones). */
   workspaceDataLoading: boolean;
+  aiProvider: "groq" | "zen";
+  setAiProvider: (provider: "groq" | "zen") => void;
+  chatMessages: { role: string; content: string }[];
+  setChatMessages: (messages: { role: string; content: string }[]) => void;
   warehouses: Warehouse[];
 
   batches: Batch[];
@@ -251,6 +255,10 @@ export const useStore = create<State>()(
       user: { name: "L. Rosales", role: "Admin cliente" },
       session: null,
       workspaceDataLoading: false,
+      aiProvider: "groq",
+      setAiProvider: (provider) => set({ aiProvider: provider }),
+      chatMessages: [],
+      setChatMessages: (messages) => set({ chatMessages: messages.slice(-20) }),
       warehouses: [],
       batches: [],
       medications: [],
@@ -296,7 +304,7 @@ export const useStore = create<State>()(
         return s;
       },
 
-      logout: () => set({ session: null, workspaceDataLoading: false }),
+      logout: () => set({ session: null, workspaceDataLoading: false, chatMessages: [] }),
 
       fetchWorkspaceData: async (workspaceId) => {
         set({ workspaceDataLoading: true });
@@ -582,7 +590,7 @@ export const useStore = create<State>()(
     }),
     {
       name: "meditory-store",
-      partialize: (s) => ({ session: s.session }),
+      partialize: (s) => ({ session: s.session, aiProvider: s.aiProvider, chatMessages: s.chatMessages }),
     },
   ),
 );

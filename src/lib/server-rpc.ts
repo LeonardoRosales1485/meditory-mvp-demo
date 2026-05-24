@@ -15,6 +15,16 @@ import {
   getRealtimeData,
   getConsumptionTrends,
   getSchema,
+  getCrossHospitalStock,
+  getProcurementOptimization,
+  getLossCalculation,
+  getWarehouseVolumeData,
+  getConsumptionByMedication,
+  resetWorkspaceData,
+  seedWorkspaceDemo,
+  addStockDirectly,
+  addStockWithPurchase,
+  getAssistantFullSnapshot,
 } from "./server/backoffice-service";
 
 export const fetchWorkspaceDataRpc = createServerFn({ method: "POST" })
@@ -126,14 +136,33 @@ export const aiChatRpc = createServerFn({ method: "POST" })
     model: string;
     messages: { role: string; content: string }[];
     tools?: unknown[];
+    provider?: string;
   }) => data)
   .handler(async ({ data }) => {
-    const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+    const provider = data.provider ?? process.env.LLM_PROVIDER ?? "groq";
+
+    const configs: Record<string, { baseUrl: string; apiKey: string | undefined }> = {
+      groq: {
+        baseUrl: "https://api.groq.com/openai/v1",
+        apiKey: process.env.GROQ_API_KEY,
       },
+      zen: {
+        baseUrl: "https://opencode.ai/zen/v1",
+        apiKey: process.env.ZEN_API_KEY,
+      },
+    };
+
+    const cfg = configs[provider];
+    if (!cfg) throw new Error(`Unknown AI provider: ${provider}`);
+
+    const baseUrl = cfg.baseUrl;
+    const apiKey = cfg.apiKey;
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers,
       body: JSON.stringify({
         model: data.model,
         messages: data.messages,
@@ -143,12 +172,12 @@ export const aiChatRpc = createServerFn({ method: "POST" })
       }),
     });
 
-    if (!groqRes.ok) {
-      const text = await groqRes.text().catch(() => "");
-      throw new Error(`Groq API error ${groqRes.status}: ${text.slice(0, 500)}`);
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`LLM API error ${res.status}: ${text.slice(0, 500)}`);
     }
 
-    const json = await groqRes.json() as {
+    const json = await res.json() as {
       choices?: { message?: { content?: string; tool_calls?: unknown[] } }[];
     };
 
@@ -156,4 +185,79 @@ export const aiChatRpc = createServerFn({ method: "POST" })
       content: json.choices?.[0]?.message?.content ?? "",
       tool_calls: json.choices?.[0]?.message?.tool_calls ?? [],
     };
+  });
+
+// ─────────────────────────────────────────────────────────────
+//  RPCs DEMO FINAL — Cross-Hospital & Compras
+// ─────────────────────────────────────────────────────────────
+
+export const backofficeGetCrossHospitalStockRpc = createServerFn({ method: "GET" }).handler(async () => {
+  return getCrossHospitalStock();
+});
+
+export const backofficeGetProcurementOptimizationRpc = createServerFn({ method: "POST" })
+  .inputValidator((data: { medicationName?: string }) => data)
+  .handler(async ({ data }) => {
+    return getProcurementOptimization(data.medicationName);
+  });
+
+export const backofficeGetLossCalculationRpc = createServerFn({ method: "GET" }).handler(async () => {
+  return getLossCalculation();
+});
+
+export const backofficeGetWarehouseVolumeDataRpc = createServerFn({ method: "GET" }).handler(async () => {
+  return getWarehouseVolumeData();
+});
+
+export const backofficeGetConsumptionByMedicationRpc = createServerFn({ method: "POST" })
+  .inputValidator((data: { periodDays?: number }) => data)
+  .handler(async ({ data }) => {
+    return getConsumptionByMedication(data.periodDays ?? 30);
+  });
+
+export const backofficeResetWorkspaceRpc = createServerFn({ method: "POST" })
+  .inputValidator((data: { workspaceId: string }) => data)
+  .handler(async ({ data }) => {
+    await resetWorkspaceData(data.workspaceId);
+    return { ok: true };
+  });
+
+export const backofficeSeedWorkspaceRpc = createServerFn({ method: "POST" })
+  .inputValidator((data: { workspaceId: string; workspaceName: string }) => data)
+  .handler(async ({ data }) => {
+    await seedWorkspaceDemo(data.workspaceId, data.workspaceName);
+    return { ok: true };
+  });
+
+// ─── RPCs Asistente con Acciones ──────────────────────────────────────────
+
+export const backofficeAddStockDirectlyRpc = createServerFn({ method: "POST" })
+  .inputValidator((data: {
+    medicationId: string;
+    warehouseId: string;
+    quantity: number;
+    lot?: string;
+    expiry?: string;
+  }) => data)
+  .handler(async ({ data }) => {
+    return addStockDirectly(data);
+  });
+
+export const backofficeAddStockWithPurchaseRpc = createServerFn({ method: "POST" })
+  .inputValidator((data: {
+    medicationId: string;
+    warehouseId: string;
+    quantity: number;
+    lot?: string;
+    expiry?: string;
+    invoiceRef?: string;
+    unitPrice?: number;
+  }) => data)
+  .handler(async ({ data }) => {
+    return addStockWithPurchase(data);
+  });
+
+export const backofficeGetAssistantFullSnapshotRpc = createServerFn({ method: "GET" })
+  .handler(async () => {
+    return getAssistantFullSnapshot();
   });

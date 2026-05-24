@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import {
   Building2, Users, Package, Warehouse, Activity,
@@ -17,6 +17,7 @@ import { useBackofficeStore } from "@/lib/backoffice-store";
 import { useMobileListView } from "@/lib/use-mobile-list-view";
 
 export const Route = createFileRoute("/backoffice/")({
+  beforeLoad: () => { throw redirect({ to: "/backoffice/estado-hospital" }); },
   component: BackofficeDashboardPage,
 });
 

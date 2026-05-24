@@ -1,6 +1,7 @@
 @import "tailwindcss" source(none);
 @source "../src";
 @import "tw-animate-css";
+@plugin "@tailwindcss/typography";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -152,4 +153,35 @@
     background-color: var(--color-background);
     color: var(--color-foreground);
   }
+}
+
+/* ── Demo Final: Animaciones ──────────────────────────────── */
+
+@keyframes hospital-glow {
+  0%, 100% { box-shadow: 0 0 20px oklch(0.6 0.2 264 / 0.35), 0 0 40px oklch(0.6 0.2 264 / 0.15); }
+  50%       { box-shadow: 0 0 30px oklch(0.6 0.2 264 / 0.6),  0 0 60px oklch(0.6 0.2 264 / 0.25); }
+}
+
+.hospital-aleman-highlight {
+  animation: hospital-glow 2.5s ease-in-out infinite;
+}
+
+@keyframes gradient-shift {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.gradient-animated {
+  background-size: 200% 200%;
+  animation: gradient-shift 4s ease infinite;
+}
+
+@keyframes count-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.6; }
+}
+
+.count-pulse {
+  animation: count-pulse 1s ease-in-out;
 }

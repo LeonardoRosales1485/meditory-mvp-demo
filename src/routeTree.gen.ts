@@ -19,11 +19,16 @@ import { Route as BackofficeWorkspacesRouteImport } from './routes/backoffice.wo
 import { Route as BackofficeUsuariosRouteImport } from './routes/backoffice.usuarios'
 import { Route as BackofficePanelEnVivoRouteImport } from './routes/backoffice.panel-en-vivo'
 import { Route as BackofficeLoginRouteImport } from './routes/backoffice.login'
+import { Route as BackofficeEstadoHospitalRouteImport } from './routes/backoffice.estado-hospital'
 import { Route as BackofficeEsquemaRouteImport } from './routes/backoffice.esquema'
+import { Route as BackofficeDemoToolsRouteImport } from './routes/backoffice.demo-tools'
+import { Route as BackofficeConfigAsistenteRouteImport } from './routes/backoffice.config-asistente'
+import { Route as BackofficeComprasRouteImport } from './routes/backoffice.compras'
 import { Route as AppVentasRouteImport } from './routes/app.ventas'
 import { Route as AppVencimientosRouteImport } from './routes/app.vencimientos'
 import { Route as AppUsuariosRouteImport } from './routes/app.usuarios'
 import { Route as AppTransferenciasRouteImport } from './routes/app.transferencias'
+import { Route as AppStockHospitalRouteImport } from './routes/app.stock-hospital'
 import { Route as AppSalasRouteImport } from './routes/app.salas'
 import { Route as AppPedidosRouteImport } from './routes/app.pedidos'
 import { Route as AppPacientesRouteImport } from './routes/app.pacientes'
@@ -33,6 +38,8 @@ import { Route as AppIngresosRouteImport } from './routes/app.ingresos'
 import { Route as AppDispensacionRouteImport } from './routes/app.dispensacion'
 import { Route as AppDepositosRouteImport } from './routes/app.depositos'
 import { Route as AppDemoToolsRouteImport } from './routes/app.demo-tools'
+import { Route as AppDemoChartsRouteImport } from './routes/app.demo-charts'
+import { Route as AppConfigAsistenteRouteImport } from './routes/app.config-asistente'
 import { Route as AppCatalogoRouteImport } from './routes/app.catalogo'
 import { Route as AppAuditoriaRouteImport } from './routes/app.auditoria'
 import { Route as AppAjustesRouteImport } from './routes/app.ajustes'
@@ -87,9 +94,31 @@ const BackofficeLoginRoute = BackofficeLoginRouteImport.update({
   path: '/login',
   getParentRoute: () => BackofficeRoute,
 } as any)
+const BackofficeEstadoHospitalRoute =
+  BackofficeEstadoHospitalRouteImport.update({
+    id: '/estado-hospital',
+    path: '/estado-hospital',
+    getParentRoute: () => BackofficeRoute,
+  } as any)
 const BackofficeEsquemaRoute = BackofficeEsquemaRouteImport.update({
   id: '/esquema',
   path: '/esquema',
+  getParentRoute: () => BackofficeRoute,
+} as any)
+const BackofficeDemoToolsRoute = BackofficeDemoToolsRouteImport.update({
+  id: '/demo-tools',
+  path: '/demo-tools',
+  getParentRoute: () => BackofficeRoute,
+} as any)
+const BackofficeConfigAsistenteRoute =
+  BackofficeConfigAsistenteRouteImport.update({
+    id: '/config-asistente',
+    path: '/config-asistente',
+    getParentRoute: () => BackofficeRoute,
+  } as any)
+const BackofficeComprasRoute = BackofficeComprasRouteImport.update({
+  id: '/compras',
+  path: '/compras',
   getParentRoute: () => BackofficeRoute,
 } as any)
 const AppVentasRoute = AppVentasRouteImport.update({
@@ -110,6 +139,11 @@ const AppUsuariosRoute = AppUsuariosRouteImport.update({
 const AppTransferenciasRoute = AppTransferenciasRouteImport.update({
   id: '/transferencias',
   path: '/transferencias',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppStockHospitalRoute = AppStockHospitalRouteImport.update({
+  id: '/stock-hospital',
+  path: '/stock-hospital',
   getParentRoute: () => AppRoute,
 } as any)
 const AppSalasRoute = AppSalasRouteImport.update({
@@ -157,6 +191,16 @@ const AppDemoToolsRoute = AppDemoToolsRouteImport.update({
   path: '/demo-tools',
   getParentRoute: () => AppRoute,
 } as any)
+const AppDemoChartsRoute = AppDemoChartsRouteImport.update({
+  id: '/demo-charts',
+  path: '/demo-charts',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppConfigAsistenteRoute = AppConfigAsistenteRouteImport.update({
+  id: '/config-asistente',
+  path: '/config-asistente',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppCatalogoRoute = AppCatalogoRouteImport.update({
   id: '/catalogo',
   path: '/catalogo',
@@ -181,6 +225,8 @@ export interface FileRoutesByFullPath {
   '/app/ajustes': typeof AppAjustesRoute
   '/app/auditoria': typeof AppAuditoriaRoute
   '/app/catalogo': typeof AppCatalogoRoute
+  '/app/config-asistente': typeof AppConfigAsistenteRoute
+  '/app/demo-charts': typeof AppDemoChartsRoute
   '/app/demo-tools': typeof AppDemoToolsRoute
   '/app/depositos': typeof AppDepositosRoute
   '/app/dispensacion': typeof AppDispensacionRoute
@@ -190,11 +236,16 @@ export interface FileRoutesByFullPath {
   '/app/pacientes': typeof AppPacientesRoute
   '/app/pedidos': typeof AppPedidosRoute
   '/app/salas': typeof AppSalasRoute
+  '/app/stock-hospital': typeof AppStockHospitalRoute
   '/app/transferencias': typeof AppTransferenciasRoute
   '/app/usuarios': typeof AppUsuariosRoute
   '/app/vencimientos': typeof AppVencimientosRoute
   '/app/ventas': typeof AppVentasRoute
+  '/backoffice/compras': typeof BackofficeComprasRoute
+  '/backoffice/config-asistente': typeof BackofficeConfigAsistenteRoute
+  '/backoffice/demo-tools': typeof BackofficeDemoToolsRoute
   '/backoffice/esquema': typeof BackofficeEsquemaRoute
+  '/backoffice/estado-hospital': typeof BackofficeEstadoHospitalRoute
   '/backoffice/login': typeof BackofficeLoginRoute
   '/backoffice/panel-en-vivo': typeof BackofficePanelEnVivoRoute
   '/backoffice/usuarios': typeof BackofficeUsuariosRoute
@@ -208,6 +259,8 @@ export interface FileRoutesByTo {
   '/app/ajustes': typeof AppAjustesRoute
   '/app/auditoria': typeof AppAuditoriaRoute
   '/app/catalogo': typeof AppCatalogoRoute
+  '/app/config-asistente': typeof AppConfigAsistenteRoute
+  '/app/demo-charts': typeof AppDemoChartsRoute
   '/app/demo-tools': typeof AppDemoToolsRoute
   '/app/depositos': typeof AppDepositosRoute
   '/app/dispensacion': typeof AppDispensacionRoute
@@ -217,11 +270,16 @@ export interface FileRoutesByTo {
   '/app/pacientes': typeof AppPacientesRoute
   '/app/pedidos': typeof AppPedidosRoute
   '/app/salas': typeof AppSalasRoute
+  '/app/stock-hospital': typeof AppStockHospitalRoute
   '/app/transferencias': typeof AppTransferenciasRoute
   '/app/usuarios': typeof AppUsuariosRoute
   '/app/vencimientos': typeof AppVencimientosRoute
   '/app/ventas': typeof AppVentasRoute
+  '/backoffice/compras': typeof BackofficeComprasRoute
+  '/backoffice/config-asistente': typeof BackofficeConfigAsistenteRoute
+  '/backoffice/demo-tools': typeof BackofficeDemoToolsRoute
   '/backoffice/esquema': typeof BackofficeEsquemaRoute
+  '/backoffice/estado-hospital': typeof BackofficeEstadoHospitalRoute
   '/backoffice/login': typeof BackofficeLoginRoute
   '/backoffice/panel-en-vivo': typeof BackofficePanelEnVivoRoute
   '/backoffice/usuarios': typeof BackofficeUsuariosRoute
@@ -238,6 +296,8 @@ export interface FileRoutesById {
   '/app/ajustes': typeof AppAjustesRoute
   '/app/auditoria': typeof AppAuditoriaRoute
   '/app/catalogo': typeof AppCatalogoRoute
+  '/app/config-asistente': typeof AppConfigAsistenteRoute
+  '/app/demo-charts': typeof AppDemoChartsRoute
   '/app/demo-tools': typeof AppDemoToolsRoute
   '/app/depositos': typeof AppDepositosRoute
   '/app/dispensacion': typeof AppDispensacionRoute
@@ -247,11 +307,16 @@ export interface FileRoutesById {
   '/app/pacientes': typeof AppPacientesRoute
   '/app/pedidos': typeof AppPedidosRoute
   '/app/salas': typeof AppSalasRoute
+  '/app/stock-hospital': typeof AppStockHospitalRoute
   '/app/transferencias': typeof AppTransferenciasRoute
   '/app/usuarios': typeof AppUsuariosRoute
   '/app/vencimientos': typeof AppVencimientosRoute
   '/app/ventas': typeof AppVentasRoute
+  '/backoffice/compras': typeof BackofficeComprasRoute
+  '/backoffice/config-asistente': typeof BackofficeConfigAsistenteRoute
+  '/backoffice/demo-tools': typeof BackofficeDemoToolsRoute
   '/backoffice/esquema': typeof BackofficeEsquemaRoute
+  '/backoffice/estado-hospital': typeof BackofficeEstadoHospitalRoute
   '/backoffice/login': typeof BackofficeLoginRoute
   '/backoffice/panel-en-vivo': typeof BackofficePanelEnVivoRoute
   '/backoffice/usuarios': typeof BackofficeUsuariosRoute
@@ -269,6 +334,8 @@ export interface FileRouteTypes {
     | '/app/ajustes'
     | '/app/auditoria'
     | '/app/catalogo'
+    | '/app/config-asistente'
+    | '/app/demo-charts'
     | '/app/demo-tools'
     | '/app/depositos'
     | '/app/dispensacion'
@@ -278,11 +345,16 @@ export interface FileRouteTypes {
     | '/app/pacientes'
     | '/app/pedidos'
     | '/app/salas'
+    | '/app/stock-hospital'
     | '/app/transferencias'
     | '/app/usuarios'
     | '/app/vencimientos'
     | '/app/ventas'
+    | '/backoffice/compras'
+    | '/backoffice/config-asistente'
+    | '/backoffice/demo-tools'
     | '/backoffice/esquema'
+    | '/backoffice/estado-hospital'
     | '/backoffice/login'
     | '/backoffice/panel-en-vivo'
     | '/backoffice/usuarios'
@@ -296,6 +368,8 @@ export interface FileRouteTypes {
     | '/app/ajustes'
     | '/app/auditoria'
     | '/app/catalogo'
+    | '/app/config-asistente'
+    | '/app/demo-charts'
     | '/app/demo-tools'
     | '/app/depositos'
     | '/app/dispensacion'
@@ -305,11 +379,16 @@ export interface FileRouteTypes {
     | '/app/pacientes'
     | '/app/pedidos'
     | '/app/salas'
+    | '/app/stock-hospital'
     | '/app/transferencias'
     | '/app/usuarios'
     | '/app/vencimientos'
     | '/app/ventas'
+    | '/backoffice/compras'
+    | '/backoffice/config-asistente'
+    | '/backoffice/demo-tools'
     | '/backoffice/esquema'
+    | '/backoffice/estado-hospital'
     | '/backoffice/login'
     | '/backoffice/panel-en-vivo'
     | '/backoffice/usuarios'
@@ -325,6 +404,8 @@ export interface FileRouteTypes {
     | '/app/ajustes'
     | '/app/auditoria'
     | '/app/catalogo'
+    | '/app/config-asistente'
+    | '/app/demo-charts'
     | '/app/demo-tools'
     | '/app/depositos'
     | '/app/dispensacion'
@@ -334,11 +415,16 @@ export interface FileRouteTypes {
     | '/app/pacientes'
     | '/app/pedidos'
     | '/app/salas'
+    | '/app/stock-hospital'
     | '/app/transferencias'
     | '/app/usuarios'
     | '/app/vencimientos'
     | '/app/ventas'
+    | '/backoffice/compras'
+    | '/backoffice/config-asistente'
+    | '/backoffice/demo-tools'
     | '/backoffice/esquema'
+    | '/backoffice/estado-hospital'
     | '/backoffice/login'
     | '/backoffice/panel-en-vivo'
     | '/backoffice/usuarios'
@@ -426,11 +512,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BackofficeLoginRouteImport
       parentRoute: typeof BackofficeRoute
     }
+    '/backoffice/estado-hospital': {
+      id: '/backoffice/estado-hospital'
+      path: '/estado-hospital'
+      fullPath: '/backoffice/estado-hospital'
+      preLoaderRoute: typeof BackofficeEstadoHospitalRouteImport
+      parentRoute: typeof BackofficeRoute
+    }
     '/backoffice/esquema': {
       id: '/backoffice/esquema'
       path: '/esquema'
       fullPath: '/backoffice/esquema'
       preLoaderRoute: typeof BackofficeEsquemaRouteImport
+      parentRoute: typeof BackofficeRoute
+    }
+    '/backoffice/demo-tools': {
+      id: '/backoffice/demo-tools'
+      path: '/demo-tools'
+      fullPath: '/backoffice/demo-tools'
+      preLoaderRoute: typeof BackofficeDemoToolsRouteImport
+      parentRoute: typeof BackofficeRoute
+    }
+    '/backoffice/config-asistente': {
+      id: '/backoffice/config-asistente'
+      path: '/config-asistente'
+      fullPath: '/backoffice/config-asistente'
+      preLoaderRoute: typeof BackofficeConfigAsistenteRouteImport
+      parentRoute: typeof BackofficeRoute
+    }
+    '/backoffice/compras': {
+      id: '/backoffice/compras'
+      path: '/compras'
+      fullPath: '/backoffice/compras'
+      preLoaderRoute: typeof BackofficeComprasRouteImport
       parentRoute: typeof BackofficeRoute
     }
     '/app/ventas': {
@@ -459,6 +573,13 @@ declare module '@tanstack/react-router' {
       path: '/transferencias'
       fullPath: '/app/transferencias'
       preLoaderRoute: typeof AppTransferenciasRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/stock-hospital': {
+      id: '/app/stock-hospital'
+      path: '/stock-hospital'
+      fullPath: '/app/stock-hospital'
+      preLoaderRoute: typeof AppStockHospitalRouteImport
       parentRoute: typeof AppRoute
     }
     '/app/salas': {
@@ -524,6 +645,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppDemoToolsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/demo-charts': {
+      id: '/app/demo-charts'
+      path: '/demo-charts'
+      fullPath: '/app/demo-charts'
+      preLoaderRoute: typeof AppDemoChartsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/config-asistente': {
+      id: '/app/config-asistente'
+      path: '/config-asistente'
+      fullPath: '/app/config-asistente'
+      preLoaderRoute: typeof AppConfigAsistenteRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/catalogo': {
       id: '/app/catalogo'
       path: '/catalogo'
@@ -552,6 +687,8 @@ interface AppRouteChildren {
   AppAjustesRoute: typeof AppAjustesRoute
   AppAuditoriaRoute: typeof AppAuditoriaRoute
   AppCatalogoRoute: typeof AppCatalogoRoute
+  AppConfigAsistenteRoute: typeof AppConfigAsistenteRoute
+  AppDemoChartsRoute: typeof AppDemoChartsRoute
   AppDemoToolsRoute: typeof AppDemoToolsRoute
   AppDepositosRoute: typeof AppDepositosRoute
   AppDispensacionRoute: typeof AppDispensacionRoute
@@ -561,6 +698,7 @@ interface AppRouteChildren {
   AppPacientesRoute: typeof AppPacientesRoute
   AppPedidosRoute: typeof AppPedidosRoute
   AppSalasRoute: typeof AppSalasRoute
+  AppStockHospitalRoute: typeof AppStockHospitalRoute
   AppTransferenciasRoute: typeof AppTransferenciasRoute
   AppUsuariosRoute: typeof AppUsuariosRoute
   AppVencimientosRoute: typeof AppVencimientosRoute
@@ -572,6 +710,8 @@ const AppRouteChildren: AppRouteChildren = {
   AppAjustesRoute: AppAjustesRoute,
   AppAuditoriaRoute: AppAuditoriaRoute,
   AppCatalogoRoute: AppCatalogoRoute,
+  AppConfigAsistenteRoute: AppConfigAsistenteRoute,
+  AppDemoChartsRoute: AppDemoChartsRoute,
   AppDemoToolsRoute: AppDemoToolsRoute,
   AppDepositosRoute: AppDepositosRoute,
   AppDispensacionRoute: AppDispensacionRoute,
@@ -581,6 +721,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppPacientesRoute: AppPacientesRoute,
   AppPedidosRoute: AppPedidosRoute,
   AppSalasRoute: AppSalasRoute,
+  AppStockHospitalRoute: AppStockHospitalRoute,
   AppTransferenciasRoute: AppTransferenciasRoute,
   AppUsuariosRoute: AppUsuariosRoute,
   AppVencimientosRoute: AppVencimientosRoute,
@@ -591,7 +732,11 @@ const AppRouteChildren: AppRouteChildren = {
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
 interface BackofficeRouteChildren {
+  BackofficeComprasRoute: typeof BackofficeComprasRoute
+  BackofficeConfigAsistenteRoute: typeof BackofficeConfigAsistenteRoute
+  BackofficeDemoToolsRoute: typeof BackofficeDemoToolsRoute
   BackofficeEsquemaRoute: typeof BackofficeEsquemaRoute
+  BackofficeEstadoHospitalRoute: typeof BackofficeEstadoHospitalRoute
   BackofficeLoginRoute: typeof BackofficeLoginRoute
   BackofficePanelEnVivoRoute: typeof BackofficePanelEnVivoRoute
   BackofficeUsuariosRoute: typeof BackofficeUsuariosRoute
@@ -600,7 +745,11 @@ interface BackofficeRouteChildren {
 }
 
 const BackofficeRouteChildren: BackofficeRouteChildren = {
+  BackofficeComprasRoute: BackofficeComprasRoute,
+  BackofficeConfigAsistenteRoute: BackofficeConfigAsistenteRoute,
+  BackofficeDemoToolsRoute: BackofficeDemoToolsRoute,
   BackofficeEsquemaRoute: BackofficeEsquemaRoute,
+  BackofficeEstadoHospitalRoute: BackofficeEstadoHospitalRoute,
   BackofficeLoginRoute: BackofficeLoginRoute,
   BackofficePanelEnVivoRoute: BackofficePanelEnVivoRoute,
   BackofficeUsuariosRoute: BackofficeUsuariosRoute,

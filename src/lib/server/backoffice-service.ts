@@ -1624,6 +1624,7 @@ export interface LicitacionRow {
   observaciones: string;
   created_at: string;
   updated_at: string;
+  workspace_ids: string[];
 }
 
 export type LicitacionEstado =
@@ -1896,10 +1897,21 @@ export async function deleteProveedor(id: string): Promise<void> {
 //  LICITACIONES — CRUD Licitaciones
 // ─────────────────────────────────────────────────────────────
 
-export async function getLicitaciones(): Promise<LicitacionRow[]> {
-  return db<LicitacionRow[]>(
-    supabaseAdmin.from("licitaciones").select("*").order("fecha_creacion", { ascending: false }),
+export async function getWorkspaces(): Promise<Array<{ id: string; name: string }>> {
+  return db<Array<{ id: string; name: string }>>(
+    supabaseAdmin.from("workspaces").select("id, name").order("name"),
   );
+}
+
+export async function getLicitaciones(): Promise<LicitacionRow[]> {
+  type Raw = LicitacionRow & { licitacion_items: Array<{ workspace_id: string }> };
+  const raw = await db<Raw[]>(
+    supabaseAdmin.from("licitaciones").select("*, licitacion_items(workspace_id)").order("fecha_creacion", { ascending: false }),
+  );
+  return raw.map(({ licitacion_items, ...rest }) => ({
+    ...rest,
+    workspace_ids: [...new Set((licitacion_items ?? []).map((i) => i.workspace_id))],
+  })) as LicitacionRow[];
 }
 
 export async function getLicitacion(id: string): Promise<LicitacionRow | null> {

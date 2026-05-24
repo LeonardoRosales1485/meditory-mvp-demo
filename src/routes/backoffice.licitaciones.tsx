@@ -1,16 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ShoppingCart, Plus, Search, TrendingDown, TrendingUp, Package,
   Building2, Users, MessageSquare, Gavel, Eye, X, Check,
-  RotateCcw, AlertCircle,
+  RotateCcw, AlertCircle, Filter,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -22,6 +23,8 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Tabs, TabsContent, TabsList, TabsTrigger,
 } from "@/components/ui/tabs";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type {
   LowStockMedication, OverstockMedication, ProveedorRow,
   LicitacionRow, LicitacionItemRow, LicitacionOfertaRow,
@@ -67,18 +70,21 @@ function LicitacionesPage() {
   const [detailHistorial, setDetailHistorial] = useState<LicitacionHistorialRow[]>([]);
   const [selectedProveedores, setSelectedProveedores] = useState<ProveedorRow[]>([]);
   const [allMeds, setAllMeds] = useState<{ id: string; name: string; form: string; concentrationValue: number; concentrationUnit: string }[]>([]);
+  const [selectedWs, setSelectedWs] = useState<string>("__all__");
+  const [workspaces, setWorkspaces] = useState<{ id: string; name: string }[]>([]);
 
   async function loadAll() {
     setLoading(true);
     try {
       const rpc = await import("@/lib/server-rpc");
 
-      const [ls, os, lics, provs, meds] = await Promise.all([
+      const [ls, os, lics, provs, meds, wss] = await Promise.all([
         rpc.licitacionesGetLowStockRpc().catch(() => []),
         rpc.licitacionesGetOverstockRpc().catch(() => []),
         rpc.licitacionesGetAllRpc().catch(() => []),
         rpc.licitacionesGetProveedoresRpc({ data: { soloActivos: true } }).catch(() => []),
         rpc.backofficeGetAllMedicationsRpc().catch(() => []),
+        rpc.licitacionesGetWorkspacesRpc().catch(() => []),
       ]);
 
       setLowStock(ls as LowStockMedication[]);
@@ -86,6 +92,7 @@ function LicitacionesPage() {
       setLicitaciones(lics as LicitacionRow[]);
       setProveedores(provs as ProveedorRow[]);
       setAllMeds(meds as typeof allMeds);
+      setWorkspaces(wss as { id: string; name: string }[]);
     } catch (e) {
       toast.error("Error al cargar datos");
     } finally {
@@ -168,9 +175,26 @@ function LicitacionesPage() {
     setDetailHistorial(historial as LicitacionHistorialRow[]);
   }
 
-  const totalDeficit = lowStock.reduce((s, i) => s + i.deficit, 0);
-  const totalLoss = overstock.reduce((s, i) => s + i.lossAmount, 0);
-  const activeLicitaciones = licitaciones.filter((l) => !["completado", "cancelado"].includes(l.estado));
+  const selectedWsName = selectedWs === "__all__" ? null : workspaces.find((ws) => ws.id === selectedWs)?.name ?? null;
+
+  const filteredLowStock = useMemo(() => {
+    if (selectedWs === "__all__") return lowStock;
+    return lowStock.filter((i) => i.workspaceId === selectedWs);
+  }, [lowStock, selectedWs]);
+
+  const filteredOverstock = useMemo(() => {
+    if (selectedWs === "__all__") return overstock;
+    return overstock.filter((i) => i.workspaceId === selectedWs);
+  }, [overstock, selectedWs]);
+
+  const filteredLicitaciones = useMemo(() => {
+    if (selectedWs === "__all__") return licitaciones;
+    return licitaciones.filter((l) => l.workspace_ids.includes(selectedWs));
+  }, [licitaciones, selectedWs]);
+
+  const totalDeficit = filteredLowStock.reduce((s, i) => s + i.deficit, 0);
+  const totalLoss = filteredOverstock.reduce((s, i) => s + i.lossAmount, 0);
+  const activeLicitaciones = filteredLicitaciones.filter((l) => !["completado", "cancelado"].includes(l.estado));
 
   const medMap = new Map(allMeds.map((m) => [m.id, m.name]));
 
@@ -182,10 +206,24 @@ function LicitacionesPage() {
           <div>
             <h1 className="text-2xl font-bold">Licitaciones</h1>
             <p className="text-sm text-muted-foreground">
-              Gestión de compras hospitalarias — Stock, licitaciones, ofertas y proveedores
+              {selectedWs === "__all__" ? "Visión consolidada de todos los hospitales" : selectedWsName} — Stock, licitaciones, ofertas y proveedores
             </p>
           </div>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
+              <Filter className="h-4 w-4 text-muted-foreground" />
+              <Select value={selectedWs} onValueChange={setSelectedWs}>
+                <SelectTrigger className="h-8 w-[200px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">Todos los hospitales</SelectItem>
+                  {workspaces.map((ws) => (
+                    <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <Button onClick={() => setCreateOpen(true)} className="gap-2">
               <Plus size={16} /> Nueva Licitación
             </Button>
@@ -202,7 +240,7 @@ function LicitacionesPage() {
               <span className="text-xs font-medium">Déficit Total</span>
             </div>
             <p className="text-2xl font-black">{totalDeficit.toLocaleString("es-AR")}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">{lowStock.length} medicamentos bajo stock</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{filteredLowStock.length} medicamentos bajo stock</p>
           </CardContent>
         </Card>
         <Card>
@@ -212,7 +250,7 @@ function LicitacionesPage() {
               <span className="text-xs font-medium">Pérdida Sobre Stock</span>
             </div>
             <p className="text-2xl font-black">${totalLoss.toLocaleString("es-AR")}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">{overstock.length} medicamentos excedidos</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{filteredOverstock.length} medicamentos excedidos</p>
           </CardContent>
         </Card>
         <Card>
@@ -222,7 +260,7 @@ function LicitacionesPage() {
               <span className="text-xs font-medium">Licitaciones Activas</span>
             </div>
             <p className="text-2xl font-black">{activeLicitaciones.length}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">{licitaciones.length} total creadas</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{filteredLicitaciones.length} total creadas</p>
           </CardContent>
         </Card>
         <Card>
@@ -260,11 +298,11 @@ function LicitacionesPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="pt-0">
-                  {lowStock.length === 0 ? (
+                  {filteredLowStock.length === 0 ? (
                     <p className="text-xs text-muted-foreground py-4 text-center">Sin medicamentos con bajo stock</p>
                   ) : (
                     <LowStockTable
-                      items={lowStock}
+                      items={filteredLowStock}
                       medMap={medMap}
                       onCreateLicitacion={(items) => {
                         setCreateOpen(true);
@@ -282,10 +320,10 @@ function LicitacionesPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="pt-0">
-                  {overstock.length === 0 ? (
+                  {filteredOverstock.length === 0 ? (
                     <p className="text-xs text-muted-foreground py-4 text-center">Sin medicamentos con sobre stock</p>
                   ) : (
-                    <OverstockTable items={overstock} />
+                    <OverstockTable items={filteredOverstock} />
                   )}
                 </CardContent>
               </Card>
@@ -296,18 +334,18 @@ function LicitacionesPage() {
         {/* Tab: Licitaciones */}
         <TabsContent value="licitaciones" className="space-y-4">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">{licitaciones.length} licitaciones registradas</p>
+            <p className="text-sm text-muted-foreground">{filteredLicitaciones.length} licitaciones registradas</p>
             <Button size="sm" onClick={() => setCreateOpen(true)} className="gap-1.5">
               <Plus size={14} /> Nueva
             </Button>
           </div>
           <Card>
             <CardContent className="p-0">
-              {licitaciones.length === 0 ? (
+              {filteredLicitaciones.length === 0 ? (
                 <p className="text-sm text-muted-foreground py-8 text-center">No hay licitaciones aún</p>
               ) : (
                 <LicitacionesTable
-                  items={licitaciones}
+                  items={filteredLicitaciones}
                   onOpenDetail={openDetail}
                   onCambiarEstado={handleCambiarEstado}
                 />
@@ -335,9 +373,9 @@ function LicitacionesPage() {
                 Consultá al asistente sobre recomendaciones de compra, análisis de stock, o para que te ayude a crear una licitación.
               </p>
               <LicitacionesAssistant
-                lowStock={lowStock}
-                overstock={overstock}
-                licitaciones={licitaciones}
+                lowStock={filteredLowStock}
+                overstock={filteredOverstock}
+                licitaciones={filteredLicitaciones}
                 proveedores={proveedores}
               />
             </CardContent>
@@ -349,7 +387,7 @@ function LicitacionesPage() {
       <CreateLicitacionDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        lowStock={lowStock}
+        lowStock={filteredLowStock}
         allMeds={allMeds}
         onConfirm={handleCreateLicitacion}
       />
@@ -1000,7 +1038,13 @@ Respondé de forma clara y concisa.`;
                 ? "bg-primary text-primary-foreground"
                 : "bg-muted"
             }`}>
-              {m.content}
+              {m.role === "assistant" ? (
+                <div className="prose prose-sm dark:prose-invert max-w-none [&_table]:border-collapse [&_td]:border [&_th]:border [&_td]:px-2 [&_th]:px-2 [&_td]:py-1 [&_th]:py-1 [&_tr]:border [&_hr]:my-2 [&_blockquote]:border-l-2 [&_blockquote]:pl-2 [&_blockquote]:opacity-80 [&_pre]:bg-black/5 [&_pre]:dark:bg-white/5 [&_pre]:rounded [&_pre]:p-2 [&_code]:text-xs]">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+                </div>
+              ) : (
+                m.content
+              )}
             </div>
           </div>
         ))}

@@ -31,6 +31,7 @@ import {
   getLossByOverstock,
   calcularCantidadSugerida,
   getProveedores,
+  getWorkspaces,
   createProveedor,
   updateProveedor,
   deleteProveedor,
@@ -339,6 +340,10 @@ export const updateStockConfigRpc = createServerFn({ method: "POST" })
   });
 
 // ─── RPCs Licitaciones ────────────────────────────────────────────────────
+
+export const licitacionesGetWorkspacesRpc = createServerFn({ method: "GET" }).handler(async () => {
+  return getWorkspaces();
+});
 
 export const licitacionesGetLowStockRpc = createServerFn({ method: "GET" }).handler(async () => {
   return getLowStockMedications();

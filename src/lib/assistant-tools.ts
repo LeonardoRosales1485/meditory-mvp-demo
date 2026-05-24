@@ -8,7 +8,7 @@ export type ChartSpec = {
 export const assistantTools = [
   {
     type: "function" as const,
-    function: {
+    "function": {
       name: "navigate",
       description:
         "Abre una pantalla interna SOLO si el usuario pidió ir/abrir/mostrar. Rutas válidas empiezan con /app/ (ej. /app/transferencias). NUNCA para preguntas solo informativas (cantidades, listados, transferencias en tránsito): respondé en texto con institucion_snapshot. search: solo strings planos (IDs del snapshot), nunca objetos anidados.",
@@ -31,7 +31,7 @@ export const assistantTools = [
   },
   {
     type: "function" as const,
-    function: {
+    "function": {
       name: "create_transfer",
       description:
         "Solicita transferencia de stock solo si el usuario pidió EXPLÍCITAMENTE crear/solicitar/iniciar una transferencia con datos del snapshot (medicationId, sourceBatchId, depósitos, cantidad). PROHIBIDO para consultas del tipo «¿cuánto hay en transferencia?» o «¿qué está por recibir?» (respondé con pendingTransfers y summary). Requiere confirmación en pantalla.",
@@ -50,7 +50,7 @@ export const assistantTools = [
   },
   {
     type: "function" as const,
-    function: {
+    "function": {
       name: "render_chart",
       description:
         "Genera un gráfico visual (barra, torta, área o línea) con datos del snapshot. Usar cuando el usuario pida explícitamente «mostrar gráfico», «graficar», «chart», «pastel», «barras», «distribución visual», «comparar visualmente». Los datos deben extraerse del institucion_snapshot. Para stock por depósito usar stockByWarehouse; para vencimientos usar expiryDistribution; para top medicamentos usar topMedicationsByUnits.",
@@ -85,7 +85,7 @@ export const assistantTools = [
   },
   {
     type: "function" as const,
-    function: {
+    "function": {
       name: "add_stock",
       description:
         "Agrega unidades a un medicamento en un depósito específico. Usar SOLO cuando el usuario pida explícitamente agregar, cargar o aumentar stock. Requiere medicationId y warehouseId del snapshot. El campo registerAsPurchase=true registra además un movimiento de compra.",
@@ -106,7 +106,7 @@ export const assistantTools = [
   },
   {
     type: "function" as const,
-    function: {
+    "function": {
       name: "list_users",
       description:
         "Lista los usuarios de una institución. Usar cuando el usuario pregunte por usuarios, empleados o personal de un hospital. Si no especifica hospital, listar todos.",
@@ -121,7 +121,7 @@ export const assistantTools = [
   },
   {
     type: "function" as const,
-    function: {
+    "function": {
       name: "create_user",
       description:
         "Crea un nuevo usuario en una institución. Usar solo cuando el usuario pida explícitamente crear/agregar un usuario con nombre, email, rol e institución.",
@@ -139,7 +139,7 @@ export const assistantTools = [
   },
   {
     type: "function" as const,
-    function: {
+    "function": {
       name: "delete_user",
       description:
         "Elimina un usuario del sistema. Usar SOLO cuando el usuario pida explícitamente eliminar/borrar un usuario, con su ID o nombre inequívoco. Requiere confirmación.",
@@ -154,7 +154,7 @@ export const assistantTools = [
   },
   {
     type: "function" as const,
-    function: {
+    "function": {
       name: "create_sale",
       description:
         "Registra una venta al público de un medicamento. Usar SOLO cuando el usuario pida explícitamente vender, cobrar o facturar un medicamento. Requiere medicationId, warehouseId, quantity, price (precio unitario) del snapshot. Prescription y doctor son opcionales para venta con receta. Requiere confirmación.",
@@ -174,7 +174,7 @@ export const assistantTools = [
   },
   {
     type: "function" as const,
-    function: {
+    "function": {
       name: "create_dispensation",
       description:
         "Registra una dispensación de medicamento a un paciente internado. Usar SOLO cuando el usuario pida explícitamente dispensar, entregar o administrar medicación a un paciente. Requiere medicationId, warehouseId, quantity, doctor, patient, room, treatment del snapshot. Requiere confirmación.",
@@ -195,7 +195,7 @@ export const assistantTools = [
   },
   {
     type: "function" as const,
-    function: {
+    "function": {
       name: "create_order",
       description:
         "Crea un pedido de medicación desde una sala/paciente. Usar SOLO cuando el usuario pida explícitamente pedir, solicitar o crear un pedido de medicación. Requiere medicationId, warehouseId, quantity, patient, room, reason del snapshot. doctorName es opcional. Requiere confirmación.",
@@ -216,7 +216,7 @@ export const assistantTools = [
   },
   {
     type: "function" as const,
-    function: {
+    "function": {
       name: "process_order",
       description:
         "Avanza un pedido de medicación al siguiente estado. Usar SOLO cuando el usuario pida explícitamente aprobar, despachar, confirmar recepción, administrar o procesar un pedido. Action puede ser: aprobar, despachar, confirmar_recepcion, administrar. Requiere orderId del snapshot. Requiere confirmación.",
@@ -237,7 +237,7 @@ export const assistantTools = [
   },
   {
     type: "function" as const,
-    function: {
+    "function": {
       name: "advance_transfer",
       description:
         "Avanza una transferencia al siguiente estado del flujo. Usar SOLO cuando el usuario pida explícitamente autorizar, despachar, recibir o aceptar una transferencia existente. Requiere transferId del snapshot. Requiere confirmación.",
@@ -252,7 +252,7 @@ export const assistantTools = [
   },
   {
     type: "function" as const,
-    function: {
+    "function": {
       name: "reject_transfer",
       description:
         "Rechaza una transferencia con opción de devolver el stock al origen o descartarlo. Usar SOLO cuando el usuario pida explícitamente rechazar, cancelar o devolver una transferencia. Requiere transferId, reason y outcome (devolver o descartar). Requiere confirmación.",
@@ -269,7 +269,7 @@ export const assistantTools = [
   },
   {
     type: "function" as const,
-    function: {
+    "function": {
       name: "manage_medication",
       description:
         "Crea o actualiza un medicamento en el catálogo. Usar SOLO cuando el usuario pida explícitamente agregar, crear, editar o modificar un medicamento. Para crear: incluir name, activeIngredient, concentrationValue, concentrationUnit, form. Para actualizar: incluir medicationId y los campos a modificar. Requiere confirmación.",
@@ -291,7 +291,7 @@ export const assistantTools = [
   },
   {
     type: "function" as const,
-    function: {
+    "function": {
       name: "manage_warehouse",
       description:
         "Crea o actualiza un depósito/almacén. Usar SOLO cuando el usuario pida explícitamente agregar, crear, editar o modificar un depósito. Para crear: incluir name, type. Para actualizar: incluir warehouseId y los campos a modificar. Requiere confirmación.",
@@ -308,7 +308,7 @@ export const assistantTools = [
   },
   {
     type: "function" as const,
-    function: {
+    "function": {
       name: "manage_patient",
       description:
         "Crea o actualiza un paciente internado. Usar SOLO cuando el usuario pida explícitamente internar, registrar, ingresar o modificar un paciente. Para crear: incluir firstName, lastName, insurance, diagnosis, assignedDoctor, room. Para actualizar: incluir patientId y los campos a modificar. Requiere confirmación.",
@@ -329,7 +329,7 @@ export const assistantTools = [
   },
   {
     type: "function" as const,
-    function: {
+    "function": {
       name: "update_stock_config",
       description:
         "Configura los niveles de stock mínimo y óptimo para un medicamento en un depósito específico. Usar SOLO cuando el usuario pida explícitamente configurar, ajustar o cambiar niveles de stock mínimo/óptimo. Requiere medicationId, warehouseId, minStock y optimalStock del snapshot. Requiere confirmación.",
@@ -347,7 +347,7 @@ export const assistantTools = [
   },
   {
     type: "function" as const,
-    function: {
+    "function": {
       name: "generate_report",
       description:
         "Genera un reporte PDF descargable. Usar SOLO cuando el usuario pida explícitamente generar, descargar, exportar o imprimir un reporte/informe. Tipos: stock (stock actual por depósito), expiries (lotes próximos a vencer), movements (movimientos por período).",
@@ -366,9 +366,58 @@ export const assistantTools = [
       },
     },
   },
+  /** Rutas internas permitidas para la tool `navigate` (evita open redirect). */
+  {
+    type: "function" as const,
+    "function": {
+      name: "create_licitacion",
+      description:
+        "Crea una nueva licitación con sus items. Usar cuando el usuario pida crear una licitación y hayas acordado los detalles (título, descripción, medicamentos, cantidades).",
+      parameters: {
+        type: "object",
+        properties: {
+            codigo: { type: "string", description: "Código único de la licitación (opcional - si no se provee se genera automáticamente), ej: LIC-0005" },
+          titulo: { type: "string", description: "Título descriptivo de la licitación" },
+          descripcion: { type: "string", description: "Descripción detallada" },
+          items: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                medication_id: { type: "string", description: "ID del medicamento" },
+                workspace_id: { type: "string", description: "ID del workspace/hospital" },
+                cantidad_solicitada: { type: "number", description: "Cantidad solicitada" },
+                justificacion: { type: "string", description: "Justificación del item" },
+              },
+              required: ["medication_id", "workspace_id", "cantidad_solicitada"],
+            },
+          },
+        },
+        required: ["titulo", "items"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    "function": {
+      name: "find_similar_licitaciones",
+      description:
+        "Busca licitaciones activas existentes que ya incluyan los medicamentos especificados. Usar ANTES de crear una licitación nueva para evitar duplicados.",
+      parameters: {
+        type: "object",
+        properties: {
+          medicationIds: {
+            type: "array",
+            items: { type: "string" },
+            description: "IDs de los medicamentos a verificar",
+          },
+        },
+        required: ["medicationIds"],
+      },
+    },
+  },
 ];
 
-/** Rutas internas permitidas para la tool `navigate` (evita open redirect). */
 export const ASSISTANT_ALLOWED_NAV_PATHS = [
   "/app",
   "/app/inventario",
@@ -597,6 +646,22 @@ export type GenerateReportArgs = {
   periodDays?: number;
 };
 
+export type CreateLicitacionArgs = {
+  codigo?: string;
+  titulo: string;
+  descripcion?: string;
+  items: {
+    medication_id: string;
+    workspace_id: string;
+    cantidad_solicitada: number;
+    justificacion?: string;
+  }[];
+};
+
+export type FindSimilarLicitacionesArgs = {
+  medicationIds: string[];
+};
+
 export function parseAddStockArgs(raw: unknown): AddStockArgs | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
@@ -804,6 +869,46 @@ export function parseGenerateReportArgs(raw: unknown): GenerateReportArgs | null
   };
 }
 
+export function parseCreateLicitacionArgs(raw: unknown): CreateLicitacionArgs | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const codigo = typeof o.codigo === "string" ? o.codigo.trim() : "";
+  const titulo = typeof o.titulo === "string" ? o.titulo.trim() : "";
+  if (!titulo) return null;
+  const itemsRaw = Array.isArray(o.items) ? o.items : [];
+  const items = itemsRaw
+    .map((item: unknown) => {
+      const i = item as Record<string, unknown>;
+      const medication_id = typeof i.medication_id === "string" ? i.medication_id.trim() : "";
+      const workspace_id = typeof i.workspace_id === "string" ? i.workspace_id.trim() : "";
+      const cantidad_solicitada = typeof i.cantidad_solicitada === "number" ? i.cantidad_solicitada : 0;
+      if (!medication_id || !workspace_id || cantidad_solicitada <= 0) return null;
+      return {
+        medication_id,
+        workspace_id,
+        cantidad_solicitada,
+        justificacion: typeof i.justificacion === "string" ? i.justificacion.trim() : "",
+      };
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null);
+  if (items.length === 0) return null;
+  return {
+    codigo,
+    titulo,
+    descripcion: typeof o.descripcion === "string" ? o.descripcion.trim() : "",
+    items,
+  };
+}
+
+export function parseFindSimilarLicitacionesArgs(raw: unknown): FindSimilarLicitacionesArgs | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  if (!Array.isArray(o.medicationIds) || o.medicationIds.length === 0) return null;
+  const medicationIds = o.medicationIds.filter((id): id is string => typeof id === "string" && id.trim().length > 0);
+  if (medicationIds.length === 0) return null;
+  return { medicationIds };
+}
+
 /** Parte respuestas tipo `{...};{...}` donde cada trozo es JSON de navigate/create_transfer. */
 function splitConcatenatedJsonObjects(t: string): string[] {
   const s = t.trim();
@@ -825,16 +930,16 @@ function splitConcatenatedJsonObjects(t: string): string[] {
 export function stripBareToolJsonFromAssistantContent(content: string): string {
   const t = content.trim();
   if (!t || t.length > 8000) return content;
-  if (!/"name"\s*:\s*"(navigate|create_transfer|render_chart|add_stock|list_users|create_user|delete_user|create_sale|create_dispensation|create_order|process_order|advance_transfer|reject_transfer|manage_medication|manage_warehouse|manage_patient|update_stock_config|generate_report)"/i.test(t)) return content;
+  if (!/"name"\s*:\s*"(navigate|create_transfer|render_chart|add_stock|list_users|create_user|delete_user|create_sale|create_dispensation|create_order|process_order|advance_transfer|reject_transfer|manage_medication|manage_warehouse|manage_patient|update_stock_config|generate_report|create_licitacion|find_similar_licitaciones)"/i.test(t)) return content;
   const chunks = splitConcatenatedJsonObjects(t);
   let toolish = 0;
   for (const ch of chunks) {
     try {
       const o = JSON.parse(ch) as { name?: string };
-      if (o && typeof o === "object" && ["navigate", "create_transfer", "render_chart", "add_stock", "list_users", "create_user", "delete_user", "create_sale", "create_dispensation", "create_order", "process_order", "advance_transfer", "reject_transfer", "manage_medication", "manage_warehouse", "manage_patient", "update_stock_config", "generate_report"].includes(o.name ?? "")) toolish++;
+      if (o && typeof o === "object" && ["navigate", "create_transfer", "render_chart", "add_stock", "list_users", "create_user", "delete_user", "create_sale", "create_dispensation", "create_order", "process_order", "advance_transfer", "reject_transfer", "manage_medication", "manage_warehouse", "manage_patient", "update_stock_config", "generate_report", "create_licitacion", "find_similar_licitaciones"].includes(o.name ?? "")) toolish++;
       else return content;
     } catch {
-      if (chunks.length > 1 && t.length < 4000 && /"name"\s*:\s*"(navigate|create_transfer|add_stock|list_users|create_user|delete_user|create_sale|create_dispensation|create_order|process_order|advance_transfer|reject_transfer|manage_medication|manage_warehouse|manage_patient|update_stock_config|generate_report)"/i.test(t)) {
+      if (chunks.length > 1 && t.length < 4000 && /"name"\s*:\s*"(navigate|create_transfer|add_stock|list_users|create_user|delete_user|create_sale|create_dispensation|create_order|process_order|advance_transfer|reject_transfer|manage_medication|manage_warehouse|manage_patient|update_stock_config|generate_report|create_licitacion|find_similar_licitaciones)"/i.test(t)) {
         return "";
       }
       return content;

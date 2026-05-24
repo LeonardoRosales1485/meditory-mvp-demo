@@ -27,6 +27,9 @@ import {
   parseManagePatientArgs,
   parseUpdateStockConfigArgs,
   parseGenerateReportArgs,
+  parseCreateLicitacionArgs,
+  parseCreateTransferArgs,
+  parseFindSimilarLicitacionesArgs,
   type ChartSpec,
   type OllamaToolCall,
   type AddStockArgs,
@@ -43,6 +46,9 @@ import {
   type ManagePatientArgs,
   type UpdateStockConfigArgs,
   type GenerateReportArgs,
+  type CreateLicitacionArgs,
+  type CreateTransferToolArgs,
+  type FindSimilarLicitacionesArgs,
 } from "@/lib/assistant-tools";
 import type { LossCalculationResult, CrossHospitalMedStock, WarehouseVolumeItem, AssistantFullSnapshot } from "@/lib/server/backoffice-service";
 
@@ -281,13 +287,14 @@ ${stockStr}${lossStr}${crossStockStr}${lossDetailStr}
 ${snapshotText}
 
 ### Reglas
-- Usar tools SOLO cuando el usuario pida explícitamente la acción (navegar, agregar stock, crear usuario).
+- Usar tools SOLO cuando el usuario pida explícitamente la acción (navegar, agregar stock, crear usuario, crear transferencia).
 - Para preguntas informativas, responder en texto usando los datos del snapshot.
 - Para acciones destructivas (eliminar usuario), mostrar los datos y pedir confirmación antes de ejecutar.
 - Si no tenés los IDs necesarios, preguntar primero.
 - Responder siempre en español, tono profesional pero amigable.
 - No inventar datos. Si no están en el snapshot, decirlo.
-- Para agregar stock: usar SIEMPRE la tool add_stock con los IDs reales del snapshot. Si el usuario menciona un medicamento por nombre, buscar su ID en la lista de medicamentos. Si hay múltiples hospitales, preguntar cuál corresponde y luego llamar la tool. No responder en texto sobre acciones que deberías ejecutar — ejecutalas con la tool.`;
+- Para agregar stock: usar SIEMPRE la tool add_stock con los IDs reales del snapshot. Si el usuario menciona un medicamento por nombre, buscar su ID en la lista de medicamentos. Si hay múltiples hospitales, preguntar cuál corresponde y luego llamar la tool. No responder en texto sobre acciones que deberías ejecutar — ejecutalas con la tool.
+- Para transferencias: si ves sobrestock en un hospital y déficit del mismo medicamento en otro, podés planificar una transferencia. Usá la tool create_transfer SOLO cuando el usuario autorice explícitamente, con los IDs reales del snapshot (medicationId, sourceBatchId, fromWarehouseId, toWarehouseId, quantity).`;
 }
 
 function PendingConfirmBubble({
@@ -551,6 +558,27 @@ async function executeConfirmedAction(
         addMsg({ role: "action_result", success: true, message: `Reporte "${args.reportType}" descargado.` });
         break;
       }
+      case "create_licitacion": {
+        const args = data as CreateLicitacionArgs;
+        await rpc.licitacionesCreateRpc({ data: args });
+        addMsg({ role: "action_result", success: true, message: `Licitación ${args.codigo} creada: "${args.titulo}" con ${args.items.length} items.` });
+        rpc.backofficeGetAssistantFullSnapshotRpc().then(setFullSnapshot).catch(console.error);
+        break;
+      }
+      case "create_transfer": {
+        const args = data as CreateTransferToolArgs;
+        const store = await import("@/lib/store");
+        await store.useStore.getState().createTransfer({
+          medicationId: args.medicationId,
+          sourceBatchId: args.sourceBatchId,
+          fromWarehouseId: args.fromWarehouseId,
+          toWarehouseId: args.toWarehouseId,
+          quantity: args.quantity,
+        });
+        addMsg({ role: "action_result", success: true, message: `Transferencia creada: ${args.quantity} u. de ${args.medicationId.slice(0,8)} → destino.` });
+        rpc.backofficeGetAssistantFullSnapshotRpc().then(setFullSnapshot).catch(console.error);
+        break;
+      }
       default:
         addMsg({ role: "action_result", success: false, message: "Acción desconocida." });
     }
@@ -810,6 +838,41 @@ export function DemoAssistantChat({ variant = "floating", ...props }: DemoAssist
             const label = `Generar reporte: ${args.reportType}${args.title ? ` — ${args.title}` : ""}`;
             nextMessages.push({ role: "pending_confirm", label, toolName: "generate_report", data: args });
           }
+        } else if (name === "create_licitacion") {
+          const args = parseCreateLicitacionArgs(parsedArgs);
+          if (!args) {
+            nextMessages.push({ role: "action_result", success: false, message: "Parámetros inválidos para crear licitación." });
+          } else {
+            const label = `Crear licitación ${args.codigo}: ${args.titulo} (${args.items.length} items)`;
+            nextMessages.push({ role: "pending_confirm", label, toolName: "create_licitacion", data: args });
+          }
+        } else if (name === "create_transfer") {
+          const args = parseCreateTransferArgs(parsedArgs);
+          if (!args) {
+            nextMessages.push({ role: "action_result", success: false, message: "Parámetros inválidos para crear transferencia." });
+          } else {
+            const label = `Transferir ${args.quantity} u. de ${args.medicationId.slice(0, 8)}: ${args.fromWarehouseId.slice(0, 8)} → ${args.toWarehouseId.slice(0, 8)}`;
+            nextMessages.push({ role: "pending_confirm", label, toolName: "create_transfer", data: args });
+          }
+        } else if (name === "find_similar_licitaciones") {
+          const args = parseFindSimilarLicitacionesArgs(parsedArgs);
+          if (args) {
+            try {
+              const rpc = await import("@/lib/server-rpc");
+              const result = await rpc.licitacionesFindSimilarRpc({ data: { medicationIds: args.medicationIds } });
+              const sims = result as { licitacion: { codigo: string; titulo: string; estado: string }; matchCount: number; matchedMedicationIds: string[] }[];
+              if (sims.length > 0) {
+                const lines = sims.map((s) => `- **${s.licitacion.codigo}**: ${s.licitacion.titulo} (${s.licitacion.estado}, ${s.matchCount} medicamento(s) en común)`);
+                nextMessages.push({ role: "action_result", success: true, message: `Se encontraron licitaciones similares:\n${lines.join("\n")}` });
+              } else {
+                nextMessages.push({ role: "action_result", success: true, message: "No se encontraron licitaciones activas similares." });
+              }
+            } catch {
+              nextMessages.push({ role: "action_result", success: false, message: "Error al buscar licitaciones similares." });
+            }
+          } else {
+            nextMessages.push({ role: "action_result", success: false, message: "Parámetros inválidos." });
+          }
         }
       }
 
@@ -886,6 +949,15 @@ export function DemoAssistantChat({ variant = "floating", ...props }: DemoAssist
       }
     });
   }, [props, internalData]);
+
+  // Persistir mensajes de texto al store
+  useEffect(() => {
+    const textMessages = messages
+      .filter((m) => m.role !== "chart" && m.role !== "action_result" && m.role !== "pending_confirm")
+      .filter((m): m is { role: "user" | "assistant"; content: string } => m.role === "user" || m.role === "assistant")
+      .map((m) => ({ role: m.role, content: m.content }));
+    setStoredMessages(textMessages);
+  }, [messages, setStoredMessages]);
 
   const chatPanel = (
     <div

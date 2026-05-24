@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ShoppingCart, Plus, Search, TrendingDown, TrendingUp, Package,
   Building2, Users, MessageSquare, Gavel, Eye, X, Check,
-  RotateCcw, AlertCircle, Filter,
+  RotateCcw, AlertCircle, Filter, ArrowLeftRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,8 @@ import {
 } from "@/components/ui/tabs";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { assistantTools, parseCreateLicitacionArgs, parseFindSimilarLicitacionesArgs } from "@/lib/assistant-tools";
+import { useStore } from "@/lib/store";
 import type {
   LowStockMedication, OverstockMedication, ProveedorRow,
   LicitacionRow, LicitacionItemRow, LicitacionOfertaRow,
@@ -34,6 +36,26 @@ import type {
 export const Route = createFileRoute("/backoffice/licitaciones")({
   component: LicitacionesPage,
 });
+
+const TRANSFER_STATUS_COLORS: Record<string, string> = {
+  solicitado: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
+  autorizado: "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300",
+  despachado: "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300",
+  recibir: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900 dark:text-cyan-300",
+  recibido: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
+  aceptado: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300",
+  rechazado: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300",
+};
+
+const TRANSFER_STATUS_LABELS: Record<string, string> = {
+  solicitado: "Solicitado",
+  autorizado: "Autorizado",
+  despachado: "Despachado",
+  recibir: "Pendiente Recepción",
+  recibido: "Recibido",
+  aceptado: "Aceptado",
+  rechazado: "Rechazado",
+};
 
 const ESTADO_COLORS: Record<LicitacionEstado, string> = {
   borrador: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
@@ -73,19 +95,23 @@ function LicitacionesPage() {
   const [selectedWs, setSelectedWs] = useState<string>("__all__");
   const [workspaces, setWorkspaces] = useState<{ id: string; name: string }[]>([]);
   const [searchLic, setSearchLic] = useState("");
+  const [transfers, setTransfers] = useState<any[]>([]);
+  const [warehouses, setWarehouses] = useState<{ id: string; name: string; workspace_id: string }[]>([]);
+  const [searchTransfer, setSearchTransfer] = useState("");
 
   async function loadAll() {
     setLoading(true);
     try {
       const rpc = await import("@/lib/server-rpc");
 
-      const [ls, os, lics, provs, meds, wss] = await Promise.all([
+      const [ls, os, lics, provs, meds, wss, rt] = await Promise.all([
         rpc.licitacionesGetLowStockRpc().catch(() => []),
         rpc.licitacionesGetOverstockRpc().catch(() => []),
         rpc.licitacionesGetAllRpc().catch(() => []),
         rpc.licitacionesGetProveedoresRpc({ data: { soloActivos: true } }).catch(() => []),
         rpc.backofficeGetAllMedicationsRpc().catch(() => []),
         rpc.licitacionesGetWorkspacesRpc().catch(() => []),
+        rpc.backofficeGetRealtimeDataRpc({ data: {} }).catch(() => ({ transfers: [], warehouses: [] })),
       ]);
 
       setLowStock(ls as LowStockMedication[]);
@@ -94,6 +120,16 @@ function LicitacionesPage() {
       setProveedores(provs as ProveedorRow[]);
       setAllMeds(meds as typeof allMeds);
       setWorkspaces(wss as { id: string; name: string }[]);
+      const rtData = rt as { transfers: any[]; warehouses: { id: string; name: string; workspace_id: string }[] };
+      if (rtData.transfers.length === 0 && (meds as typeof allMeds).length > 0) {
+        await rpc.backofficeSeedTransfersRpc();
+        const reload = await rpc.backofficeGetRealtimeDataRpc({ data: {} }) as { transfers: any[]; warehouses: any[] };
+        setTransfers(reload.transfers);
+        setWarehouses(reload.warehouses);
+      } else {
+        setTransfers(rtData.transfers);
+        setWarehouses(rtData.warehouses);
+      }
     } catch (e) {
       toast.error("Error al cargar datos");
     } finally {
@@ -207,6 +243,8 @@ function LicitacionesPage() {
   const totalDeficit = filteredLowStock.reduce((s, i) => s + i.deficit, 0);
   const totalLoss = filteredOverstock.reduce((s, i) => s + i.lossAmount, 0);
   const activeLicitaciones = filteredLicitaciones.filter((l) => !["completado", "cancelado"].includes(l.estado));
+  const totalTransfers = transfers.length;
+  const activeTransfers = transfers.filter((t) => !["recibido", "rechazado"].includes(t.status)).length;
 
   const medMap = new Map(allMeds.map((m) => [m.id, m.name]));
 
@@ -244,7 +282,7 @@ function LicitacionesPage() {
       </motion.div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <Card
           onClick={() => setTab("stock")}
           className="cursor-pointer transition-all hover:shadow-md hover:scale-[1.02] active:scale-[0.98]"
@@ -284,6 +322,16 @@ function LicitacionesPage() {
             <p className="text-xs text-muted-foreground mt-0.5">{filteredLicitaciones.length} total creadas</p>
           </CardContent>
         </Card>
+        <Card className="cursor-default transition-all hover:shadow-md">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 text-purple-600 mb-1">
+              <ArrowLeftRight size={16} />
+              <span className="text-xs font-medium">Transferencias</span>
+            </div>
+            <p className="text-2xl font-black">{activeTransfers} <span className="text-base font-normal text-muted-foreground">/ {totalTransfers}</span></p>
+            <p className="text-xs text-muted-foreground mt-0.5">en curso / total</p>
+          </CardContent>
+        </Card>
         <Card
           onClick={() => setTab("proveedores")}
           className="cursor-pointer transition-all hover:shadow-md hover:scale-[1.02] active:scale-[0.98]"
@@ -301,10 +349,11 @@ function LicitacionesPage() {
 
       {/* Tabs */}
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="grid grid-cols-4 w-full max-w-lg">
+        <TabsList className="grid grid-cols-5 w-full max-w-2xl">
           <TabsTrigger value="stock" className="gap-1.5 text-xs"><AlertCircle size={14} />Stock</TabsTrigger>
           <TabsTrigger value="licitaciones" className="gap-1.5 text-xs"><Gavel size={14} />Licitaciones</TabsTrigger>
           <TabsTrigger value="proveedores" className="gap-1.5 text-xs"><Building2 size={14} />Proveedores</TabsTrigger>
+          <TabsTrigger value="transferencias" className="gap-1.5 text-xs"><ArrowLeftRight size={14} />Transferencias</TabsTrigger>
           <TabsTrigger value="asistente" className="gap-1.5 text-xs"><MessageSquare size={14} />Asistente</TabsTrigger>
         </TabsList>
 
@@ -396,6 +445,76 @@ function LicitacionesPage() {
             proveedores={proveedores}
             onRefresh={loadAll}
           />
+        </TabsContent>
+
+        {/* Tab: Transferencias */}
+        <TabsContent value="transferencias" className="space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">{transfers.length} transferencias registradas</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1 max-w-sm">
+              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Buscar por código, medicamento, origen o destino..."
+                value={searchTransfer}
+                onChange={(e) => setSearchTransfer(e.target.value)}
+                className="pl-8 text-sm h-8"
+              />
+            </div>
+          </div>
+          <Card>
+            <CardContent className="p-0">
+              {(() => {
+                const tData = transfers as any[];
+                const wsMap = new Map(workspaces.map((w) => [w.id, w.name]));
+                const whMap = new Map(warehouses.map((w) => [w.id, w.name]));
+                const filtered = tData
+                  .filter((t) => {
+                    if (!searchTransfer) return true;
+                    const q = searchTransfer.toLowerCase();
+                    return [t.transfer_code, t.medication_id, t.from_warehouse_id, t.to_warehouse_id, t.status]
+                      .some((v) => String(v ?? "").toLowerCase().includes(q));
+                  })
+                  .sort((a, b) => new Date(b.date ?? 0).getTime() - new Date(a.date ?? 0).getTime());
+                if (filtered.length === 0) {
+                  return <p className="text-sm text-muted-foreground py-8 text-center">{searchTransfer ? "Sin resultados" : "No hay transferencias aún"}</p>;
+                }
+                return (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="text-xs">Código</TableHead>
+                        <TableHead className="text-xs">Medicamento</TableHead>
+                        <TableHead className="text-xs">Origen</TableHead>
+                        <TableHead className="text-xs">Destino</TableHead>
+                        <TableHead className="text-xs">Cant.</TableHead>
+                        <TableHead className="text-xs">Estado</TableHead>
+                        <TableHead className="text-xs">Fecha</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filtered.map((t) => (
+                        <TableRow key={t.id} className="text-xs">
+                          <TableCell className="font-mono">{t.transfer_code ?? t.id.slice(0, 8)}</TableCell>
+                          <TableCell>{medMap.get(t.medication_id) ?? t.medication_id?.slice(0, 8)}</TableCell>
+                          <TableCell>{whMap.get(t.from_warehouse_id) ?? t.from_warehouse_id?.slice(0, 8)}</TableCell>
+                          <TableCell>{whMap.get(t.to_warehouse_id) ?? t.to_warehouse_id?.slice(0, 8)}</TableCell>
+                          <TableCell>{t.quantity}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${TRANSFER_STATUS_COLORS[t.status] ?? ""}`}>
+                              {TRANSFER_STATUS_LABELS[t.status] ?? t.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">{t.date ? new Date(t.date).toLocaleDateString("es-AR") : "-"}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                );
+              })()}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* Tab: Asistente */}
@@ -1153,9 +1272,13 @@ function LicitacionesAssistant({ lowStock, overstock, licitaciones, proveedores,
     }>;
   }) => Promise<LicitacionRow>;
 }) {
-  const [messages, setMessages] = useState<{ role: string; content: string }[]>([
-    { role: "assistant", content: "Soy el asistente de licitaciones. Puedo ayudarte con recomendaciones de compra, análisis de stock, y creación de licitaciones. ¿En qué puedo ayudarte?" },
-  ]);
+  const storedMessages = useStore((s) => s.chatMessages);
+  const setStoredMessages = useStore((s) => s.setChatMessages);
+  const [messages, setMessages] = useState<{ role: string; content: string }[]>(() =>
+    storedMessages.length > 0
+      ? storedMessages as { role: string; content: string }[]
+      : [{ role: "assistant", content: "Soy el asistente de licitaciones. Puedo ayudarte con recomendaciones de compra, análisis de stock, y creación de licitaciones. ¿En qué puedo ayudarte?" }],
+  );
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -1164,37 +1287,14 @@ function LicitacionesAssistant({ lowStock, overstock, licitaciones, proveedores,
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const assistantTools = [
-    {
-      type: "function",
-      function: {
-        name: "create_licitacion",
-        description: "Crea una nueva licitación con sus items. Usar cuando el usuario pida crear una licitación y hayas acordado los detalles (título, descripción, medicamentos, cantidades).",
-        parameters: {
-          type: "object",
-          properties: {
-            codigo: { type: "string", description: "Código único de la licitación, ej: LIC-0005" },
-            titulo: { type: "string", description: "Título descriptivo de la licitación" },
-            descripcion: { type: "string", description: "Descripción detallada" },
-            items: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  medication_id: { type: "string", description: "ID del medicamento" },
-                  workspace_id: { type: "string", description: "ID del workspace/hospital" },
-                  cantidad_solicitada: { type: "number", description: "Cantidad solicitada" },
-                  justificacion: { type: "string", description: "Justificación del item" },
-                },
-                required: ["medication_id", "workspace_id", "cantidad_solicitada"],
-              },
-            },
-          },
-          required: ["codigo", "titulo", "items"],
-        },
-      },
-    },
-  ];
+  // Persistir mensajes de texto al store
+  useEffect(() => {
+    const textMessages = messages
+      .filter((m): m is { role: "user" | "assistant"; content: string } =>
+        m.role === "user" || m.role === "assistant")
+      .map((m) => ({ role: m.role, content: m.content }));
+    setStoredMessages(textMessages);
+  }, [messages, setStoredMessages]);
 
   async function send() {
     if (!input.trim()) return;
@@ -1207,19 +1307,33 @@ function LicitacionesAssistant({ lowStock, overstock, licitaciones, proveedores,
       `- ${i.medicationName} (${i.workspaceName}): stock ${i.currentStock}, mínimo ${i.minStock}, déficit ${i.deficit}`
     ).join("\n");
 
+    const overstockSummary = overstock.slice(0, 20).map((i) =>
+      `- ${i.medicationName} (${i.workspaceName}): stock ${i.currentStock}, óptimo ${i.optimalStock}, excedente ${i.surplus}`
+    ).join("\n");
+
+    const activeLics = licitaciones.filter((l) => !["completado", "cancelado"].includes(l.estado));
+    const activeLicSummary = activeLics.length > 0
+      ? activeLics.map((l) => `- ${l.codigo}: ${l.titulo} (${l.estado})`).join("\n")
+      : "Ninguna";
+
     const systemPrompt = `Eres un asistente especializado en licitaciones de compra de medicamentos hospitalarios.
 
 Contexto actual:
 - Medicamentos con bajo stock: ${lowStock.length} items
 ${lowStockSummary}
-- Licitaciones activas: ${licitaciones.filter((l) => !["completado", "cancelado"].includes(l.estado)).length}
+- Medicamentos con sobre stock: ${overstock.length} items
+${overstockSummary}
+- Licitaciones activas (no completadas ni canceladas):
+${activeLicSummary}
 - Proveedores registrados: ${proveedores.length}
 
 Reglas:
 1. Cuando el usuario pida crear una licitación, guialo paso a paso para definir: título, medicamentos a incluir, cantidades y justificación.
-2. Una vez que tengas todos los datos acordados, usá la herramienta create_licitacion para crearla automáticamente.
-3. Siempre confirmá con el usuario antes de crear.
-4. Respondé de forma clara y concisa.`;
+2. ANTES de crear una licitación, usá la herramienta find_similar_licitaciones para verificar si ya existe una licitación activa que cubra los mismos medicamentos. Si existe, informale al usuario.
+3. Una vez que tengas todos los datos acordados y hayas verificado que no hay duplicados, usá la herramienta create_licitacion para crearla automáticamente.
+4. Siempre confirmá con el usuario antes de crear.
+5. También podés sugerir transferencias de stock entre hospitales cuando veas sobrestock en uno y déficit de ese mismo medicamento en otro. Informá la sugerencia al usuario para que un administrador la apruebe, sin usar herramientas de transferencia.
+6. Respondé de forma clara y concisa.`;
 
     try {
       const rpc = await import("@/lib/server-rpc");
@@ -1238,9 +1352,13 @@ Reglas:
       if (res.tool_calls && res.tool_calls.length > 0) {
         for (const tc of res.tool_calls) {
           if (tc.function.name === "create_licitacion") {
-            const args = JSON.parse(tc.function.arguments);
+            const args = parseCreateLicitacionArgs(JSON.parse(tc.function.arguments));
+            if (!args) {
+              setMessages((prev) => [...prev, { role: "assistant", content: "❌ Parámetros inválidos para crear licitación." }]);
+              continue;
+            }
             try {
-              const created = await onCreateLicitacion(args);
+              const created = await onCreateLicitacion(args as any);
               setMessages((prev) => [...prev, {
                 role: "assistant",
                 content: `✅ Licitación **${created.codigo}** creada exitosamente como borrador.\n\n${created.titulo}\n${created.descripcion}`,
@@ -1250,6 +1368,25 @@ Reglas:
                 role: "assistant",
                 content: "❌ Ocurrió un error al crear la licitación. Intentalo de nuevo.",
               }]);
+            }
+          } else if (tc.function.name === "find_similar_licitaciones") {
+            const args = parseFindSimilarLicitacionesArgs(JSON.parse(tc.function.arguments));
+            if (!args) {
+              setMessages((prev) => [...prev, { role: "assistant", content: "❌ Parámetros inválidos para buscar licitaciones similares." }]);
+              continue;
+            }
+            try {
+              const rpc = await import("@/lib/server-rpc");
+              const result = await rpc.licitacionesFindSimilarRpc({ data: { medicationIds: args.medicationIds } });
+              const sims = result as { licitacion: { codigo: string; titulo: string; estado: string }; matchCount: number }[];
+              if (sims.length > 0) {
+                const lines = sims.map((s) => `- **${s.licitacion.codigo}**: ${s.licitacion.titulo} (${s.licitacion.estado}, ${s.matchCount} medicamento(s) en común)`);
+                setMessages((prev) => [...prev, { role: "assistant", content: `🔍 Se encontraron licitaciones activas similares:\n${lines.join("\n")}\n\n¿Querés revisarlas antes de crear una nueva?` }]);
+              } else {
+                setMessages((prev) => [...prev, { role: "assistant", content: "✅ No se encontraron licitaciones activas que incluyan esos medicamentos. Podés proceder a crear una nueva." }]);
+              }
+            } catch {
+              setMessages((prev) => [...prev, { role: "assistant", content: "❌ Error al buscar licitaciones similares." }]);
             }
           }
         }

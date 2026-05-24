@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { requireAdminOrTecnico } from "@/lib/route-guards";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, ArrowLeftRight, History, Loader2 } from "lucide-react";
+import { ArrowRight, ArrowLeftRight, History, Loader2, Search, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/page-header";
@@ -155,6 +155,11 @@ function Transfers() {
   const [ackReceiveOnBehalf, setAckReceiveOnBehalf] = useState(false);
   const [creating, setCreating] = useState(false);
   const [statusFilter, setStatusFilter] = useState<TransferStatusFilter>("default");
+  const [medSearch, setMedSearch] = useState("");
+  const [fromWhFilter, setFromWhFilter] = useState("__all__");
+  const [toWhFilter, setToWhFilter] = useState("__all__");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const { isMobile, viewMode, setViewMode } = useMobileListView("app-transferencias");
 
   const workspaceWarehouses = useMemo(
@@ -191,10 +196,19 @@ function Transfers() {
     (t) => warehouseIds.includes(t.fromWarehouseId) || warehouseIds.includes(t.toWarehouseId),
   );
   const filteredTransfers = useMemo(() => {
-    if (statusFilter === "default") return transfers.filter((t) => t.status !== "aceptado");
-    if (statusFilter === "all") return transfers;
-    return transfers.filter((t) => t.status === statusFilter);
-  }, [transfers, statusFilter]);
+    let result = transfers;
+    if (statusFilter === "default") result = result.filter((t) => t.status !== "aceptado");
+    else if (statusFilter !== "all") result = result.filter((t) => t.status === statusFilter);
+    if (medSearch.trim()) {
+      const q = medSearch.toLowerCase();
+      result = result.filter((t) => medName(t.medicationId).toLowerCase().includes(q));
+    }
+    if (fromWhFilter !== "__all__") result = result.filter((t) => t.fromWarehouseId === fromWhFilter);
+    if (toWhFilter !== "__all__") result = result.filter((t) => t.toWarehouseId === toWhFilter);
+    if (dateFrom) result = result.filter((t) => t.date >= dateFrom);
+    if (dateTo) result = result.filter((t) => t.date <= dateTo + "T23:59:59");
+    return result;
+  }, [transfers, statusFilter, medSearch, fromWhFilter, toWhFilter, dateFrom, dateTo]);
   const availableBatches = batches
     .filter(
       (b) =>
@@ -489,12 +503,82 @@ function Transfers() {
           ) : showCards ? (
             <div className="space-y-3 p-3">
               {!showEmptyTransfers && (
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                <div className="flex flex-wrap items-end gap-2">
+                  <div className="space-y-1.5 min-w-0 flex-1 sm:max-w-48">
+                    <Label htmlFor="med-search">Medicamento</Label>
+                    <div className="relative">
+                      <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        id="med-search"
+                        placeholder="Buscar..."
+                        value={medSearch}
+                        onChange={(e) => setMedSearch(e.target.value)}
+                        className="pl-7 h-8 text-sm"
+                      />
+                      {medSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setMedSearch("")}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
                   <TransferStatusFilterSelect
                     id="transfer-status-filter"
                     value={statusFilter}
                     onChange={setStatusFilter}
                   />
+                  <div className="space-y-1.5 min-w-0 sm:max-w-44">
+                    <Label htmlFor="from-wh-filter">Origen</Label>
+                    <Select value={fromWhFilter} onValueChange={setFromWhFilter}>
+                      <SelectTrigger id="from-wh-filter" className="h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__all__">Todos</SelectItem>
+                        {workspaceWarehouses.map((w) => (
+                          <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5 min-w-0 sm:max-w-44">
+                    <Label htmlFor="to-wh-filter">Destino</Label>
+                    <Select value={toWhFilter} onValueChange={setToWhFilter}>
+                      <SelectTrigger id="to-wh-filter" className="h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__all__">Todos</SelectItem>
+                        {workspaceWarehouses.map((w) => (
+                          <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="date-from">Desde</Label>
+                    <Input
+                      id="date-from"
+                      type="date"
+                      value={dateFrom}
+                      onChange={(e) => setDateFrom(e.target.value)}
+                      className="h-8 text-xs w-36"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="date-to">Hasta</Label>
+                    <Input
+                      id="date-to"
+                      type="date"
+                      value={dateTo}
+                      onChange={(e) => setDateTo(e.target.value)}
+                      className="h-8 text-xs w-36"
+                    />
+                  </div>
                 </div>
               )}
               {showEmptyTransfers && (
@@ -580,12 +664,82 @@ function Transfers() {
           ) : (
           <div>
             {!showEmptyTransfers && (
-              <div className="flex flex-col gap-2 border-b px-4 py-3 sm:flex-row sm:items-end sm:justify-between">
+              <div className="flex flex-wrap items-end gap-2 border-b px-4 py-3">
+                <div className="space-y-1.5 min-w-0 sm:max-w-44">
+                  <Label htmlFor="med-search-table">Medicamento</Label>
+                  <div className="relative">
+                    <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      id="med-search-table"
+                      placeholder="Buscar..."
+                      value={medSearch}
+                      onChange={(e) => setMedSearch(e.target.value)}
+                      className="pl-7 h-8 text-sm"
+                    />
+                    {medSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setMedSearch("")}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+                </div>
                 <TransferStatusFilterSelect
                   id="transfer-status-filter-table"
                   value={statusFilter}
                   onChange={setStatusFilter}
                 />
+                <div className="space-y-1.5 min-w-0 sm:max-w-40">
+                  <Label htmlFor="from-wh-filter-table">Origen</Label>
+                  <Select value={fromWhFilter} onValueChange={setFromWhFilter}>
+                    <SelectTrigger id="from-wh-filter-table" className="h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">Todos</SelectItem>
+                      {workspaceWarehouses.map((w) => (
+                        <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5 min-w-0 sm:max-w-40">
+                  <Label htmlFor="to-wh-filter-table">Destino</Label>
+                  <Select value={toWhFilter} onValueChange={setToWhFilter}>
+                    <SelectTrigger id="to-wh-filter-table" className="h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">Todos</SelectItem>
+                      {workspaceWarehouses.map((w) => (
+                        <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="date-from-table">Desde</Label>
+                  <Input
+                    id="date-from-table"
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    className="h-8 text-xs w-32"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="date-to-table">Hasta</Label>
+                  <Input
+                    id="date-to-table"
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    className="h-8 text-xs w-32"
+                  />
+                </div>
               </div>
             )}
           <Table>

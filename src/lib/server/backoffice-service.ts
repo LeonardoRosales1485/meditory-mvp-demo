@@ -242,6 +242,62 @@ export async function getRealtimeData(workspaceId?: string) {
   return { batches, movements, orders, transfers, warehouses };
 }
 
+export async function seedTransfers(): Promise<number> {
+  const { data: existing, error: countError } = await supabaseAdmin
+    .from("transfer_requests")
+    .select("id", { count: "exact", head: true });
+  if (countError) throw new Error(`Error al verificar transfers: ${countError.message}`);
+  if (existing && existing.length > 0) return 0;
+
+  const [wsRes, medRes, whRes] = await Promise.all([
+    supabaseAdmin.from("workspaces").select("id"),
+    supabaseAdmin.from("medications").select("id"),
+    supabaseAdmin.from("warehouses").select("id, workspace_id"),
+  ]);
+  if (wsRes.error) throw new Error(wsRes.error.message);
+  if (medRes.error) throw new Error(medRes.error.message);
+  if (whRes.error) throw new Error(whRes.error.message);
+
+  const workspaces = wsRes.data as { id: string }[];
+  const medications = medRes.data as { id: string }[];
+  const warehouses = whRes.data as { id: string; workspace_id: string }[];
+  if (!workspaces.length || !medications.length || !warehouses.length) return 0;
+
+  const statuses = ["solicitado", "autorizado", "despachado", "recibir", "recibido", "aceptado", "rechazado"];
+  const users = ["Dr. García", "Lic. Martínez", "Dra. Rodríguez", "Farm. López"];
+  const rows: Record<string, unknown>[] = [];
+  const rng = (max: number) => Math.floor(Math.random() * max);
+
+  for (let i = 0; i < Math.min(8, medications.length); i++) {
+    const ws = workspaces[i % workspaces.length];
+    const med = medications[i % medications.length];
+    const whs = warehouses.filter((w) => w.workspace_id === ws.id);
+    if (whs.length < 2) continue;
+    const fromWh = whs[0];
+    const toWh = whs[1];
+    const d = new Date();
+    d.setDate(d.getDate() - i * 2);
+    rows.push({
+      workspace_id: ws.id,
+      transfer_code: `T-${ws.id.slice(-3)}-${String(i + 1).padStart(2, "0")}`,
+      medication_id: med.id,
+      from_warehouse_id: fromWh.id,
+      to_warehouse_id: toWh.id,
+      quantity: 50 + rng(500),
+      status: statuses[i % statuses.length],
+      requested_by: users[i % users.length],
+      date: d.toISOString(),
+    });
+  }
+
+  if (rows.length === 0) return 0;
+  const { error: insertError, count } = await supabaseAdmin
+    .from("transfer_requests")
+    .insert(rows, { count: "exact" });
+  if (insertError) throw new Error(`Error al insertar transfers seed: ${insertError.message}`);
+  return count ?? rows.length;
+}
+
 export async function getConsumptionTrends(periodDays: number, workspaceId?: string) {
   const { data, error } = await supabaseAdmin.rpc("get_consumption_trends", {
     p_period_days: periodDays,
@@ -1939,8 +1995,20 @@ export async function getLicitacionHistorial(licitacionId: string): Promise<Lici
   );
 }
 
+async function nextLicitacionCodigo(): Promise<string> {
+  const { data } = await supabaseAdmin
+    .from("licitaciones")
+    .select("codigo")
+    .like("codigo", "LIC-%")
+    .order("codigo", { ascending: false })
+    .limit(1);
+  const last = (data as { codigo: string }[] | null)?.[0]?.codigo;
+  const num = last ? parseInt(last.replace("LIC-", ""), 10) + 1 : 1;
+  return `LIC-${String(num).padStart(4, "0")}`;
+}
+
 export async function createLicitacion(data: {
-  codigo: string;
+  codigo?: string;
   titulo: string;
   descripcion?: string;
   fecha_limite_ofertas?: string;
@@ -1957,11 +2025,22 @@ export async function createLicitacion(data: {
 }): Promise<LicitacionRow> {
   const id = randomUUID();
   const now = new Date().toISOString();
+  let codigo = data.codigo?.trim();
+  if (codigo) {
+    // Check if code already exists; if so, auto-generate a new one
+    const { data: existing } = await supabaseAdmin
+      .from("licitaciones")
+      .select("id")
+      .eq("codigo", codigo)
+      .maybeSingle();
+    if (existing) codigo = undefined;
+  }
+  if (!codigo) codigo = await nextLicitacionCodigo();
 
   const rows = await db<LicitacionRow[]>(
     supabaseAdmin.from("licitaciones").insert({
       id,
-      codigo: data.codigo,
+      codigo,
       titulo: data.titulo,
       descripcion: data.descripcion ?? "",
       estado: "borrador",
@@ -2126,4 +2205,53 @@ export async function adjudicarOferta(params: {
     usuario: params.usuario ?? "",
     comentario: `Oferta adjudicada: ${params.ofertaId}`,
   });
+}
+
+// ─────────────────────────────────────────────────────────────
+//  LICITACIONES — Similar detection
+// ─────────────────────────────────────────────────────────────
+
+export async function findSimilarLicitaciones(medicationIds: string[]): Promise<{
+  licitacion: LicitacionRow;
+  matchCount: number;
+  matchedMedicationIds: string[];
+}[]> {
+  if (!medicationIds.length) return [];
+
+  const { data: items, error } = await supabaseAdmin
+    .from("licitacion_items")
+    .select("licitacion_id, medication_id")
+    .in("medication_id", medicationIds);
+
+  if (error || !items) return [];
+
+  // Group by licitacion_id, count matching medications
+  const licMap = new Map<string, { ids: string[]; count: number }>();
+  for (const item of items as { licitacion_id: string; medication_id: string }[]) {
+    const entry = licMap.get(item.licitacion_id) ?? { ids: [], count: 0 };
+    if (!entry.ids.includes(item.medication_id)) {
+      entry.ids.push(item.medication_id);
+      entry.count++;
+    }
+    licMap.set(item.licitacion_id, entry);
+  }
+
+  const licitacionIds = [...licMap.keys()];
+  if (!licitacionIds.length) return [];
+
+  const { data: lics } = await supabaseAdmin
+    .from("licitaciones")
+    .select("*")
+    .in("id", licitacionIds)
+    .in("estado", ["borrador", "en_licitacion", "ofertas_recibidas"]);
+
+  if (!lics) return [];
+
+  return (lics as LicitacionRow[])
+    .map((l) => ({
+      licitacion: l,
+      matchCount: licMap.get(l.id)?.count ?? 0,
+      matchedMedicationIds: licMap.get(l.id)?.ids ?? [],
+    }))
+    .sort((a, b) => b.matchCount - a.matchCount);
 }

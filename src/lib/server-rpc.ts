@@ -13,6 +13,7 @@ import {
   listWarehouses,
   getDashboardData,
   getRealtimeData,
+  seedTransfers,
   getConsumptionTrends,
   getSchema,
   getCrossHospitalStock,
@@ -48,6 +49,7 @@ import {
   updateOferta,
   deleteOferta,
   adjudicarOferta,
+  findSimilarLicitaciones,
 } from "./server/backoffice-service";
 
 export const fetchWorkspaceDataRpc = createServerFn({ method: "POST" })
@@ -141,6 +143,11 @@ export const backofficeGetRealtimeDataRpc = createServerFn({ method: "POST" })
   .inputValidator((data: { workspaceId?: string }) => data)
   .handler(async ({ data }) => {
     return getRealtimeData(data.workspaceId);
+  });
+
+export const backofficeSeedTransfersRpc = createServerFn({ method: "POST" })
+  .handler(async () => {
+    return seedTransfers();
   });
 
 export const backofficeGetConsumptionTrendsRpc = createServerFn({ method: "POST" })
@@ -441,7 +448,7 @@ export const licitacionesGetHistorialRpc = createServerFn({ method: "GET" })
 
 export const licitacionesCreateRpc = createServerFn({ method: "POST" })
   .inputValidator((data: {
-    codigo: string;
+    codigo?: string;
     titulo: string;
     descripcion?: string;
     fecha_limite_ofertas?: string;
@@ -535,4 +542,10 @@ export const licitacionesAdjudicarOfertaRpc = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await adjudicarOferta(data);
     return { ok: true };
+  });
+
+export const licitacionesFindSimilarRpc = createServerFn({ method: "POST" })
+  .inputValidator((data: { medicationIds: string[] }) => data)
+  .handler(async ({ data }) => {
+    return findSimilarLicitaciones(data.medicationIds);
   });

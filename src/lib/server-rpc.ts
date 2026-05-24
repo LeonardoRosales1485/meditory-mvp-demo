@@ -26,6 +26,27 @@ import {
   addStockWithPurchase,
   getAssistantFullSnapshot,
   getAllMedications,
+  getLowStockMedications,
+  getOverstockMedications,
+  getLossByOverstock,
+  calcularCantidadSugerida,
+  getProveedores,
+  createProveedor,
+  updateProveedor,
+  deleteProveedor,
+  getLicitaciones,
+  getLicitacion,
+  getLicitacionItems,
+  getLicitacionOfertas,
+  getLicitacionHistorial,
+  createLicitacion,
+  updateLicitacion,
+  deleteLicitacion,
+  cambiarEstadoLicitacion,
+  createOferta,
+  updateOferta,
+  deleteOferta,
+  adjudicarOferta,
 } from "./server/backoffice-service";
 
 export const fetchWorkspaceDataRpc = createServerFn({ method: "POST" })
@@ -314,5 +335,199 @@ export const updateStockConfigRpc = createServerFn({ method: "POST" })
     const { updateStockConfig } = await import("@/lib/server/workspace-service");
     await updateStockConfig(data.actor, data.workspaceId, data.medicationId,
       data.warehouseId, data.minStock, data.optimalStock);
+    return { ok: true };
+  });
+
+// ─── RPCs Licitaciones ────────────────────────────────────────────────────
+
+export const licitacionesGetLowStockRpc = createServerFn({ method: "GET" }).handler(async () => {
+  return getLowStockMedications();
+});
+
+export const licitacionesGetOverstockRpc = createServerFn({ method: "GET" }).handler(async () => {
+  return getOverstockMedications();
+});
+
+export const licitacionesGetLossByOverstockRpc = createServerFn({ method: "GET" }).handler(async () => {
+  return getLossByOverstock();
+});
+
+export const licitacionesCalcularCantidadRpc = createServerFn({ method: "POST" })
+  .inputValidator((data: {
+    medicationId: string;
+    workspaceId: string;
+    deficitTotal: number;
+    estimatedLeadDays?: number;
+  }) => data)
+  .handler(async ({ data }) => {
+    return calcularCantidadSugerida(data);
+  });
+
+export const licitacionesGetProveedoresRpc = createServerFn({ method: "GET" })
+  .inputValidator((data: { soloActivos?: boolean }) => data)
+  .handler(async ({ data }) => {
+    return getProveedores(data);
+  });
+
+export const licitacionesCreateProveedorRpc = createServerFn({ method: "POST" })
+  .inputValidator((data: {
+    nombre: string;
+    contacto?: string;
+    telefono?: string;
+    email?: string;
+    cuit?: string;
+    direccion?: string;
+  }) => data)
+  .handler(async ({ data }) => {
+    return createProveedor(data);
+  });
+
+export const licitacionesUpdateProveedorRpc = createServerFn({ method: "POST" })
+  .inputValidator((data: {
+    id: string;
+    patch: Partial<{
+      nombre: string;
+      contacto: string;
+      telefono: string;
+      email: string;
+      cuit: string;
+      direccion: string;
+      activo: boolean;
+    }>;
+  }) => data)
+  .handler(async ({ data }) => {
+    return updateProveedor(data.id, data.patch);
+  });
+
+export const licitacionesDeleteProveedorRpc = createServerFn({ method: "POST" })
+  .inputValidator((data: { id: string }) => data)
+  .handler(async ({ data }) => {
+    await deleteProveedor(data.id);
+    return { ok: true };
+  });
+
+export const licitacionesGetAllRpc = createServerFn({ method: "GET" }).handler(async () => {
+  return getLicitaciones();
+});
+
+export const licitacionesGetOneRpc = createServerFn({ method: "GET" })
+  .inputValidator((data: { id: string }) => data)
+  .handler(async ({ data }) => {
+    return getLicitacion(data.id);
+  });
+
+export const licitacionesGetItemsRpc = createServerFn({ method: "GET" })
+  .inputValidator((data: { licitacionId: string }) => data)
+  .handler(async ({ data }) => {
+    return getLicitacionItems(data.licitacionId);
+  });
+
+export const licitacionesGetOfertasRpc = createServerFn({ method: "GET" })
+  .inputValidator((data: { licitacionId: string }) => data)
+  .handler(async ({ data }) => {
+    return getLicitacionOfertas(data.licitacionId);
+  });
+
+export const licitacionesGetHistorialRpc = createServerFn({ method: "GET" })
+  .inputValidator((data: { licitacionId: string }) => data)
+  .handler(async ({ data }) => {
+    return getLicitacionHistorial(data.licitacionId);
+  });
+
+export const licitacionesCreateRpc = createServerFn({ method: "POST" })
+  .inputValidator((data: {
+    codigo: string;
+    titulo: string;
+    descripcion?: string;
+    fecha_limite_ofertas?: string;
+    fecha_estimada_entrega?: string;
+    creado_por?: string;
+    observaciones?: string;
+    items: Array<{
+      medication_id: string;
+      workspace_id: string;
+      cantidad_solicitada: number;
+      precio_unitario_estimado?: number;
+      justificacion?: string;
+    }>;
+  }) => data)
+  .handler(async ({ data }) => {
+    return createLicitacion(data);
+  });
+
+export const licitacionesUpdateRpc = createServerFn({ method: "POST" })
+  .inputValidator((data: {
+    id: string;
+    patch: Partial<{
+      titulo: string;
+      descripcion: string;
+      fecha_limite_ofertas: string | null;
+      fecha_estimada_entrega: string | null;
+      observaciones: string;
+    }>;
+  }) => data)
+  .handler(async ({ data }) => {
+    return updateLicitacion(data.id, data.patch);
+  });
+
+export const licitacionesDeleteRpc = createServerFn({ method: "POST" })
+  .inputValidator((data: { id: string }) => data)
+  .handler(async ({ data }) => {
+    await deleteLicitacion(data.id);
+    return { ok: true };
+  });
+
+export const licitacionesCambiarEstadoRpc = createServerFn({ method: "POST" })
+  .inputValidator((data: {
+    licitacionId: string;
+    nuevoEstado: "borrador" | "en_licitacion" | "ofertas_recibidas" | "adjudicado" | "en_ejecucion" | "completado" | "cancelado";
+    usuario?: string;
+    comentario?: string;
+  }) => data)
+  .handler(async ({ data }) => {
+    return cambiarEstadoLicitacion(data);
+  });
+
+export const licitacionesCreateOfertaRpc = createServerFn({ method: "POST" })
+  .inputValidator((data: {
+    licitacion_id: string;
+    proveedor_id: string;
+    monto_total: number;
+    plazo_entrega_dias?: number;
+    observaciones?: string;
+  }) => data)
+  .handler(async ({ data }) => {
+    return createOferta(data);
+  });
+
+export const licitacionesUpdateOfertaRpc = createServerFn({ method: "POST" })
+  .inputValidator((data: {
+    id: string;
+    patch: Partial<{
+      monto_total: number;
+      plazo_entrega_dias: number;
+      observaciones: string;
+      adjudicado: boolean;
+    }>;
+  }) => data)
+  .handler(async ({ data }) => {
+    return updateOferta(data.id, data.patch);
+  });
+
+export const licitacionesDeleteOfertaRpc = createServerFn({ method: "POST" })
+  .inputValidator((data: { id: string }) => data)
+  .handler(async ({ data }) => {
+    await deleteOferta(data.id);
+    return { ok: true };
+  });
+
+export const licitacionesAdjudicarOfertaRpc = createServerFn({ method: "POST" })
+  .inputValidator((data: {
+    licitacionId: string;
+    ofertaId: string;
+    usuario?: string;
+  }) => data)
+  .handler(async ({ data }) => {
+    await adjudicarOferta(data);
     return { ok: true };
   });

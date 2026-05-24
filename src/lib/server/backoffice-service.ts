@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { randomUUID } from "node:crypto";
+import { workspaces as DEMO_WORKSPACES } from "../login-demo";
 
 async function db<T>(promise: Promise<{ data: T | null; error: { message: string } | null }>): Promise<T> {
   const { data, error } = await promise;
@@ -131,7 +132,20 @@ export async function listWarehouses() {
   );
 }
 
+export async function ensureDemoWorkspaces() {
+  const existing = await db<{ id: string }[]>(
+    supabaseAdmin.from("workspaces").select("id"),
+  );
+  const existingIds = new Set(existing.map((w) => w.id));
+  for (const demoWs of DEMO_WORKSPACES) {
+    if (!existingIds.has(demoWs.id)) {
+      await seedGenericWorkspace(demoWs.id, demoWs.name);
+    }
+  }
+}
+
 export async function getDashboardData() {
+  await ensureDemoWorkspaces();
   const [workspaces, users, warehouses, batches, recentMovements] = await Promise.all([
     supabaseAdmin.from("workspaces").select("id, name, slug").order("name"),
     supabaseAdmin.from("workspace_users").select("id, workspace_id"),
@@ -1578,4 +1592,526 @@ export async function getAllMedications(): Promise<MedicationRef[]> {
   return db<MedicationRef[]>(
     supabaseAdmin.from("medications").select("id, name, form, concentration_value, concentration_unit"),
   );
+}
+
+// ─────────────────────────────────────────────────────────────
+//  LICITACIONES — Tipos
+// ─────────────────────────────────────────────────────────────
+
+export interface ProveedorRow {
+  id: string;
+  nombre: string;
+  contacto: string;
+  telefono: string;
+  email: string;
+  cuit: string;
+  direccion: string;
+  activo: boolean;
+  created_at: string;
+}
+
+export interface LicitacionRow {
+  id: string;
+  codigo: string;
+  titulo: string;
+  descripcion: string;
+  estado: LicitacionEstado;
+  fecha_creacion: string;
+  fecha_limite_ofertas: string | null;
+  fecha_adjudicacion: string | null;
+  fecha_estimada_entrega: string | null;
+  creado_por: string;
+  observaciones: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type LicitacionEstado =
+  | "borrador"
+  | "en_licitacion"
+  | "ofertas_recibidas"
+  | "adjudicado"
+  | "en_ejecucion"
+  | "completado"
+  | "cancelado";
+
+export interface LicitacionItemRow {
+  id: string;
+  licitacion_id: string;
+  medication_id: string;
+  workspace_id: string;
+  cantidad_solicitada: number;
+  cantidad_adjudicada: number;
+  precio_unitario_estimado: number;
+  justificacion: string;
+}
+
+export interface LicitacionOfertaRow {
+  id: string;
+  licitacion_id: string;
+  proveedor_id: string;
+  fecha_presentacion: string;
+  monto_total: number;
+  plazo_entrega_dias: number;
+  observaciones: string;
+  adjudicado: boolean;
+}
+
+export interface LicitacionHistorialRow {
+  id: string;
+  licitacion_id: string;
+  estado_anterior: LicitacionEstado | null;
+  estado_nuevo: LicitacionEstado;
+  fecha_cambio: string;
+  usuario: string;
+  comentario: string;
+}
+
+export interface LowStockMedication {
+  medicationId: string;
+  medicationName: string;
+  workspaceId: string;
+  workspaceName: string;
+  currentStock: number;
+  minStock: number;
+  deficit: number;
+}
+
+export interface OverstockMedication {
+  medicationId: string;
+  medicationName: string;
+  workspaceId: string;
+  workspaceName: string;
+  currentStock: number;
+  optimalStock: number;
+  surplus: number;
+  salePrice: number;
+  lossAmount: number;
+}
+
+export interface SuggestedTenderItem {
+  medicationId: string;
+  medicationName: string;
+  workspaceId: string;
+  deficitTotal: number;
+  averageDailyConsumption: number;
+  estimatedLeadDays: number;
+  suggestedQuantity: number;
+  justificacion: string;
+}
+
+// ─────────────────────────────────────────────────────────────
+//  LICITACIONES — Stock analysis helpers
+// ─────────────────────────────────────────────────────────────
+
+export async function getLowStockMedications(): Promise<LowStockMedication[]> {
+  const batches = await db<{ medication_id: string; warehouse_id: string; quantity: number }[]>(
+    supabaseAdmin.from("batches").select("medication_id, warehouse_id, quantity"),
+  );
+  const meds = await db<{ id: string; name: string; workspace_id: string }[]>(
+    supabaseAdmin.from("medications").select("id, name, workspace_id"),
+  );
+  const configs = await db<{ medication_id: string; warehouse_id: string; min_stock: number }[]>(
+    supabaseAdmin.from("medication_stock_config").select("medication_id, warehouse_id, min_stock"),
+  );
+  const workspaces = await db<{ id: string; name: string }[]>(
+    supabaseAdmin.from("workspaces").select("id, name"),
+  );
+
+  const wsMap = new Map(workspaces.map((w) => [w.id, w.name]));
+  const medMap = new Map(meds.map((m) => [m.id, m]));
+
+  const stockByMedWarehouse = new Map<string, number>();
+  for (const b of batches) {
+    const key = `${b.medication_id}::${b.warehouse_id}`;
+    stockByMedWarehouse.set(key, (stockByMedWarehouse.get(key) ?? 0) + b.quantity);
+  }
+
+  const results: LowStockMedication[] = [];
+  for (const cfg of configs) {
+    const key = `${cfg.medication_id}::${cfg.warehouse_id}`;
+    const current = stockByMedWarehouse.get(key) ?? 0;
+    if (current < cfg.min_stock) {
+      const med = medMap.get(cfg.medication_id);
+      if (!med) continue;
+      results.push({
+        medicationId: cfg.medication_id,
+        medicationName: med.name,
+        workspaceId: med.workspace_id,
+        workspaceName: wsMap.get(med.workspace_id) ?? med.workspace_id,
+        currentStock: current,
+        minStock: cfg.min_stock,
+        deficit: cfg.min_stock - current,
+      });
+    }
+  }
+
+  results.sort((a, b) => b.deficit - a.deficit);
+  return results;
+}
+
+export async function getOverstockMedications(): Promise<OverstockMedication[]> {
+  const batches = await db<{ medication_id: string; warehouse_id: string; quantity: number }[]>(
+    supabaseAdmin.from("batches").select("medication_id, warehouse_id, quantity"),
+  );
+  const meds = await db<{ id: string; name: string; workspace_id: string; sale_price: number }[]>(
+    supabaseAdmin.from("medications").select("id, name, workspace_id, sale_price"),
+  );
+  const configs = await db<{ medication_id: string; warehouse_id: string; optimal_stock: number }[]>(
+    supabaseAdmin.from("medication_stock_config").select("medication_id, warehouse_id, optimal_stock"),
+  );
+  const workspaces = await db<{ id: string; name: string }[]>(
+    supabaseAdmin.from("workspaces").select("id, name"),
+  );
+
+  const wsMap = new Map(workspaces.map((w) => [w.id, w.name]));
+  const medMap = new Map(meds.map((m) => [m.id, m]));
+
+  const stockByMedWarehouse = new Map<string, number>();
+  for (const b of batches) {
+    const key = `${b.medication_id}::${b.warehouse_id}`;
+    stockByMedWarehouse.set(key, (stockByMedWarehouse.get(key) ?? 0) + b.quantity);
+  }
+
+  const results: OverstockMedication[] = [];
+  for (const cfg of configs) {
+    const key = `${cfg.medication_id}::${cfg.warehouse_id}`;
+    const current = stockByMedWarehouse.get(key) ?? 0;
+    if (current > cfg.optimal_stock) {
+      const med = medMap.get(cfg.medication_id);
+      if (!med) continue;
+      const surplus = current - cfg.optimal_stock;
+      results.push({
+        medicationId: cfg.medication_id,
+        medicationName: med.name,
+        workspaceId: med.workspace_id,
+        workspaceName: wsMap.get(med.workspace_id) ?? med.workspace_id,
+        currentStock: current,
+        optimalStock: cfg.optimal_stock,
+        surplus,
+        salePrice: med.sale_price ?? 0,
+        lossAmount: (med.sale_price ?? 0) * surplus,
+      });
+    }
+  }
+
+  results.sort((a, b) => b.lossAmount - a.lossAmount);
+  return results;
+}
+
+export async function getLossByOverstock(): Promise<{ totalLoss: number; items: OverstockMedication[] }> {
+  const items = await getOverstockMedications();
+  const totalLoss = items.reduce((s, i) => s + i.lossAmount, 0);
+  return { totalLoss, items };
+}
+
+export async function calcularCantidadSugerida(params: {
+  medicationId: string;
+  workspaceId: string;
+  deficitTotal: number;
+  estimatedLeadDays?: number;
+}): Promise<{ suggestedQuantity: number; averageDailyConsumption: number; justificacion: string }> {
+  const daysBack = 30;
+  const since = new Date(Date.now() - daysBack * 86400000).toISOString();
+
+  const movements = await db<{ quantity: number }[]>(
+    supabaseAdmin.from("movements")
+      .select("quantity")
+      .eq("medication_id", params.medicationId)
+      .eq("workspace_id", params.workspaceId)
+      .in("type", ["egreso", "venta", "dispensacion"])
+      .gte("date", since),
+  );
+
+  const totalConsumed = movements.reduce((s, m) => s + Math.abs(m.quantity), 0);
+  const averageDailyConsumption = daysBack > 0 ? totalConsumed / daysBack : 0;
+  const leadDays = params.estimatedLeadDays ?? 30;
+  const suggestedQuantity = Math.max(
+    params.deficitTotal,
+    Math.ceil(averageDailyConsumption * leadDays),
+  );
+
+  const justificacion = averageDailyConsumption > 0
+    ? `Déficit: ${params.deficitTotal} uds. Consumo promedio diario: ${averageDailyConsumption.toFixed(1)} uds × ${leadDays} días = ${Math.ceil(averageDailyConsumption * leadDays)} uds. Cantidad sugerida: ${suggestedQuantity} uds.`
+    : `Déficit: ${params.deficitTotal} uds. Sin datos de consumo. Cantidad sugerida: ${suggestedQuantity} uds.`;
+
+  return { suggestedQuantity, averageDailyConsumption, justificacion };
+}
+
+// ─────────────────────────────────────────────────────────────
+//  LICITACIONES — CRUD Proveedores
+// ─────────────────────────────────────────────────────────────
+
+export async function getProveedores(options?: { soloActivos?: boolean }): Promise<ProveedorRow[]> {
+  let query = supabaseAdmin.from("proveedores").select("*").order("nombre");
+  if (options?.soloActivos) {
+    query = (query as any).eq("activo", true);
+  }
+  return db<ProveedorRow[]>(query);
+}
+
+export async function createProveedor(data: {
+  nombre: string;
+  contacto?: string;
+  telefono?: string;
+  email?: string;
+  cuit?: string;
+  direccion?: string;
+}): Promise<ProveedorRow> {
+  const id = randomUUID();
+  const row = await db<ProveedorRow[]>(
+    supabaseAdmin.from("proveedores").insert({
+      id,
+      nombre: data.nombre,
+      contacto: data.contacto ?? "",
+      telefono: data.telefono ?? "",
+      email: data.email ?? "",
+      cuit: data.cuit ?? "",
+      direccion: data.direccion ?? "",
+    }).select("*"),
+  );
+  return row[0];
+}
+
+export async function updateProveedor(id: string, data: Partial<{
+  nombre: string;
+  contacto: string;
+  telefono: string;
+  email: string;
+  cuit: string;
+  direccion: string;
+  activo: boolean;
+}>): Promise<ProveedorRow> {
+  const row = await db<ProveedorRow[]>(
+    supabaseAdmin.from("proveedores").update(data).eq("id", id).select("*"),
+  );
+  return row[0];
+}
+
+export async function deleteProveedor(id: string): Promise<void> {
+  await db(supabaseAdmin.from("proveedores").delete().eq("id", id));
+}
+
+// ─────────────────────────────────────────────────────────────
+//  LICITACIONES — CRUD Licitaciones
+// ─────────────────────────────────────────────────────────────
+
+export async function getLicitaciones(): Promise<LicitacionRow[]> {
+  return db<LicitacionRow[]>(
+    supabaseAdmin.from("licitaciones").select("*").order("fecha_creacion", { ascending: false }),
+  );
+}
+
+export async function getLicitacion(id: string): Promise<LicitacionRow | null> {
+  const rows = await db<LicitacionRow[]>(
+    supabaseAdmin.from("licitaciones").select("*").eq("id", id).limit(1),
+  );
+  return rows[0] ?? null;
+}
+
+export async function getLicitacionItems(licitacionId: string): Promise<LicitacionItemRow[]> {
+  return db<LicitacionItemRow[]>(
+    supabaseAdmin.from("licitacion_items").select("*").eq("licitacion_id", licitacionId),
+  );
+}
+
+export async function getLicitacionOfertas(licitacionId: string): Promise<LicitacionOfertaRow[]> {
+  return db<LicitacionOfertaRow[]>(
+    supabaseAdmin.from("licitacion_ofertas").select("*").eq("licitacion_id", licitacionId),
+  );
+}
+
+export async function getLicitacionHistorial(licitacionId: string): Promise<LicitacionHistorialRow[]> {
+  return db<LicitacionHistorialRow[]>(
+    supabaseAdmin.from("licitacion_historial").select("*").eq("licitacion_id", licitacionId).order("fecha_cambio"),
+  );
+}
+
+export async function createLicitacion(data: {
+  codigo: string;
+  titulo: string;
+  descripcion?: string;
+  fecha_limite_ofertas?: string;
+  fecha_estimada_entrega?: string;
+  creado_por?: string;
+  observaciones?: string;
+  items: Array<{
+    medication_id: string;
+    workspace_id: string;
+    cantidad_solicitada: number;
+    precio_unitario_estimado?: number;
+    justificacion?: string;
+  }>;
+}): Promise<LicitacionRow> {
+  const id = randomUUID();
+  const now = new Date().toISOString();
+
+  const rows = await db<LicitacionRow[]>(
+    supabaseAdmin.from("licitaciones").insert({
+      id,
+      codigo: data.codigo,
+      titulo: data.titulo,
+      descripcion: data.descripcion ?? "",
+      estado: "borrador",
+      fecha_limite_ofertas: data.fecha_limite_ofertas ?? null,
+      fecha_estimada_entrega: data.fecha_estimada_entrega ?? null,
+      creado_por: data.creado_por ?? "",
+      observaciones: data.observaciones ?? "",
+      created_at: now,
+      updated_at: now,
+    }).select("*"),
+  );
+
+  const licitacion = rows[0];
+
+  const items = data.items.map((item) => ({
+    id: randomUUID(),
+    licitacion_id: id,
+    medication_id: item.medication_id,
+    workspace_id: item.workspace_id,
+    cantidad_solicitada: item.cantidad_solicitada,
+    precio_unitario_estimado: item.precio_unitario_estimado ?? 0,
+    justificacion: item.justificacion ?? "",
+  }));
+
+  if (items.length > 0) {
+    await db(supabaseAdmin.from("licitacion_items").insert(items as any));
+  }
+
+  return licitacion;
+}
+
+export async function updateLicitacion(id: string, data: Partial<{
+  titulo: string;
+  descripcion: string;
+  fecha_limite_ofertas: string | null;
+  fecha_estimada_entrega: string | null;
+  observaciones: string;
+}>): Promise<LicitacionRow> {
+  const patch: Record<string, unknown> = { ...data, updated_at: new Date().toISOString() };
+  const rows = await db<LicitacionRow[]>(
+    supabaseAdmin.from("licitaciones").update(patch as any).eq("id", id).select("*"),
+  );
+  return rows[0];
+}
+
+export async function deleteLicitacion(id: string): Promise<void> {
+  await db(supabaseAdmin.from("licitaciones").delete().eq("id", id));
+}
+
+// ─────────────────────────────────────────────────────────────
+//  LICITACIONES — Estado transitions
+// ─────────────────────────────────────────────────────────────
+
+const TRANSICIONES_VALIDAS: Record<LicitacionEstado, LicitacionEstado[]> = {
+  borrador: ["en_licitacion", "cancelado"],
+  en_licitacion: ["ofertas_recibidas", "cancelado"],
+  ofertas_recibidas: ["adjudicado", "en_licitacion", "cancelado"],
+  adjudicado: ["en_ejecucion", "cancelado"],
+  en_ejecucion: ["completado", "cancelado"],
+  completado: [],
+  cancelado: [],
+};
+
+export async function cambiarEstadoLicitacion(params: {
+  licitacionId: string;
+  nuevoEstado: LicitacionEstado;
+  usuario?: string;
+  comentario?: string;
+}): Promise<LicitacionRow> {
+  const lic = await getLicitacion(params.licitacionId);
+  if (!lic) throw new Error("Licitación no encontrada");
+
+  const permitidos = TRANSICIONES_VALIDAS[lic.estado];
+  if (!permitidos.includes(params.nuevoEstado)) {
+    throw new Error(`Transición inválida: ${lic.estado} → ${params.nuevoEstado}`);
+  }
+
+  const now = new Date().toISOString();
+  const patch: Record<string, unknown> = {
+    estado: params.nuevoEstado,
+    updated_at: now,
+  };
+  if (params.nuevoEstado === "adjudicado") {
+    patch.fecha_adjudicacion = now;
+  }
+
+  const rows = await db<LicitacionRow[]>(
+    supabaseAdmin.from("licitaciones").update(patch as any).eq("id", params.licitacionId).select("*"),
+  );
+
+  await db(
+    supabaseAdmin.from("licitacion_historial").insert({
+      id: randomUUID(),
+      licitacion_id: params.licitacionId,
+      estado_anterior: lic.estado,
+      estado_nuevo: params.nuevoEstado,
+      fecha_cambio: now,
+      usuario: params.usuario ?? "",
+      comentario: params.comentario ?? "",
+    }),
+  );
+
+  return rows[0];
+}
+
+// ─────────────────────────────────────────────────────────────
+//  LICITACIONES — CRUD Ofertas
+// ─────────────────────────────────────────────────────────────
+
+export async function createOferta(data: {
+  licitacion_id: string;
+  proveedor_id: string;
+  monto_total: number;
+  plazo_entrega_dias?: number;
+  observaciones?: string;
+}): Promise<LicitacionOfertaRow> {
+  const rows = await db<LicitacionOfertaRow[]>(
+    supabaseAdmin.from("licitacion_ofertas").insert({
+      id: randomUUID(),
+      licitacion_id: data.licitacion_id,
+      proveedor_id: data.proveedor_id,
+      monto_total: data.monto_total,
+      plazo_entrega_dias: data.plazo_entrega_dias ?? 30,
+      observaciones: data.observaciones ?? "",
+    }).select("*"),
+  );
+  return rows[0];
+}
+
+export async function updateOferta(id: string, data: Partial<{
+  monto_total: number;
+  plazo_entrega_dias: number;
+  observaciones: string;
+  adjudicado: boolean;
+}>): Promise<LicitacionOfertaRow> {
+  const rows = await db<LicitacionOfertaRow[]>(
+    supabaseAdmin.from("licitacion_ofertas").update(data as any).eq("id", id).select("*"),
+  );
+  return rows[0];
+}
+
+export async function deleteOferta(id: string): Promise<void> {
+  await db(supabaseAdmin.from("licitacion_ofertas").delete().eq("id", id));
+}
+
+export async function adjudicarOferta(params: {
+  licitacionId: string;
+  ofertaId: string;
+  usuario?: string;
+}): Promise<void> {
+  await db(
+    supabaseAdmin.from("licitacion_ofertas").update({ adjudicado: true }).eq("id", params.ofertaId),
+  );
+  await db(
+    supabaseAdmin.from("licitacion_ofertas").update({ adjudicado: false })
+      .eq("licitacion_id", params.licitacionId)
+      .neq("id", params.ofertaId),
+  );
+  await cambiarEstadoLicitacion({
+    licitacionId: params.licitacionId,
+    nuevoEstado: "adjudicado",
+    usuario: params.usuario ?? "",
+    comentario: `Oferta adjudicada: ${params.ofertaId}`,
+  });
 }

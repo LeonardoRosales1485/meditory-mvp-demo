@@ -33,7 +33,14 @@ DELETE FROM medication_stock_config;
 --  PASO 3: Asegurar workspace, depósitos y meds de Hospital Blanco
 -- ─────────────────────────────────────────────
 INSERT INTO workspaces (id, name, slug)
-VALUES ('ws-blanco', 'Hospital Blanco', 'HOSPITALBLANCO')
+VALUES
+  ('ws-blanco', 'Hospital Blanco', 'HOSPITALBLANCO'),
+  ('ws-padilla', 'Hospital Ángel C. Padilla', 'HOSPITALPADILLA'),
+  ('ws-ninez', 'Hospital del Niño Jesús', 'HOSPITALNINEZ'),
+  ('ws-mujer', 'Hospital de la Mujer', 'HOSPITALMUJER'),
+  ('ws-evaperon', 'Hospital Eva Perón', 'HOSPITALEVAPERON'),
+  ('ws-concepcion', 'Hospital Regional de Concepción', 'HOSPITALCONCEPCION'),
+  ('ws-este', 'Hospital de la Comunidad - Este', 'HOSPITALESTE')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO warehouses (id, workspace_id, name, type, unit)

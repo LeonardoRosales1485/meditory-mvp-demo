@@ -28,7 +28,7 @@ export const Route = createFileRoute("/backoffice")({
 
 const NAV_ITEMS = [
   { to: "/backoffice/estado-hospital", label: "Estado general", icon: Activity },
-  { to: "/backoffice/compras", label: "Compras / Licitación", icon: ShoppingCart },
+  { to: "/backoffice/licitaciones", label: "Licitaciones", icon: ShoppingCart },
   { to: "/backoffice/gestion-pedidos", label: "Pedidos medicos", icon: ClipboardList },
   { to: "/backoffice/panel-en-vivo", label: "Panel en vivo", icon: Activity },
   { to: "/backoffice/workspaces", label: "Instituciones", icon: Building2 },

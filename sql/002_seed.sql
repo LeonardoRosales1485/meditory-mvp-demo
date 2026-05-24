@@ -4,7 +4,13 @@ insert into workspaces (id, name, slug)
 values
   ('ws-aleman', 'Hospital Alemán', 'HOSPITALALEMAN'),
   ('ws-francisco', 'Hospital Francisco', 'HOSPITALFRANCISCO'),
-  ('ws-blanco', 'Hospital Blanco', 'hospitalblanco')
+  ('ws-blanco', 'Hospital Blanco', 'hospitalblanco'),
+  ('ws-padilla', 'Hospital Ángel C. Padilla', 'HOSPITALPADILLA'),
+  ('ws-ninez', 'Hospital del Niño Jesús', 'HOSPITALNINEZ'),
+  ('ws-mujer', 'Hospital de la Mujer', 'HOSPITALMUJER'),
+  ('ws-evaperon', 'Hospital Eva Perón', 'HOSPITALEVAPERON'),
+  ('ws-concepcion', 'Hospital Regional de Concepción', 'HOSPITALCONCEPCION'),
+  ('ws-este', 'Hospital de la Comunidad - Este', 'HOSPITALESTE')
 on conflict do nothing;
 
 insert into workspace_users (id, workspace_id, name, email, role)

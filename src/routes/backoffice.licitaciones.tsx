@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ShoppingCart, Plus, Search, TrendingDown, TrendingUp, Package,
@@ -72,6 +72,7 @@ function LicitacionesPage() {
   const [allMeds, setAllMeds] = useState<{ id: string; name: string; form: string; concentrationValue: number; concentrationUnit: string }[]>([]);
   const [selectedWs, setSelectedWs] = useState<string>("__all__");
   const [workspaces, setWorkspaces] = useState<{ id: string; name: string }[]>([]);
+  const [searchLic, setSearchLic] = useState("");
 
   async function loadAll() {
     setLoading(true);
@@ -188,9 +189,20 @@ function LicitacionesPage() {
   }, [overstock, selectedWs]);
 
   const filteredLicitaciones = useMemo(() => {
-    if (selectedWs === "__all__") return licitaciones;
-    return licitaciones.filter((l) => l.workspace_ids.includes(selectedWs));
-  }, [licitaciones, selectedWs]);
+    let list = licitaciones;
+    if (selectedWs !== "__all__") {
+      list = list.filter((l) => l.workspace_ids.includes(selectedWs));
+    }
+    if (searchLic) {
+      const q = searchLic.toLowerCase();
+      list = list.filter((l) =>
+        l.codigo.toLowerCase().includes(q) ||
+        l.titulo.toLowerCase().includes(q) ||
+        l.creado_por.toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [licitaciones, selectedWs, searchLic]);
 
   const totalDeficit = filteredLowStock.reduce((s, i) => s + i.deficit, 0);
   const totalLoss = filteredOverstock.reduce((s, i) => s + i.lossAmount, 0);
@@ -233,7 +245,10 @@ function LicitacionesPage() {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Card>
+        <Card
+          onClick={() => setTab("stock")}
+          className="cursor-pointer transition-all hover:shadow-md hover:scale-[1.02] active:scale-[0.98]"
+        >
           <CardContent className="p-4">
             <div className="flex items-center gap-2 text-red-600 mb-1">
               <TrendingDown size={16} />
@@ -243,7 +258,10 @@ function LicitacionesPage() {
             <p className="text-xs text-muted-foreground mt-0.5">{filteredLowStock.length} medicamentos bajo stock</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card
+          onClick={() => setTab("stock")}
+          className="cursor-pointer transition-all hover:shadow-md hover:scale-[1.02] active:scale-[0.98]"
+        >
           <CardContent className="p-4">
             <div className="flex items-center gap-2 text-amber-600 mb-1">
               <TrendingUp size={16} />
@@ -253,7 +271,10 @@ function LicitacionesPage() {
             <p className="text-xs text-muted-foreground mt-0.5">{filteredOverstock.length} medicamentos excedidos</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card
+          onClick={() => setTab("licitaciones")}
+          className="cursor-pointer transition-all hover:shadow-md hover:scale-[1.02] active:scale-[0.98]"
+        >
           <CardContent className="p-4">
             <div className="flex items-center gap-2 text-blue-600 mb-1">
               <Package size={16} />
@@ -263,7 +284,10 @@ function LicitacionesPage() {
             <p className="text-xs text-muted-foreground mt-0.5">{filteredLicitaciones.length} total creadas</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card
+          onClick={() => setTab("proveedores")}
+          className="cursor-pointer transition-all hover:shadow-md hover:scale-[1.02] active:scale-[0.98]"
+        >
           <CardContent className="p-4">
             <div className="flex items-center gap-2 text-green-600 mb-1">
               <Building2 size={16} />
@@ -304,10 +328,7 @@ function LicitacionesPage() {
                     <LowStockTable
                       items={filteredLowStock}
                       medMap={medMap}
-                      onCreateLicitacion={(items) => {
-                        setCreateOpen(true);
-                        handleCreateLicitacion(items);
-                      }}
+                      onCreateLicitacion={handleCreateLicitacion}
                     />
                   )}
                 </CardContent>
@@ -323,7 +344,11 @@ function LicitacionesPage() {
                   {filteredOverstock.length === 0 ? (
                     <p className="text-xs text-muted-foreground py-4 text-center">Sin medicamentos con sobre stock</p>
                   ) : (
-                    <OverstockTable items={filteredOverstock} />
+                    <OverstockTable
+                      items={filteredOverstock}
+                      medMap={medMap}
+                      onCreateLicitacion={handleCreateLicitacion}
+                    />
                   )}
                 </CardContent>
               </Card>
@@ -339,10 +364,21 @@ function LicitacionesPage() {
               <Plus size={14} /> Nueva
             </Button>
           </div>
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1 max-w-sm">
+              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Buscar por código, título o creador..."
+                value={searchLic}
+                onChange={(e) => setSearchLic(e.target.value)}
+                className="pl-8 text-sm h-8"
+              />
+            </div>
+          </div>
           <Card>
             <CardContent className="p-0">
               {filteredLicitaciones.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-8 text-center">No hay licitaciones aún</p>
+                <p className="text-sm text-muted-foreground py-8 text-center">{searchLic ? "Sin resultados" : "No hay licitaciones aún"}</p>
               ) : (
                 <LicitacionesTable
                   items={filteredLicitaciones}
@@ -377,6 +413,12 @@ function LicitacionesPage() {
                 overstock={filteredOverstock}
                 licitaciones={filteredLicitaciones}
                 proveedores={proveedores}
+                onCreateLicitacion={async (data) => {
+                  const rpc = await import("@/lib/server-rpc");
+                  const newLic = await rpc.licitacionesCreateRpc({ data }) as LicitacionRow;
+                  setLicitaciones((prev) => [newLic, ...prev]);
+                  return newLic;
+                }}
               />
             </CardContent>
           </Card>
@@ -412,6 +454,35 @@ function LicitacionesPage() {
 
 // ─── Sub-components ────────────────────────────────────────────
 
+function StockTableToolbar({ selectedCount, totalCount, onSelectAll, onDeselectAll, onCreateLicitacion }: {
+  selectedCount: number;
+  totalCount: number;
+  onSelectAll: () => void;
+  onDeselectAll: () => void;
+  onCreateLicitacion: () => void;
+}) {
+  if (selectedCount === 0 && totalCount === 0) return null;
+  return (
+    <div className="flex items-center gap-2 mb-2 flex-wrap">
+      {totalCount > 0 && (
+        <>
+          <Button size="sm" variant="ghost" onClick={onSelectAll} className="h-7 text-xs gap-1">
+            <Check size={12} /> Seleccionar todo
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onDeselectAll} className="h-7 text-xs gap-1">
+            <X size={12} /> Deseleccionar todo
+          </Button>
+        </>
+      )}
+      {selectedCount > 0 && (
+        <Button size="sm" onClick={onCreateLicitacion} className="gap-1.5 h-7 text-xs ml-auto">
+          <Plus size={12} /> Crear licitación ({selectedCount})
+        </Button>
+      )}
+    </div>
+  );
+}
+
 function LowStockTable({ items, medMap, onCreateLicitacion }: {
   items: LowStockMedication[];
   medMap: Map<string, string>;
@@ -428,6 +499,14 @@ function LowStockTable({ items, medMap, onCreateLicitacion }: {
     });
   }
 
+  function selectAll() {
+    setSelected(new Set(items.map((i) => i.medicationId + i.workspaceId)));
+  }
+
+  function deselectAll() {
+    setSelected(new Set());
+  }
+
   function createFromSelected() {
     const selectedItems = items.filter((i) => selected.has(i.medicationId + i.workspaceId));
     onCreateLicitacion(selectedItems.map((i) => ({
@@ -441,13 +520,13 @@ function LowStockTable({ items, medMap, onCreateLicitacion }: {
 
   return (
     <div>
-      {selected.size > 0 && (
-        <div className="flex items-center gap-2 mb-2">
-          <Button size="sm" onClick={createFromSelected} className="gap-1.5 h-7 text-xs">
-            <Plus size={12} /> Crear licitación ({selected.size})
-          </Button>
-        </div>
-      )}
+      <StockTableToolbar
+        selectedCount={selected.size}
+        totalCount={items.length}
+        onSelectAll={selectAll}
+        onDeselectAll={deselectAll}
+        onCreateLicitacion={createFromSelected}
+      />
       <Table>
         <TableHeader>
           <TableRow>
@@ -488,40 +567,95 @@ function LowStockTable({ items, medMap, onCreateLicitacion }: {
   );
 }
 
-function OverstockTable({ items }: { items: OverstockMedication[] }) {
+function OverstockTable({ items, medMap, onCreateLicitacion }: {
+  items: OverstockMedication[];
+  medMap: Map<string, string>;
+  onCreateLicitacion: (items: { medicationId: string; workspaceId: string; cantidad: number; justificacion: string }[]) => void;
+}) {
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  function toggle(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function selectAll() {
+    setSelected(new Set(items.map((i) => i.medicationId + i.workspaceId)));
+  }
+
+  function deselectAll() {
+    setSelected(new Set());
+  }
+
+  function createFromSelected() {
+    const selectedItems = items.filter((i) => selected.has(i.medicationId + i.workspaceId));
+    onCreateLicitacion(selectedItems.map((i) => ({
+      medicationId: i.medicationId,
+      workspaceId: i.workspaceId,
+      cantidad: Math.max(i.surplus, 100),
+      justificacion: `Sobre stock: actual ${i.currentStock}, óptimo ${i.optimalStock}, excedente ${i.surplus}, pérdida estimada $${i.lossAmount}`,
+    })));
+    setSelected(new Set());
+  }
+
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead className="text-xs">Medicamento</TableHead>
-          <TableHead className="text-xs">Hospital</TableHead>
-          <TableHead className="text-xs text-right">Stock</TableHead>
-          <TableHead className="text-xs text-right">Óptimo</TableHead>
-          <TableHead className="text-xs text-right">Excedente</TableHead>
-          <TableHead className="text-xs text-right">Precio</TableHead>
-          <TableHead className="text-xs text-right">Pérdida Estimada</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {items.slice(0, 50).map((item) => (
-          <TableRow key={item.medicationId + item.workspaceId}>
-            <TableCell className="text-sm font-medium">{item.medicationName}</TableCell>
-            <TableCell className="text-xs text-muted-foreground">{item.workspaceName}</TableCell>
-            <TableCell className="text-right text-sm">{item.currentStock.toLocaleString("es-AR")}</TableCell>
-            <TableCell className="text-right text-sm text-muted-foreground">{item.optimalStock.toLocaleString("es-AR")}</TableCell>
-            <TableCell className="text-right text-sm">
-              <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 text-xs border-0">
-                +{item.surplus.toLocaleString("es-AR")}
-              </Badge>
-            </TableCell>
-            <TableCell className="text-right text-sm">${item.salePrice.toLocaleString("es-AR")}</TableCell>
-            <TableCell className="text-right text-sm text-red-600 font-medium">
-              ${item.lossAmount.toLocaleString("es-AR")}
-            </TableCell>
+    <div>
+      <StockTableToolbar
+        selectedCount={selected.size}
+        totalCount={items.length}
+        onSelectAll={selectAll}
+        onDeselectAll={deselectAll}
+        onCreateLicitacion={createFromSelected}
+      />
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-8"></TableHead>
+            <TableHead className="text-xs">Medicamento</TableHead>
+            <TableHead className="text-xs">Hospital</TableHead>
+            <TableHead className="text-xs text-right">Stock</TableHead>
+            <TableHead className="text-xs text-right">Óptimo</TableHead>
+            <TableHead className="text-xs text-right">Excedente</TableHead>
+            <TableHead className="text-xs text-right">Precio</TableHead>
+            <TableHead className="text-xs text-right">Pérdida Estimada</TableHead>
           </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+        </TableHeader>
+        <TableBody>
+          {items.slice(0, 50).map((item) => {
+            const key = item.medicationId + item.workspaceId;
+            return (
+              <TableRow key={key}>
+                <TableCell>
+                  <input
+                    type="checkbox"
+                    checked={selected.has(key)}
+                    onChange={() => toggle(key)}
+                    className="h-3.5 w-3.5"
+                  />
+                </TableCell>
+                <TableCell className="text-sm font-medium">{item.medicationName}</TableCell>
+                <TableCell className="text-xs text-muted-foreground">{item.workspaceName}</TableCell>
+                <TableCell className="text-right text-sm">{item.currentStock.toLocaleString("es-AR")}</TableCell>
+                <TableCell className="text-right text-sm text-muted-foreground">{item.optimalStock.toLocaleString("es-AR")}</TableCell>
+                <TableCell className="text-right text-sm">
+                  <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 text-xs border-0">
+                    +{item.surplus.toLocaleString("es-AR")}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-right text-sm">${item.salePrice.toLocaleString("es-AR")}</TableCell>
+                <TableCell className="text-right text-sm text-red-600 font-medium">
+                  ${item.lossAmount.toLocaleString("es-AR")}
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </div>
   );
 }
 
@@ -592,7 +726,18 @@ function ProveedoresPanel({ proveedores, onRefresh }: {
   const [direccion, setDireccion] = useState("");
 
   const filtered = proveedores.filter(
-    (p) => p.nombre.toLowerCase().includes(searchProv.toLowerCase()),
+    (p) => {
+      if (!searchProv) return true;
+      const q = searchProv.toLowerCase();
+      return (
+        p.nombre.toLowerCase().includes(q) ||
+        p.contacto.toLowerCase().includes(q) ||
+        p.telefono.toLowerCase().includes(q) ||
+        p.email.toLowerCase().includes(q) ||
+        p.cuit.toLowerCase().includes(q) ||
+        p.direccion.toLowerCase().includes(q)
+      );
+    },
   );
 
   async function handleCreateProveedor() {
@@ -712,11 +857,20 @@ function CreateLicitacionDialog({ open, onOpenChange, lowStock, allMeds, onConfi
   allMeds: { id: string; name: string }[];
   onConfirm: (items: { medicationId: string; workspaceId: string; cantidad: number; justificacion: string }[]) => void;
 }) {
+  const [searchMed, setSearchMed] = useState("");
   const [selectedMeds, setSelectedMeds] = useState<Set<string>>(new Set());
   const [cantidades, setCantidades] = useState<Record<string, number>>({});
 
+  const filteredLowStock = searchMed
+    ? lowStock.filter((i) =>
+        i.medicationName.toLowerCase().includes(searchMed.toLowerCase()) ||
+        i.workspaceName.toLowerCase().includes(searchMed.toLowerCase())
+      )
+    : lowStock;
+
   useEffect(() => {
     if (!open) {
+      setSearchMed("");
       setSelectedMeds(new Set());
       setCantidades({});
     }
@@ -732,7 +886,7 @@ function CreateLicitacionDialog({ open, onOpenChange, lowStock, allMeds, onConfi
   }
 
   function confirm() {
-    const items = lowStock
+    const items = filteredLowStock
       .filter((i) => selectedMeds.has(i.medicationId + i.workspaceId))
       .map((i) => {
         const key = i.medicationId + i.workspaceId;
@@ -754,8 +908,17 @@ function CreateLicitacionDialog({ open, onOpenChange, lowStock, allMeds, onConfi
         </DialogHeader>
         <div className="space-y-2">
           <p className="text-xs text-muted-foreground">Seleccioná los medicamentos con bajo stock para incluir en la licitación.</p>
-          {lowStock.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">No hay medicamentos con bajo stock</p>
+          <div className="relative">
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por medicamento u hospital..."
+              value={searchMed}
+              onChange={(e) => setSearchMed(e.target.value)}
+              className="pl-8 text-sm h-8"
+            />
+          </div>
+          {filteredLowStock.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">{searchMed ? "Sin resultados" : "No hay medicamentos con bajo stock"}</p>
           ) : (
             <Table>
               <TableHeader>
@@ -768,7 +931,7 @@ function CreateLicitacionDialog({ open, onOpenChange, lowStock, allMeds, onConfi
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {lowStock.map((item) => {
+                {filteredLowStock.map((item) => {
                   const key = item.medicationId + item.workspaceId;
                   return (
                     <TableRow key={key}>
@@ -973,17 +1136,65 @@ function DetailLicitacionDialog({ licitacionId, open, onOpenChange, licitaciones
   );
 }
 
-function LicitacionesAssistant({ lowStock, overstock, licitaciones, proveedores }: {
+function LicitacionesAssistant({ lowStock, overstock, licitaciones, proveedores, onCreateLicitacion }: {
   lowStock: LowStockMedication[];
   overstock: OverstockMedication[];
   licitaciones: LicitacionRow[];
   proveedores: ProveedorRow[];
+  onCreateLicitacion: (data: {
+    codigo: string;
+    titulo: string;
+    descripcion: string;
+    items: Array<{
+      medication_id: string;
+      workspace_id: string;
+      cantidad_solicitada: number;
+      justificacion: string;
+    }>;
+  }) => Promise<LicitacionRow>;
 }) {
   const [messages, setMessages] = useState<{ role: string; content: string }[]>([
     { role: "assistant", content: "Soy el asistente de licitaciones. Puedo ayudarte con recomendaciones de compra, análisis de stock, y creación de licitaciones. ¿En qué puedo ayudarte?" },
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const assistantTools = [
+    {
+      type: "function",
+      function: {
+        name: "create_licitacion",
+        description: "Crea una nueva licitación con sus items. Usar cuando el usuario pida crear una licitación y hayas acordado los detalles (título, descripción, medicamentos, cantidades).",
+        parameters: {
+          type: "object",
+          properties: {
+            codigo: { type: "string", description: "Código único de la licitación, ej: LIC-0005" },
+            titulo: { type: "string", description: "Título descriptivo de la licitación" },
+            descripcion: { type: "string", description: "Descripción detallada" },
+            items: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  medication_id: { type: "string", description: "ID del medicamento" },
+                  workspace_id: { type: "string", description: "ID del workspace/hospital" },
+                  cantidad_solicitada: { type: "number", description: "Cantidad solicitada" },
+                  justificacion: { type: "string", description: "Justificación del item" },
+                },
+                required: ["medication_id", "workspace_id", "cantidad_solicitada"],
+              },
+            },
+          },
+          required: ["codigo", "titulo", "items"],
+        },
+      },
+    },
+  ];
 
   async function send() {
     if (!input.trim()) return;
@@ -992,21 +1203,23 @@ function LicitacionesAssistant({ lowStock, overstock, licitaciones, proveedores 
     setMessages((prev) => [...prev, { role: "user", content: userMsg }]);
     setLoading(true);
 
+    const lowStockSummary = lowStock.slice(0, 30).map((i) =>
+      `- ${i.medicationName} (${i.workspaceName}): stock ${i.currentStock}, mínimo ${i.minStock}, déficit ${i.deficit}`
+    ).join("\n");
+
     const systemPrompt = `Eres un asistente especializado en licitaciones de compra de medicamentos hospitalarios.
 
 Contexto actual:
-- Medicamentos con bajo stock (déficit total): ${lowStock.length} items, déficit total: ${lowStock.reduce((s, i) => s + i.deficit, 0)} unidades
-- Medicamentos con sobre stock: ${overstock.length} items, pérdida total estimada: $${overstock.reduce((s, i) => s + i.lossAmount, 0)}
+- Medicamentos con bajo stock: ${lowStock.length} items
+${lowStockSummary}
 - Licitaciones activas: ${licitaciones.filter((l) => !["completado", "cancelado"].includes(l.estado)).length}
 - Proveedores registrados: ${proveedores.length}
 
-Podés ayudar a:
-1. Analizar qué medicamentos necesitan licitación urgente
-2. Sugerir cantidades óptimas para licitar
-3. Explicar el proceso de licitación
-4. Recomendar acciones según el estado actual del stock
-
-Respondé de forma clara y concisa.`;
+Reglas:
+1. Cuando el usuario pida crear una licitación, guialo paso a paso para definir: título, medicamentos a incluir, cantidades y justificación.
+2. Una vez que tengas todos los datos acordados, usá la herramienta create_licitacion para crearla automáticamente.
+3. Siempre confirmá con el usuario antes de crear.
+4. Respondé de forma clara y concisa.`;
 
     try {
       const rpc = await import("@/lib/server-rpc");
@@ -1018,9 +1231,33 @@ Respondé de forma clara y concisa.`;
             ...messages.filter((m) => m.role !== "system"),
             { role: "user", content: userMsg },
           ],
+          tools: assistantTools,
         },
-      }) as { content: string; tool_calls: unknown[] };
-      setMessages((prev) => [...prev, { role: "assistant", content: res.content || "No pude procesar la solicitud." }]);
+      }) as { content: string; tool_calls: { id: string; type: string; function: { name: string; arguments: string } }[] };
+
+      if (res.tool_calls && res.tool_calls.length > 0) {
+        for (const tc of res.tool_calls) {
+          if (tc.function.name === "create_licitacion") {
+            const args = JSON.parse(tc.function.arguments);
+            try {
+              const created = await onCreateLicitacion(args);
+              setMessages((prev) => [...prev, {
+                role: "assistant",
+                content: `✅ Licitación **${created.codigo}** creada exitosamente como borrador.\n\n${created.titulo}\n${created.descripcion}`,
+              }]);
+            } catch {
+              setMessages((prev) => [...prev, {
+                role: "assistant",
+                content: "❌ Ocurrió un error al crear la licitación. Intentalo de nuevo.",
+              }]);
+            }
+          }
+        }
+      } else if (res.content) {
+        setMessages((prev) => [...prev, { role: "assistant", content: res.content }]);
+      } else {
+        setMessages((prev) => [...prev, { role: "assistant", content: "No pude procesar la solicitud." }]);
+      }
     } catch (e) {
       setMessages((prev) => [...prev, { role: "assistant", content: "Error al conectar con el asistente." }]);
     } finally {
@@ -1053,6 +1290,7 @@ Respondé de forma clara y concisa.`;
             <div className="bg-muted rounded-lg px-3 py-2 text-sm text-muted-foreground">Pensando...</div>
           </div>
         )}
+        <div ref={chatEndRef} />
       </div>
       <div className="flex gap-2">
         <Input

@@ -2,7 +2,7 @@ import { createFileRoute, Outlet, useNavigate, Link, useLocation } from "@tansta
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Building2, Users, Database, LogOut, ShieldCheck, Menu, X, Activity,
-  ShoppingCart, Settings, ArrowUp, FlaskConical, ClipboardList,
+  ShoppingCart, Settings, ArrowUp, FlaskConical,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,7 +29,6 @@ export const Route = createFileRoute("/backoffice")({
 const NAV_ITEMS = [
   { to: "/backoffice/estado-hospital", label: "Estado general", icon: Activity },
   { to: "/backoffice/licitaciones", label: "Licitaciones", icon: ShoppingCart },
-  { to: "/backoffice/gestion-pedidos", label: "Pedidos medicos", icon: ClipboardList },
   { to: "/backoffice/panel-en-vivo", label: "Panel en vivo", icon: Activity },
   { to: "/backoffice/workspaces", label: "Instituciones", icon: Building2 },
   { to: "/backoffice/usuarios", label: "Usuarios", icon: Users },

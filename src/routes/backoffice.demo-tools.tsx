@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { RotateCcw, Database, FlaskConical } from "lucide-react";
+import { RotateCcw, Database, FlaskConical, Archive } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Tabs, TabsContent, TabsList, TabsTrigger,
+} from "@/components/ui/tabs";
 
 export const Route = createFileRoute("/backoffice/demo-tools")({
   component: BackofficeDemoToolsPage,
@@ -109,109 +112,132 @@ function BackofficeDemoToolsPage() {
         </p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Institución objetivo</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <p className="text-sm text-muted-foreground">Cargando instituciones...</p>
-          ) : (
-            <Select value={selectedId} onValueChange={setSelectedId}>
-              <SelectTrigger className="w-full sm:w-[400px]">
-                <SelectValue placeholder="Seleccionar institución..." />
-              </SelectTrigger>
-              <SelectContent>
-                {workspaces.map((w) => (
-                  <SelectItem key={w.id} value={w.id}>
-                    {w.name} ({w.slug})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-        </CardContent>
-      </Card>
+      <Tabs defaultValue="herramientas">
+        <TabsList className="grid w-full max-w-md grid-cols-2">
+          <TabsTrigger value="herramientas" className="gap-1.5 text-xs">
+            <FlaskConical size={14} />Herramientas
+          </TabsTrigger>
+          <TabsTrigger value="deprecadas" className="gap-1.5 text-xs">
+            <Archive size={14} />Features deprecadas
+          </TabsTrigger>
+        </TabsList>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card className="border-destructive/30">
-          <CardHeader>
-            <CardTitle className="text-base text-destructive flex items-center gap-2">
-              <RotateCcw className="h-4 w-4" />
-              Resetear institución
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Elimina depósitos, stock, movimientos, ventas, transferencias, dispensaciones,
-              pedidos, medicamentos, pacientes y auditoría. Los usuarios se conservan.
-            </p>
-            <Button
-              variant="destructive"
-              disabled={!selectedId || running !== null}
-              onClick={() => setConfirmAction("reset")}
-            >
-              <RotateCcw className="mr-2 h-4 w-4" />
-              {running === "reset" ? "Reseteando..." : "Resetear"}
-            </Button>
-          </CardContent>
-        </Card>
+        <TabsContent value="herramientas" className="space-y-6 pt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Institución objetivo</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <p className="text-sm text-muted-foreground">Cargando instituciones...</p>
+              ) : (
+                <Select value={selectedId} onValueChange={setSelectedId}>
+                  <SelectTrigger className="w-full sm:w-[400px]">
+                    <SelectValue placeholder="Seleccionar institución..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {workspaces.map((w) => (
+                      <SelectItem key={w.id} value={w.id}>
+                        {w.name} ({w.slug})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Database className="h-4 w-4" />
-          Seedear datos dummy
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Crea depósitos (Central, Interna, Ventas), medicamentos con precios, stock inicial
-              aleatorio, configuración de stock mínimo/óptimo y movimientos recientes
-              simulados (consumos, dispensaciones, ventas, pedidos, transferencias).
-              No duplica si ya existen.
-            </p>
-            <Button
-              variant="default"
-              disabled={!selectedId || running !== null}
-              onClick={() => setConfirmAction("seed")}
-            >
-              <FlaskConical className="mr-2 h-4 w-4" />
-              {running === "seed" ? "Seedeando..." : "Seedear datos"}
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+          <div className="grid gap-6 md:grid-cols-2">
+            <Card className="border-destructive/30">
+              <CardHeader>
+                <CardTitle className="text-base text-destructive flex items-center gap-2">
+                  <RotateCcw className="h-4 w-4" />
+                  Resetear institución
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Elimina depósitos, stock, movimientos, ventas, transferencias, dispensaciones,
+                  pedidos, medicamentos, pacientes y auditoría. Los usuarios se conservan.
+                </p>
+                <Button
+                  variant="destructive"
+                  disabled={!selectedId || running !== null}
+                  onClick={() => setConfirmAction("reset")}
+                >
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  {running === "reset" ? "Reseteando..." : "Resetear"}
+                </Button>
+              </CardContent>
+            </Card>
 
-      <Dialog
-        open={confirmAction !== null}
-        onOpenChange={(open) => { if (!open) setConfirmAction(null); }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {confirmAction === "reset" ? "Confirmar reseteo" : "Confirmar seed de datos"}
-            </DialogTitle>
-            <DialogDescription>
-              {confirmAction === "reset"
-                ? `Se eliminarán todos los datos operativos de ${selectedName}. Los usuarios se conservan.`
-                : `Se insertarán datos dummy en ${selectedName} (depósitos, medicamentos, stock, movimientos y configuración).`}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmAction(null)} disabled={running !== null}>
-              Cancelar
-            </Button>
-            <Button
-              variant={confirmAction === "reset" ? "destructive" : "default"}
-              onClick={confirmAction === "reset" ? handleReset : handleSeed}
-              disabled={running !== null}
-            >
-              {running !== null ? "Procesando..." : "Confirmar"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Database className="h-4 w-4" />
+              Seedear datos dummy
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Crea depósitos (Central, Interna, Ventas), medicamentos con precios, stock inicial
+                  aleatorio, configuración de stock mínimo/óptimo y movimientos recientes
+                  simulados (consumos, dispensaciones, ventas, pedidos, transferencias).
+                  No duplica si ya existen.
+                </p>
+                <Button
+                  variant="default"
+                  disabled={!selectedId || running !== null}
+                  onClick={() => setConfirmAction("seed")}
+                >
+                  <FlaskConical className="mr-2 h-4 w-4" />
+                  {running === "seed" ? "Seedeando..." : "Seedear datos"}
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Dialog
+            open={confirmAction !== null}
+            onOpenChange={(open) => { if (!open) setConfirmAction(null); }}
+          >
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>
+                  {confirmAction === "reset" ? "Confirmar reseteo" : "Confirmar seed de datos"}
+                </DialogTitle>
+                <DialogDescription>
+                  {confirmAction === "reset"
+                    ? `Se eliminarán todos los datos operativos de ${selectedName}. Los usuarios se conservan.`
+                    : `Se insertarán datos dummy en ${selectedName} (depósitos, medicamentos, stock, movimientos y configuración).`}
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setConfirmAction(null)} disabled={running !== null}>
+                  Cancelar
+                </Button>
+                <Button
+                  variant={confirmAction === "reset" ? "destructive" : "default"}
+                  onClick={confirmAction === "reset" ? handleReset : handleSeed}
+                  disabled={running !== null}
+                >
+                  {running !== null ? "Procesando..." : "Confirmar"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </TabsContent>
+
+        <TabsContent value="deprecadas" className="pt-4">
+          <div className="rounded-lg border bg-card overflow-hidden" style={{ height: "calc(100vh - 220px)" }}>
+            <iframe
+              src="/backoffice/gestion-pedidos"
+              className="w-full h-full border-0"
+              title="Pedidos médicos"
+            />
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

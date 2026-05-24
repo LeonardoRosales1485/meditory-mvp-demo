@@ -439,13 +439,13 @@ export function DemoAssistantChat(props: DemoAssistantChatProps) {
       const aiProvider = useStore.getState().aiProvider;
       const model = aiProvider === "zen" ? "big-pickle" : "llama-3.3-70b-versatile";
 
-      console.debug("[chat] prompt chars:", chatMessages.reduce((s, m) => s + m.content.length, 0));
+      console.debug("[chat] prompt chars:", chatMessages.reduce((s, m) => s + m.content.length, 0), "tools:", aiProvider !== "zen" ? "enabled" : "disabled (zen)");
       let fullText = "";
       const collectedToolCalls: OllamaToolCall[] = [];
       for await (const event of streamAiChat({
         model,
         messages: chatMessages,
-        tools: assistantTools,
+        tools: aiProvider !== "zen" ? assistantTools : undefined,
         signal: abortRef.current.signal,
         provider: aiProvider,
       })) {

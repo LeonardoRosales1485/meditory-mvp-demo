@@ -480,7 +480,7 @@ export function WorkspaceAssistantChat({
       for await (const event of streamAiChat({
         model,
         messages: history,
-        tools: assistantTools,
+        tools: aiProvider !== "zen" ? assistantTools : undefined,
         signal: ac.signal,
         provider: aiProvider,
       })) {

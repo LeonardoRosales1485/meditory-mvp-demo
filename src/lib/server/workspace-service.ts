@@ -439,32 +439,38 @@ async function getWarehouseById(warehouseId: string): Promise<DbWarehouseRow | n
   return data as DbWarehouseRow | null;
 }
 
+const SYSTEM_ACTOR_NAME = "Asistente Medi";
+const SYSTEM_ACTOR = { id: "system", role: "admin" as const, name: SYSTEM_ACTOR_NAME, email: "" };
+
+function isSystemActor(actor: string): boolean {
+  return actor === SYSTEM_ACTOR_NAME;
+}
+
 async function resolveActorUser(workspaceId: string, actor: string) {
-  const baseQuery = supabaseAdmin
-    .from("workspace_users")
-    .select("id, role, name")
-    .eq("workspace_id", workspaceId)
-    .eq("name", actor)
-    .order("id", { ascending: true })
-    .limit(1);
-
-  const { data: activeData, error: activeError } = await baseQuery.eq("is_active", true).maybeSingle();
-  if (!activeError) {
-    if (!activeData) throw new Error("No se pudo validar el usuario actor en este workspace.");
-    return activeData as { id: string; role: string; name: string };
+  if (!actor) throw new Error("No se pudo validar el usuario actor en este workspace.");
+  // Backoffice / system actor — treat as admin with no workspace_users row
+  if (isSystemActor(actor)) return SYSTEM_ACTOR;
+  // Try by email first (sessions store email as actor identifier)
+  if (actor.includes("@")) {
+    const { data: byEmail, error: emailError } = await supabaseAdmin
+      .from("workspace_users")
+      .select("id, role, name, email")
+      .eq("workspace_id", workspaceId)
+      .eq("email", actor)
+      .maybeSingle();
+    if (emailError) throw new Error(emailError.message);
+    if (byEmail) return byEmail as { id: string; role: string; name: string; email: string };
   }
-
-  const { data: fallbackData, error: fallbackError } = await supabaseAdmin
+  // Fallback: try by display name (legacy sessions or edge cases)
+  const { data: byName, error: nameError } = await supabaseAdmin
     .from("workspace_users")
-    .select("id, role, name")
+    .select("id, role, name, email")
     .eq("workspace_id", workspaceId)
     .eq("name", actor)
-    .order("id", { ascending: true })
-    .limit(1)
     .maybeSingle();
-  if (fallbackError) throw new Error(fallbackError.message);
-  if (!fallbackData) throw new Error("No se pudo validar el usuario actor en este workspace.");
-  return fallbackData as { id: string; role: string; name: string };
+  if (nameError) throw new Error(nameError.message);
+  if (!byName) throw new Error("No se pudo validar el usuario actor en este workspace.");
+  return byName as { id: string; role: string; name: string; email: string };
 }
 
 async function assertWarehouseAccess(workspaceId: string, actor: string, warehouseId: string) {
@@ -475,6 +481,8 @@ async function assertWarehouseAccess(workspaceId: string, actor: string, warehou
   if (wh.deleted_at) {
     throw new Error("El depósito fue dado de baja.");
   }
+  // System actor (backoffice) has full warehouse access
+  if (isSystemActor(actor)) return;
   const actorUser = await resolveActorUser(workspaceId, actor);
   const { data, error } = await supabaseAdmin
     .from("workspace_user_warehouses")
@@ -571,6 +579,7 @@ export async function fetchWorkspaceData(workspaceId: string) {
 
 export async function runAction<K extends keyof ActionPayloadMap>(action: K, payload: ActionPayloadMap[K]) {
   if (action === "addMedication") {
+    const actorUser = await resolveActorUser(payload.workspaceId, payload.actor);
     await db(
       supabaseAdmin.from("medications").insert({
         id: randomUUID(),
@@ -584,7 +593,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
         sale_enabled: payload.medication.saleEnabled !== false,
       }),
     );
-    await logAudit(payload.workspaceId, payload.actor, "Alta de medicamento", payload.medication.name);
+    await logAudit(payload.workspaceId, actorUser.name, "Alta de medicamento", payload.medication.name);
     return;
   }
 
@@ -596,6 +605,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
     if (medRow.deleted_at) {
       throw new Error("No se puede editar un medicamento dado de baja del catálogo.");
     }
+    const actorUser = await resolveActorUser(payload.workspaceId, payload.actor);
     const dbPatch: Record<string, unknown> = {};
     if (payload.patch.name !== undefined) dbPatch.name = payload.patch.name;
     if (payload.patch.activeIngredient !== undefined) dbPatch.active_ingredient = payload.patch.activeIngredient;
@@ -603,7 +613,6 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
     if (payload.patch.concentrationUnit !== undefined) dbPatch.concentration_unit = payload.patch.concentrationUnit;
     if (payload.patch.form !== undefined) dbPatch.form = payload.patch.form;
     if (payload.patch.salePrice !== undefined) {
-      const actorUser = await resolveActorUser(payload.workspaceId, payload.actor);
       if (actorUser.role !== "admin") {
         throw new Error("Solo administración puede actualizar precios de venta del catálogo.");
       }
@@ -612,14 +621,13 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
       dbPatch.sale_price = sp;
     }
     if (payload.patch.saleEnabled !== undefined) {
-      const actorUser = await resolveActorUser(payload.workspaceId, payload.actor);
       if (actorUser.role !== "admin") {
         throw new Error("Solo administración puede habilitar o deshabilitar la venta en mostrador.");
       }
       dbPatch.sale_enabled = Boolean(payload.patch.saleEnabled);
     }
     await db(supabaseAdmin.from("medications").update(dbPatch).eq("id", payload.id));
-    await logAudit(payload.workspaceId, payload.actor, "Editó medicamento", await medicationDetailById(payload.id));
+    await logAudit(payload.workspaceId, actorUser.name, "Editó medicamento", await medicationDetailById(payload.id));
     return;
   }
 
@@ -676,15 +684,17 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
         "No se puede dar de baja el medicamento: hay pedidos médicos en curso que lo referencian. Completá o rechazá esos pedidos antes.",
       );
     }
+    const actorUser = await resolveActorUser(payload.workspaceId, payload.actor);
     const detail = await medicationDetailById(payload.id);
     await db(
       supabaseAdmin.from("medications").update({ deleted_at: new Date().toISOString() }).eq("id", payload.id),
     );
-    await logAudit(payload.workspaceId, payload.actor, "Baja de medicamento (catálogo)", detail);
+    await logAudit(payload.workspaceId, actorUser.name, "Baja de medicamento (catálogo)", detail);
     return;
   }
 
   if (action === "addReceipt") {
+    const actorUser = await resolveActorUser(payload.workspaceId, payload.actor);
     const warehouse = await getWarehouseById(payload.warehouseId);
     if (!warehouse || warehouse.workspace_id !== payload.workspaceId) {
       throw new Error("Depósito inválido para el workspace actual.");
@@ -728,7 +738,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
           warehouse_id: payload.warehouseId,
           quantity: payload.quantity,
           lot: payload.lot,
-          user_name: payload.actor,
+          user_name: actorUser.name,
           reason: payload.reason ?? `Ingreso lote ${payload.lot}`,
           date: new Date().toISOString(),
         }),
@@ -737,11 +747,12 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
       await db(supabaseAdmin.from("batches").delete().eq("id", insertedBatch.id));
       throw error;
     }
-    await logAudit(payload.workspaceId, payload.actor, "Ingreso de mercadería", `Lote ${payload.lot}`);
+    await logAudit(payload.workspaceId, actorUser.name, "Ingreso de mercadería", `Lote ${payload.lot}`);
     return;
   }
 
   if (action === "adjustStock") {
+    const actorUser = await resolveActorUser(payload.workspaceId, payload.actor);
     const { data: batch, error: batchError } = await supabaseAdmin.from("batches").select("*").eq("id", payload.batchId).maybeSingle();
     if (batchError) throw new Error(batchError.message);
     if (!batch) throw new Error("Lote no encontrado");
@@ -760,12 +771,12 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
         warehouse_id: batch.warehouse_id,
         quantity: payload.delta,
         lot: batch.lot,
-        user_name: payload.actor,
+        user_name: actorUser.name,
         reason: `Ajuste lote ${batch.lot}: ${payload.reason}`,
         date: new Date().toISOString(),
       }),
     );
-    await logAudit(payload.workspaceId, payload.actor, "Ajuste de stock", `${batch.lot} (${payload.delta})`);
+    await logAudit(payload.workspaceId, actorUser.name, "Ajuste de stock", `${batch.lot} (${payload.delta})`);
     return;
   }
 
@@ -833,7 +844,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
         to_warehouse_id: payload.toWarehouseId,
         quantity: payload.quantity,
         status: "solicitado",
-        requested_by: payload.actor,
+        requested_by: actorUser.name,
         date: new Date().toISOString(),
       }),
     );
@@ -845,7 +856,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
       to_warehouse_id: payload.toWarehouseId,
       quantity: payload.quantity,
     });
-    await logAudit(payload.workspaceId, payload.actor, "Transferencia solicitada", detail);
+    await logAudit(payload.workspaceId, actorUser.name, "Transferencia solicitada", detail);
     return;
   }
 
@@ -886,7 +897,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
           warehouse_id: transfer.from_warehouse_id,
           quantity: -transfer.quantity,
           lot: consumedLot,
-          user_name: payload.actor,
+          user_name: actorUser.name,
           reason: `Despacho a ${transfer.to_warehouse_id} (${transfer.id})`,
           date: new Date().toISOString(),
         }),
@@ -918,7 +929,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
           warehouse_id: transfer.to_warehouse_id,
           quantity: transfer.quantity,
           lot: receivedLot,
-          user_name: payload.actor,
+          user_name: actorUser.name,
           reason: `Recepción (${transfer.id})`,
           date: new Date().toISOString(),
         }),
@@ -932,7 +943,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
       to_warehouse_id: transfer.to_warehouse_id,
       quantity: transfer.quantity,
     });
-    await logAudit(payload.workspaceId, payload.actor, `Transferencia ${next}`, detail);
+    await logAudit(payload.workspaceId, actorUser.name, `Transferencia ${next}`, detail);
     return;
   }
 
@@ -946,6 +957,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
     if (transfer.status !== "recibido") {
       throw new Error("Solo se puede rechazar una transferencia en etapa de revisión post-recepción.");
     }
+    const actorUser = await resolveActorUser(payload.workspaceId, payload.actor);
     await assertWarehouseAccess(payload.workspaceId, payload.actor, transfer.to_warehouse_id);
     await db(supabaseAdmin.from("transfer_requests").update({ status: "rechazado" }).eq("id", payload.id));
     if (payload.outcome === "devolver") {
@@ -974,7 +986,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
           warehouse_id: transfer.from_warehouse_id,
           quantity: transfer.quantity,
           lot: returnLot,
-          user_name: payload.actor,
+          user_name: actorUser.name,
           reason: `Devolución a central por rechazo (${transfer.id})`,
           date: new Date().toISOString(),
         }),
@@ -990,7 +1002,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
     });
     await logAudit(
       payload.workspaceId,
-      payload.actor,
+      actorUser.name,
       "Transferencia rechazada",
       `${detail} · Resolución: ${payload.outcome} · Motivo: ${payload.reason}`,
     );
@@ -1035,7 +1047,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
         quantity: payload.quantity,
         price: payload.price,
         prescription: payload.prescription ?? null,
-        cashier: payload.actor,
+        cashier: actorForSale.name,
         date: new Date().toISOString(),
       }),
     );
@@ -1047,16 +1059,17 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
         medication_id: payload.medicationId,
         warehouse_id: payload.warehouseId,
         quantity: -payload.quantity,
-        user_name: payload.actor,
+        user_name: actorForSale.name,
         reason: "Venta registrada",
         date: new Date().toISOString(),
       }),
     );
-    await logAudit(payload.workspaceId, payload.actor, "Venta registrada", await medicationDetailById(payload.medicationId));
+    await logAudit(payload.workspaceId, actorForSale.name, "Venta registrada", await medicationDetailById(payload.medicationId));
     return;
   }
 
   if (action === "addDispensation") {
+    const actorUser = await resolveActorUser(payload.workspaceId, payload.actor);
     const dispWh = await getWarehouseById(payload.warehouseId);
     if (!dispWh || dispWh.workspace_id !== payload.workspaceId || dispWh.deleted_at) {
       throw new Error("Depósito inválido para el workspace actual o dado de baja.");
@@ -1085,12 +1098,12 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
         medication_id: payload.medicationId,
         warehouse_id: payload.warehouseId,
         quantity: -payload.quantity,
-        user_name: payload.actor,
+        user_name: actorUser.name,
         reason: `${payload.room} · ${payload.doctor} · ${payload.patient}`,
         date: new Date().toISOString(),
       }),
     );
-    await logAudit(payload.workspaceId, payload.actor, "Dispensación interna", `${payload.patient} (${payload.room})`);
+    await logAudit(payload.workspaceId, actorUser.name, "Dispensación interna", `${payload.patient} (${payload.room})`);
     return;
   }
 
@@ -1112,7 +1125,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
       throw new Error("El depósito del pedido no es válido o fue dado de baja.");
     }
     await assertMedicationActiveForWorkspace(payload.workspaceId, payload.medicationId);
-    const requestedDoctor = payload.doctorName?.trim() || payload.actor;
+    const requestedDoctor = payload.doctorName?.trim() || actorUser.name;
     await db(
       supabaseAdmin.from("medication_orders").insert({
         id: randomUUID(),
@@ -1131,14 +1144,15 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
     );
     await logAudit(
       payload.workspaceId,
-      payload.actor,
+      actorUser.name,
       "Pedido de medicación",
-      `${payload.patient} (${payload.room}) · Médico: ${requestedDoctor}${requestedDoctor !== payload.actor ? ` · Cargado por: ${payload.actor}` : ""}`,
+      `${payload.patient} (${payload.room}) · Médico: ${requestedDoctor}${requestedDoctor !== actorUser.name ? ` · Cargado por: ${actorUser.name}` : ""}`,
     );
     return;
   }
 
   if (action === "processOrder") {
+    const actorUser = await resolveActorUser(payload.workspaceId, payload.actor);
     const { data: order, error: orderError } = await supabaseAdmin.from("medication_orders").select("*").eq("id", payload.id).maybeSingle();
     if (orderError) throw new Error(orderError.message);
     if (!order) throw new Error("Pedido no encontrado");
@@ -1154,7 +1168,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
     } else if (
       payload.action === "confirmar_recepcion" &&
       payload.actorRole !== "admin" &&
-      payload.actor !== order.doctor
+      actorUser.name !== order.doctor
     ) {
       throw new Error("Solo el médico solicitante o un admin puede aceptar la entrega.");
     }
@@ -1182,7 +1196,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
     await db(
       supabaseAdmin
         .from("medication_orders")
-        .update({ status: next, processed_at: new Date().toISOString(), processed_by: payload.actor })
+        .update({ status: next, processed_at: new Date().toISOString(), processed_by: actorUser.name })
         .eq("id", payload.id),
     );
     if (payload.action === "despachar") {
@@ -1202,7 +1216,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
           warehouse_id: order.warehouse_id,
           quantity: -order.quantity,
           lot: consumedLot,
-          user_name: payload.actor,
+          user_name: actorUser.name,
           reason: `Pedido ${order.id} — ${order.room}`,
           date: new Date().toISOString(),
         }),
@@ -1234,7 +1248,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
           warehouse_id: order.warehouse_id,
           quantity: order.quantity,
           lot: returnLot,
-          user_name: payload.actor,
+          user_name: actorUser.name,
           reason: `Devolución aprobada pedido ${order.id}`,
           date: new Date().toISOString(),
         }),
@@ -1266,7 +1280,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
           warehouse_id: order.warehouse_id,
           quantity: order.quantity,
           lot: returnLot,
-          user_name: payload.actor,
+          user_name: actorUser.name,
           reason: `Devolución desde pedido recibido ${order.id}`,
           date: new Date().toISOString(),
         }),
@@ -1282,7 +1296,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
           medication_id: order.medication_id,
           warehouse_id: order.warehouse_id,
           quantity: -1,
-          user_name: payload.actor,
+          user_name: actorUser.name,
           reason: `Devolución rechazada pedido ${order.id}: ${payload.reason ?? "Sin motivo"}`,
           date: new Date().toISOString(),
         }),
@@ -1290,7 +1304,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
     }
     await logAudit(
       payload.workspaceId,
-      payload.actor,
+      actorUser.name,
       `Pedido ${payload.action}`,
       `Pedido #${order.id} · ${order.quantity}u · Paciente ${order.patient} · Habitación ${order.room}${payload.reason ? ` · Motivo: ${payload.reason}` : ""}`,
     );
@@ -1298,6 +1312,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
   }
 
   if (action === "addUser") {
+    const actorUser = await resolveActorUser(payload.workspaceId, payload.actor);
     const createdUser = await db<{ id: string }>(
       supabaseAdmin.from("workspace_users").insert({
         id: randomUUID(),
@@ -1318,11 +1333,12 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
         ),
       );
     }
-    await logAudit(payload.workspaceId, payload.actor, "Alta de usuario", `${payload.user.name} (${payload.user.role})`);
+    await logAudit(payload.workspaceId, actorUser.name, "Alta de usuario", `${payload.user.name} (${payload.user.role})`);
     return;
   }
 
   if (action === "updateUser") {
+    const actorUser = await resolveActorUser(payload.workspaceId, payload.actor);
     const dbPatch: Record<string, unknown> = {};
     if (payload.patch.name !== undefined) dbPatch.name = payload.patch.name;
     if (payload.patch.email !== undefined) dbPatch.email = payload.patch.email.toLowerCase();
@@ -1342,18 +1358,20 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
         );
       }
     }
-    await logAudit(payload.workspaceId, payload.actor, "Editó usuario", await userDetailById(payload.id));
+    await logAudit(payload.workspaceId, actorUser.name, "Editó usuario", await userDetailById(payload.id));
     return;
   }
 
   if (action === "deleteUser") {
+    const actorUser = await resolveActorUser(payload.workspaceId, payload.actor);
     const detail = await userDetailById(payload.id);
     await db(supabaseAdmin.from("workspace_users").delete().eq("id", payload.id));
-    await logAudit(payload.workspaceId, payload.actor, "Baja de usuario", detail);
+    await logAudit(payload.workspaceId, actorUser.name, "Baja de usuario", detail);
     return;
   }
 
   if (action === "addWarehouse") {
+    const actorUser = await resolveActorUser(payload.workspaceId, payload.actor);
     const { data: workspace, error: workspaceError } = await supabaseAdmin
       .from("workspaces")
       .select("name")
@@ -1386,11 +1404,12 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
         unit: workspace.name,
       }),
     );
-    await logAudit(payload.workspaceId, payload.actor, "Alta de depósito", payload.warehouse.name);
+    await logAudit(payload.workspaceId, actorUser.name, "Alta de depósito", payload.warehouse.name);
     return;
   }
 
   if (action === "updateWarehouse") {
+    const actorUser = await resolveActorUser(payload.workspaceId, payload.actor);
     const currentWarehouse = await getWarehouseById(payload.id);
     if (!currentWarehouse || currentWarehouse.workspace_id !== payload.workspaceId) {
       throw new Error("Depósito no encontrado en el workspace actual.");
@@ -1420,11 +1439,12 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
     if (payload.patch.name !== undefined) dbPatch.name = payload.patch.name.trim();
     if (payload.patch.type !== undefined) dbPatch.type = payload.patch.type;
     await db(supabaseAdmin.from("warehouses").update(dbPatch).eq("id", payload.id));
-    await logAudit(payload.workspaceId, payload.actor, "Editó depósito", await warehouseDetailById(payload.id));
+    await logAudit(payload.workspaceId, actorUser.name, "Editó depósito", await warehouseDetailById(payload.id));
     return;
   }
 
   if (action === "deleteWarehouse") {
+    const actorUser = await resolveActorUser(payload.workspaceId, payload.actor);
     const warehouse = await getWarehouseById(payload.id);
     if (!warehouse || warehouse.workspace_id !== payload.workspaceId) {
       throw new Error("Depósito no encontrado o no pertenece al workspace.");
@@ -1465,7 +1485,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
       supabaseAdmin.from("warehouses").update({ deleted_at: new Date().toISOString() }).eq("id", payload.id),
     );
     await db(supabaseAdmin.from("workspace_user_warehouses").delete().eq("warehouse_id", payload.id));
-    await logAudit(payload.workspaceId, payload.actor, "Baja de depósito", detail);
+    await logAudit(payload.workspaceId, actorUser.name, "Baja de depósito", detail);
     return;
   }
 
@@ -1492,6 +1512,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
   }
 
   if (action === "addPatient") {
+    const actorUser = await resolveActorUser(payload.workspaceId, payload.actor);
     const newPatientId = randomUUID();
     let computedRoom = payload.patient.room;
 
@@ -1538,7 +1559,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
 
     await logAudit(
       payload.workspaceId,
-      payload.actor,
+      actorUser.name,
       "Alta de paciente",
       `${payload.patient.lastName}, ${payload.patient.firstName}${payload.bedId ? ` · Sala ${computedRoom}` : ""}`,
     );
@@ -1546,6 +1567,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
   }
 
   if (action === "updatePatient") {
+    const actorUser = await resolveActorUser(payload.workspaceId, payload.actor);
     const dbPatch: Record<string, unknown> = {};
     if (payload.patch.firstName !== undefined) dbPatch.first_name = payload.patch.firstName;
     if (payload.patch.lastName !== undefined) dbPatch.last_name = payload.patch.lastName;
@@ -1554,13 +1576,14 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
     if (payload.patch.assignedDoctor !== undefined) dbPatch.assigned_doctor = payload.patch.assignedDoctor;
     if (payload.patch.room !== undefined) dbPatch.room = payload.patch.room;
     await db(supabaseAdmin.from("patients").update(dbPatch).eq("id", payload.id));
-    await logAudit(payload.workspaceId, payload.actor, "Editó paciente", `Paciente #${payload.id}`);
+    await logAudit(payload.workspaceId, actorUser.name, "Editó paciente", `Paciente #${payload.id}`);
     return;
   }
 
   if (action === "deletePatient") {
+    const actorUser = await resolveActorUser(payload.workspaceId, payload.actor);
     await db(supabaseAdmin.from("patients").delete().eq("id", payload.id));
-    await logAudit(payload.workspaceId, payload.actor, "Baja de paciente", `Paciente #${payload.id}`);
+    await logAudit(payload.workspaceId, actorUser.name, "Baja de paciente", `Paciente #${payload.id}`);
     return;
   }
 
@@ -1599,7 +1622,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
         prefix,
       }),
     );
-    await logAudit(payload.workspaceId, payload.actor, "Alta de ala médica", `${name} (${prefix}xx)`);
+    await logAudit(payload.workspaceId, actorUser.name, "Alta de ala médica", `${name} (${prefix}xx)`);
     return;
   }
 
@@ -1651,7 +1674,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
     }
     if (Object.keys(dbPatch).length === 0) return;
     await db(supabaseAdmin.from("wings").update(dbPatch).eq("id", payload.id));
-    await logAudit(payload.workspaceId, payload.actor, "Editó ala médica", `Ala #${payload.id}`);
+    await logAudit(payload.workspaceId, actorUser.name, "Editó ala médica", `Ala #${payload.id}`);
     return;
   }
 
@@ -1669,7 +1692,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
       throw new Error("No se puede eliminar el ala: tiene salas asociadas. Eliminá primero las salas.");
     }
     await db(supabaseAdmin.from("wings").delete().eq("id", payload.id));
-    await logAudit(payload.workspaceId, payload.actor, "Baja de ala médica", `Ala #${payload.id}`);
+    await logAudit(payload.workspaceId, actorUser.name, "Baja de ala médica", `Ala #${payload.id}`);
     return;
   }
 
@@ -1724,7 +1747,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
     );
     await logAudit(
       payload.workspaceId,
-      payload.actor,
+      actorUser.name,
       "Alta de sala",
       `Sala ${fullNumber} · ${bedCount} cama${bedCount === 1 ? "" : "s"}`,
     );
@@ -1794,7 +1817,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
     if (Object.keys(dbPatch).length === 0) return;
 
     await db(supabaseAdmin.from("rooms").update(dbPatch).eq("id", payload.id));
-    await logAudit(payload.workspaceId, payload.actor, "Editó sala", `Sala #${payload.id}`);
+    await logAudit(payload.workspaceId, actorUser.name, "Editó sala", `Sala #${payload.id}`);
     return;
   }
 
@@ -1820,11 +1843,12 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
       throw new Error("No se puede eliminar la sala: tiene camas con pacientes asignados.");
     }
     await db(supabaseAdmin.from("rooms").delete().eq("id", payload.id));
-    await logAudit(payload.workspaceId, payload.actor, "Baja de sala", `Sala ${current.full_number}`);
+    await logAudit(payload.workspaceId, actorUser.name, "Baja de sala", `Sala ${current.full_number}`);
     return;
   }
 
   if (action === "assignBed") {
+    const actorUser = await resolveActorUser(payload.workspaceId, payload.actor);
     const { data: bed, error } = await supabaseAdmin
       .from("beds")
       .select("*, rooms!inner(workspace_id, full_number)")
@@ -1873,7 +1897,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
       );
       await logAudit(
         payload.workspaceId,
-        payload.actor,
+        actorUser.name,
         "Asignación de cama",
         `${patient.last_name}, ${patient.first_name} → Sala ${room.full_number} · Cama ${bed.position}`,
       );
@@ -1889,7 +1913,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
       }
       await logAudit(
         payload.workspaceId,
-        payload.actor,
+        actorUser.name,
         "Liberación de cama",
         `Sala ${room.full_number} · Cama ${bed.position}`,
       );

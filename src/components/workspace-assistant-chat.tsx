@@ -17,20 +17,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { buildWorkspaceAssistantContext, answerStockQueryFromSnapshot, answerTransferPipelineFromSnapshot, type AssistantWorkspaceSnapshotInput } from "@/lib/assistant-workspace-context";
+import { buildWorkspaceAssistantContext, type AssistantWorkspaceSnapshotInput } from "@/lib/assistant-workspace-context";
 import {
-  isExplicitTransferCreationIntent,
-  isQuantityQuestionWithoutNavIntent,
-  isTransferPipelineInfoQuestion,
-  isWeakModelStockReply,
   isSaleIntent,
   isDispensationIntent,
   isOrderIntent,
-  isWorkflowResponse,
 } from "@/lib/assistant-chat-intent";
 import {
   assistantTools,
-  extractLegacyToolBlocks,
   navigateToolToOptions,
   parseCreateTransferArgs,
   parseNavigateArgs,
@@ -51,7 +45,6 @@ import {
   parseManagePatientArgs,
   parseUpdateStockConfigArgs,
   parseGenerateReportArgs,
-  stripBareToolJsonFromAssistantContent,
   validateTransferAgainstBatches,
   type ChartSpec,
   type CreateTransferToolArgs,
@@ -153,7 +146,6 @@ HERRAMIENTAS disponibles:
 16) **manage_patient** — SOLO si el usuario pidió explícitamente internar, registrar o modificar un paciente.
 17) **update_stock_config** — SOLO si el usuario pidió explícitamente configurar stock mínimo/óptimo.
 18) **generate_report** — SOLO si el usuario pidió explícitamente generar, descargar o exportar un reporte PDF.
-19) **list_users** — Cuando el usuario pregunte por usuarios.
 
 Consultas **solo informativas** (cantidades, listados, estados): respondé con texto desde el snapshot; **no** llames herramientas.
 
@@ -461,23 +453,6 @@ async function executeConfirmedAction(
   }
 }
 
-/** Si el modelo devuelve solo un JSON de "herramienta" inventada, reemplazar por mensaje útil. */
-function sanitizeHallucinatedToolOnlyReply(content: string): string {
-  const t = content.trim();
-  if (!t.startsWith("{") || !t.endsWith("}")) return content;
-  try {
-    const o = JSON.parse(t) as { name?: string };
-    if (typeof o.name !== "string") return content;
-    if (o.name === "navigate" || o.name === "create_transfer" || o.name === "render_chart") return content;
-    return (
-      `No existe la herramienta «${o.name}». Solo están disponibles **navigate**, **create_transfer** y **render_chart**. ` +
-      `Para saber unidades de un medicamento hay que leer el JSON del snapshot (campo **stockByMedicationId** y **batchesSample**) y responder en texto con la cantidad. ` +
-      `Probá de nuevo preguntando sin pedir una función inventada, o revisá Inventario en la app.`
-    );
-  } catch {
-    return content;
-  }
-}
 
 function processToolCalls(
   toolCalls: OllamaToolCall[],
@@ -677,57 +652,6 @@ function processToolCalls(
   return lines;
 }
 
-function processLegacyTools(
-  tools: { name: string; args: unknown }[],
-  navigate: ReturnType<typeof useNavigate>,
-  batches: AssistantWorkspaceSnapshotInput["batches"],
-  onCreateTransfer: (args: CreateTransferToolArgs) => void,
-  onChart: (spec: ChartSpec) => void,
-  opts?: { suppressNavigate?: boolean; suppressCreateTransfer?: boolean },
-): string[] {
-  const lines: string[] = [];
-  for (const t of tools) {
-    if (t.name === "navigate") {
-      if (opts?.suppressNavigate) {
-        lines.push("Navegación legacy omitida (pregunta informativa).");
-        continue;
-      }
-      const args = parseNavigateArgs(t.args);
-      if (!args) {
-        lines.push("Navegación rechazada (bloque legacy).");
-        continue;
-      }
-      void navigate(navigateToolToOptions(args));
-      lines.push(`Navegación: ${args.path}.`);
-    } else if (t.name === "create_transfer") {
-      if (opts?.suppressCreateTransfer) {
-        lines.push("Transferencia legacy omitida (sin pedido explícito).");
-        continue;
-      }
-      const args = parseCreateTransferArgs(t.args);
-      if (!args) {
-        lines.push("Transferencia inválida (bloque legacy).");
-        continue;
-      }
-      const err = validateTransferAgainstBatches(args, batches);
-      if (err) {
-        lines.push(`Transferencia: ${err}`);
-        continue;
-      }
-      onCreateTransfer(args);
-      lines.push("Diálogo de confirmación de transferencia.");
-    } else if (t.name === "render_chart") {
-      const args = parseRenderChartArgs(t.args);
-      if (!args) {
-        lines.push("Gráfico legacy: argumentos inválidos.");
-        continue;
-      }
-      onChart(args);
-      lines.push("_(Gráfico legacy generado.)_");
-    }
-  }
-  return lines;
-}
 
 export function WorkspaceAssistantChat({
   snapshotInput,
@@ -737,7 +661,6 @@ export function WorkspaceAssistantChat({
   const navigate = useNavigate();
   const createTransfer = useStore((s) => s.createTransfer);
   const batches = useStore((s) => s.batches);
-  const aiProvider = useStore((s) => s.aiProvider);
   const storedMessages = useStore((s) => s.chatMessages);
   const setStoredMessages = useStore((s) => s.setChatMessages);
   const storeUsers = useStore((s) => s.users);
@@ -944,15 +867,12 @@ export function WorkspaceAssistantChat({
       let fullContent = "";
       const collectedToolCalls: OllamaToolCall[] = [];
 
-      const aiProvider = useStore.getState().aiProvider;
-      const model = "deepseek-v4-flash-free";
-
       for await (const event of streamAiChat({
-        model,
+        model: "claude-sonnet-4-6",
         messages: history,
         tools: assistantTools,
         signal: ac.signal,
-        provider: aiProvider,
+        provider: "anthropic",
       })) {
         if (event.type === "text") {
           fullContent += event.content;
@@ -963,10 +883,8 @@ export function WorkspaceAssistantChat({
               (e) => (e.function?.name ?? "") === (tc.function?.name ?? ""),
             );
             if (existing) {
-              if (typeof tc.function?.arguments === "string") {
-                if (typeof existing.function?.arguments === "string") {
-                  existing.function.arguments += tc.function.arguments;
-                }
+              if (typeof tc.function?.arguments === "string" && typeof existing.function?.arguments === "string") {
+                existing.function.arguments += tc.function.arguments;
               }
             } else {
               collectedToolCalls.push(tc);
@@ -985,45 +903,16 @@ export function WorkspaceAssistantChat({
         }
       }
 
-      let content = stripBareToolJsonFromAssistantContent(fullContent.trim() ?? "");
+      const content = fullContent.trim() || "Listo.";
       const toolCalls = collectedToolCalls;
 
-      const transferInfoQ = isTransferPipelineInfoQuestion(text);
-      const suppressNavigate =
-        isQuantityQuestionWithoutNavIntent(text) || transferInfoQ;
-      const suppressCreateTransfer = !isExplicitTransferCreationIntent(text);
-      const actionLines = processToolCalls(toolCalls, navigate, batches, openTransferDialog, addChart, (m) => setMessages((prev) => [...prev, m]), workspaceUsers, {
-        suppressNavigate,
-        suppressCreateTransfer,
-      });
-
-      const legacy = extractLegacyToolBlocks(content);
-      content = legacy.cleanContent;
-      actionLines.push(
-        ...processLegacyTools(legacy.tools, navigate, batches, openTransferDialog, addChart, {
-          suppressNavigate,
-          suppressCreateTransfer,
-        }),
+      const actionLines = processToolCalls(
+        toolCalls, navigate, batches, openTransferDialog, addChart,
+        (m) => setMessages((prev) => [...prev, m]), workspaceUsers,
       );
 
       const suffix = actionLines.length > 0 ? `\n\n_${actionLines.join(" ")}_` : "";
-      let assistantText = sanitizeHallucinatedToolOnlyReply(content || "Listo.") + suffix;
-
-      if (suppressNavigate && isWeakModelStockReply(assistantText)) {
-        let fill: string | null = null;
-        if (transferInfoQ) {
-          fill = answerTransferPipelineFromSnapshot(snapshotInput, text);
-        } else {
-          fill = answerStockQueryFromSnapshot(snapshotInput, text);
-        }
-        if (fill) {
-          assistantText = `${fill}\n\n_(Cifras y listados calculados en la app a partir de los datos visibles en tu sesión.)_`;
-        } else if (isQuantityQuestionWithoutNavIntent(text) && !transferInfoQ) {
-          assistantText =
-            `No pude emparejar tu consulta con un medicamento en el stock visible (o el modelo no devolvió cifras). ` +
-            `Probá con el nombre exacto del catálogo o revisá **Inventario**.`;
-        }
-      }
+      let assistantText = content + suffix;
 
       if (chartGeneratedRef.current) {
         assistantText = `Acá tenés el gráfico con los datos solicitados.` + suffix;
@@ -1258,9 +1147,8 @@ export function WorkspaceAssistantChat({
         )}
       </div>
       <p className="text-[11px] text-muted-foreground">
-        Asistente vía <code className="rounded bg-muted px-0.5">OpenCode Zen</code>{" "}
-        (modelo: <span className="font-mono">deepseek-v4-flash-free</span>).
-        <span className="ml-2 text-amber-500">Modelos gratuitos</span>
+        Asistente vía <code className="rounded bg-muted px-0.5">Anthropic</code>{" "}
+        (modelo: <span className="font-mono">claude-sonnet-4-6</span>).
       </p>
 
       <Dialog open={!!pendingTransfer} onOpenChange={(o) => !o && !confirming && setPendingTransfer(null)}>

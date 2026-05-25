@@ -175,28 +175,78 @@ export const aiChatRpc = createServerFn({ method: "POST" })
   }) => data)
   .handler(async ({ data }) => {
     try {
-      const provider = data.provider ?? "zen";
+      const provider = data.provider ?? "anthropic";
+      console.debug("[aiChatRpc] provider:", provider, "model:", data.model, "toolsCount:", data.tools?.length ?? 0);
 
+      // ── Anthropic (Claude) ──────────────────────────────────────────────────
+      if (provider === "anthropic") {
+        const apiKey = process.env.ANTHROPIC_API_KEY;
+        if (!apiKey) throw new Error("ANTHROPIC_API_KEY no está configurada en el servidor");
+
+        const { default: Anthropic } = await import("@anthropic-ai/sdk");
+        const client = new Anthropic({ apiKey });
+
+        const systemContent = data.messages.find((m) => m.role === "system")?.content ?? "";
+        const conversationMsgs = data.messages.filter((m) => m.role !== "system");
+
+        type AnthropicTool = { name: string; description: string; input_schema: Record<string, unknown> };
+        const anthropicTools: AnthropicTool[] = ((data.tools ?? []) as { function: { name: string; description: string; parameters: Record<string, unknown> } }[])
+          .map((t) => ({
+            name: t.function.name,
+            description: t.function.description,
+            input_schema: t.function.parameters,
+          }));
+
+        const response = await client.messages.create({
+          model: data.model,
+          max_tokens: 2048,
+          // Prompt caching: el system prompt (instrucciones + snapshot) se cachea 5 min,
+          // reduciendo latencia y costo ~90% en requests sucesivos.
+          ...(systemContent ? {
+            system: [{ type: "text" as const, text: systemContent, cache_control: { type: "ephemeral" as const } }],
+          } : {}),
+          messages: conversationMsgs.map((m) => ({
+            role: m.role as "user" | "assistant",
+            content: m.content,
+          })),
+          ...(anthropicTools.length > 0 ? { tools: anthropicTools as Parameters<typeof client.messages.create>[0]["tools"] } : {}),
+        });
+
+        let content = "";
+        const tool_calls: { id: string; type: string; function: { name: string; arguments: string } }[] = [];
+
+        for (const block of response.content) {
+          if (block.type === "text") content += block.text;
+          else if (block.type === "tool_use") {
+            tool_calls.push({
+              id: block.id,
+              type: "function",
+              function: { name: block.name, arguments: JSON.stringify(block.input) },
+            });
+          }
+        }
+
+        console.debug("[aiChatRpc] anthropic usage:", JSON.stringify(response.usage));
+        return { content, tool_calls };
+      }
+
+      // ── OpenAI-compatible (Zen / Groq / Ollama) ─────────────────────────────
       const configs: Record<string, { baseUrl: string; apiKey: string | undefined }> = {
-        zen: {
-          baseUrl: "https://opencode.ai/zen/v1",
-          apiKey: process.env.ZEN_API_KEY,
-        },
+        zen: { baseUrl: "https://opencode.ai/zen/v1", apiKey: process.env.ZEN_API_KEY },
+        groq: { baseUrl: "https://api.groq.com/openai/v1", apiKey: process.env.GROQ_API_KEY },
+        ollama: { baseUrl: "http://localhost:11434/v1", apiKey: undefined },
       };
 
       const cfg = configs[provider];
       if (!cfg) throw new Error(`Unknown AI provider: ${provider}`);
 
-      const baseUrl = cfg.baseUrl;
-      const apiKey = cfg.apiKey;
-      console.debug("[aiChatRpc] provider:", provider, "model:", data.model, "hasApiKey:", !!apiKey, "toolsCount:", data.tools?.length ?? 0);
-
-      if (!apiKey) {
+      const { baseUrl, apiKey } = cfg;
+      if (!apiKey && provider !== "ollama") {
         throw new Error(`${provider.toUpperCase()}_API_KEY no está configurada en el servidor`);
       }
 
       const headers: Record<string, string> = { "Content-Type": "application/json" };
-      headers["Authorization"] = `Bearer ${apiKey}`;
+      if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
 
       const bodyPayload = {
         model: data.model,
@@ -205,7 +255,6 @@ export const aiChatRpc = createServerFn({ method: "POST" })
         max_tokens: 1024,
         stream: false,
       };
-      console.debug("[aiChatRpc] request body keys:", Object.keys(bodyPayload).join(", "));
 
       const res = await fetch(`${baseUrl}/chat/completions`, {
         method: "POST",

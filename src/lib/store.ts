@@ -366,89 +366,89 @@ export const useStore = create<State>()(
       }),
 
       addMedication: async (m) => {
-        const { session, user } = get();
+        const { session } = get();
         if (!session) return;
-        await apiPost("addMedication", { workspaceId: session.workspaceId, actor: user.name, medication: m });
+        await apiPost("addMedication", { workspaceId: session.workspaceId, actor: session.email, medication: m });
         await get().fetchWorkspaceData(session.workspaceId);
       },
 
       updateMedication: async (id, patch) => {
-        const { session, user } = get();
+        const { session } = get();
         if (!session) return;
-        await apiPost("updateMedication", { workspaceId: session.workspaceId, actor: user.name, id, patch });
+        await apiPost("updateMedication", { workspaceId: session.workspaceId, actor: session.email, id, patch });
         await get().fetchWorkspaceData(session.workspaceId);
       },
 
       deleteMedication: async (id) => {
-        const { session, user } = get();
+        const { session } = get();
         if (!session) return;
-        await apiPost("deleteMedication", { workspaceId: session.workspaceId, actor: user.name, id });
+        await apiPost("deleteMedication", { workspaceId: session.workspaceId, actor: session.email, id });
         await get().fetchWorkspaceData(session.workspaceId);
       },
 
       adjustStock: async ({ batchId, delta, reason }) => {
-        const { session, user, batches } = get();
+        const { session, batches } = get();
         const b = batches.find((x) => x.id === batchId);
         if (!b || !session) return;
-        await apiPost("adjustStock", { workspaceId: session.workspaceId, actor: user.name, batchId, delta, reason });
+        await apiPost("adjustStock", { workspaceId: session.workspaceId, actor: session.email, batchId, delta, reason });
         await get().fetchWorkspaceData(session.workspaceId);
       },
 
       addReceipt: async ({ medicationId, warehouseId, lot, expiry, quantity, reason }) => {
-        const { session, user } = get();
+        const { session } = get();
         if (!session) return;
-        await apiPost("addReceipt", { workspaceId: session.workspaceId, actor: user.name, medicationId, warehouseId, lot, expiry, quantity, reason });
+        await apiPost("addReceipt", { workspaceId: session.workspaceId, actor: session.email, medicationId, warehouseId, lot, expiry, quantity, reason });
         await get().fetchWorkspaceData(session.workspaceId);
       },
 
       createTransfer: async ({ medicationId, sourceBatchId, fromWarehouseId, toWarehouseId, quantity }: { medicationId: string; sourceBatchId?: string; fromWarehouseId: string; toWarehouseId: string; quantity: number }) => {
-        const { session, user } = get();
+        const { session } = get();
         if (!session) { console.warn("store.createTransfer: no session"); return; }
-        await apiPost("createTransfer", { workspaceId: session.workspaceId, actor: user.name, medicationId, sourceBatchId, fromWarehouseId, toWarehouseId, quantity });
+        await apiPost("createTransfer", { workspaceId: session.workspaceId, actor: session.email, medicationId, sourceBatchId, fromWarehouseId, toWarehouseId, quantity });
         await get().fetchWorkspaceData(session.workspaceId);
       },
 
       advanceTransfer: async (id) => {
-        const { session, user } = get();
+        const { session } = get();
         if (!session) return;
-        await apiPost("advanceTransfer", { workspaceId: session.workspaceId, actor: user.name, id });
+        await apiPost("advanceTransfer", { workspaceId: session.workspaceId, actor: session.email, id });
         await get().fetchWorkspaceData(session.workspaceId);
       },
 
       rejectTransfer: async (id, reason, outcome) => {
-        const { session, user } = get();
+        const { session } = get();
         if (!session) return;
-        await apiPost("rejectTransfer", { workspaceId: session.workspaceId, actor: user.name, id, reason, outcome });
+        await apiPost("rejectTransfer", { workspaceId: session.workspaceId, actor: session.email, id, reason, outcome });
         await get().fetchWorkspaceData(session.workspaceId);
       },
 
       addSale: async ({ medicationId, warehouseId, quantity, price, prescription }) => {
-        const { session, user } = get();
+        const { session } = get();
         if (!session) return;
-        await apiPost("addSale", { workspaceId: session.workspaceId, actor: user.name, medicationId, warehouseId, quantity, price, prescription });
+        await apiPost("addSale", { workspaceId: session.workspaceId, actor: session.email, medicationId, warehouseId, quantity, price, prescription });
         await get().fetchWorkspaceData(session.workspaceId);
       },
 
       addDispensation: async ({ medicationId, warehouseId, quantity, doctor, patient, room, treatment }) => {
-        const { session, user } = get();
+        const { session } = get();
         if (!session) return;
-        await apiPost("addDispensation", { workspaceId: session.workspaceId, actor: user.name, medicationId, warehouseId, quantity, doctor, patient, room, treatment });
+        await apiPost("addDispensation", { workspaceId: session.workspaceId, actor: session.email, medicationId, warehouseId, quantity, doctor, patient, room, treatment });
         await get().fetchWorkspaceData(session.workspaceId);
       },
 
       createOrder: async ({ medicationId, sourceBatchId, warehouseId, quantity, doctorName, patient, room, reason }) => {
-        const { session, user } = get();
+        const { session } = get();
         if (!session) return;
-        await apiPost("createOrder", { workspaceId: session.workspaceId, actor: user.name, medicationId, sourceBatchId, warehouseId, quantity, doctorName, patient, room, reason });
+        await apiPost("createOrder", { workspaceId: session.workspaceId, actor: session.email, medicationId, sourceBatchId, warehouseId, quantity, doctorName, patient, room, reason });
         await get().fetchWorkspaceData(session.workspaceId);
       },
 
       processOrder: async (id, action, reason) => {
-        const { session, user } = get();
+        const { session } = get();
         if (!session) return;
         await apiPost("processOrder", {
           workspaceId: session.workspaceId,
-          actor: user.name,
+          actor: session.email,
           actorRole: session.role,
           id,
           action,
@@ -458,32 +458,32 @@ export const useStore = create<State>()(
       },
 
       addUser: async (input) => {
-        const { session, user } = get();
+        const { session } = get();
         if (!session) return;
-        await apiPost("addUser", { workspaceId: session.workspaceId, actor: user.name, user: input });
+        await apiPost("addUser", { workspaceId: session.workspaceId, actor: session.email, user: input });
         await get().fetchWorkspaceData(session.workspaceId);
       },
 
       updateUser: async (id, patch) => {
-        const { session, user } = get();
+        const { session } = get();
         if (!session) return;
-        await apiPost("updateUser", { workspaceId: session.workspaceId, actor: user.name, id, patch });
+        await apiPost("updateUser", { workspaceId: session.workspaceId, actor: session.email, id, patch });
         await get().fetchWorkspaceData(session.workspaceId);
       },
 
       deleteUser: async (id) => {
-        const { session, user } = get();
+        const { session } = get();
         if (!session) return;
-        await apiPost("deleteUser", { workspaceId: session.workspaceId, actor: user.name, id });
+        await apiPost("deleteUser", { workspaceId: session.workspaceId, actor: session.email, id });
         await get().fetchWorkspaceData(session.workspaceId);
       },
 
       addWarehouse: async (input) => {
-        const { session, user } = get();
+        const { session } = get();
         if (!session) return;
         await apiPost("addWarehouse", {
           workspaceId: session.workspaceId,
-          actor: user.name,
+          actor: session.email,
           warehouse: {
             name: input.name,
             type: input.type,
@@ -493,11 +493,11 @@ export const useStore = create<State>()(
       },
 
       updateWarehouse: async (id, patch) => {
-        const { session, user } = get();
+        const { session } = get();
         if (!session) return;
         await apiPost("updateWarehouse", {
           workspaceId: session.workspaceId,
-          actor: user.name,
+          actor: session.email,
           id,
           patch,
         });
@@ -505,26 +505,26 @@ export const useStore = create<State>()(
       },
 
       deleteWarehouse: async (id) => {
-        const { session, user } = get();
+        const { session } = get();
         if (!session) return;
-        await apiPost("deleteWarehouse", { workspaceId: session.workspaceId, actor: user.name, id });
+        await apiPost("deleteWarehouse", { workspaceId: session.workspaceId, actor: session.email, id });
         await get().fetchWorkspaceData(session.workspaceId);
       },
 
       resetWorkspaceDemo: async () => {
-        const { session, user } = get();
+        const { session } = get();
         if (!session) return;
-        await apiPost("resetWorkspace", { workspaceId: session.workspaceId, actor: user.name });
+        await apiPost("resetWorkspace", { workspaceId: session.workspaceId, actor: session.email });
         await get().fetchWorkspaceData(session.workspaceId);
       },
 
       addPatient: async (input) => {
-        const { session, user } = get();
+        const { session } = get();
         if (!session) return;
         const { bedId, ...patient } = input;
         await apiPost("addPatient", {
           workspaceId: session.workspaceId,
-          actor: user.name,
+          actor: session.email,
           patient,
           bedId: bedId ?? null,
         });
@@ -532,73 +532,77 @@ export const useStore = create<State>()(
       },
 
       updatePatient: async (id, patch) => {
-        const { session, user } = get();
+        const { session } = get();
         if (!session) return;
-        await apiPost("updatePatient", { workspaceId: session.workspaceId, actor: user.name, id, patch });
+        await apiPost("updatePatient", { workspaceId: session.workspaceId, actor: session.email, id, patch });
         await get().fetchWorkspaceData(session.workspaceId);
       },
 
       deletePatient: async (id) => {
-        const { session, user } = get();
+        const { session } = get();
         if (!session) return;
-        await apiPost("deletePatient", { workspaceId: session.workspaceId, actor: user.name, id });
+        await apiPost("deletePatient", { workspaceId: session.workspaceId, actor: session.email, id });
         await get().fetchWorkspaceData(session.workspaceId);
       },
 
       addWing: async (input) => {
-        const { session, user } = get();
+        const { session } = get();
         if (!session) return;
-        await apiPost("addWing", { workspaceId: session.workspaceId, actor: user.name, wing: input });
+        await apiPost("addWing", { workspaceId: session.workspaceId, actor: session.email, wing: input });
         await get().fetchWorkspaceData(session.workspaceId);
       },
 
       updateWing: async (id, patch) => {
-        const { session, user } = get();
+        const { session } = get();
         if (!session) return;
-        await apiPost("updateWing", { workspaceId: session.workspaceId, actor: user.name, id, patch });
+        await apiPost("updateWing", { workspaceId: session.workspaceId, actor: session.email, id, patch });
         await get().fetchWorkspaceData(session.workspaceId);
       },
 
       deleteWing: async (id) => {
-        const { session, user } = get();
+        const { session } = get();
         if (!session) return;
-        await apiPost("deleteWing", { workspaceId: session.workspaceId, actor: user.name, id });
+        await apiPost("deleteWing", { workspaceId: session.workspaceId, actor: session.email, id });
         await get().fetchWorkspaceData(session.workspaceId);
       },
 
       addRoom: async (input) => {
-        const { session, user } = get();
+        const { session } = get();
         if (!session) return;
-        await apiPost("addRoom", { workspaceId: session.workspaceId, actor: user.name, room: input });
+        await apiPost("addRoom", { workspaceId: session.workspaceId, actor: session.email, room: input });
         await get().fetchWorkspaceData(session.workspaceId);
       },
 
       updateRoom: async (id, patch) => {
-        const { session, user } = get();
+        const { session } = get();
         if (!session) return;
-        await apiPost("updateRoom", { workspaceId: session.workspaceId, actor: user.name, id, patch });
+        await apiPost("updateRoom", { workspaceId: session.workspaceId, actor: session.email, id, patch });
         await get().fetchWorkspaceData(session.workspaceId);
       },
 
       deleteRoom: async (id) => {
-        const { session, user } = get();
+        const { session } = get();
         if (!session) return;
-        await apiPost("deleteRoom", { workspaceId: session.workspaceId, actor: user.name, id });
+        await apiPost("deleteRoom", { workspaceId: session.workspaceId, actor: session.email, id });
         await get().fetchWorkspaceData(session.workspaceId);
       },
 
       assignBed: async (bedId, patientId) => {
-        const { session, user } = get();
+        const { session } = get();
         if (!session) return;
-        await apiPost("assignBed", { workspaceId: session.workspaceId, actor: user.name, bedId, patientId });
+        await apiPost("assignBed", { workspaceId: session.workspaceId, actor: session.email, bedId, patientId });
         await get().fetchWorkspaceData(session.workspaceId);
       },
     }),
     {
       name: "meditory-store",
-      version: 1,
-      migrate: (persisted) => {
-        const p = persisted as { aiProvider?: string };
+      version: 2,
+      migrate: (persisted, fromVersion) => {
+        const p = persisted as { aiProvider?: string; session?: { email?: string } | null };
+        // v1→v2: if session has no email field, clear it to force re-login
+        if (fromVersion < 2 && p.session && !p.session.email) {
+          return { ...p, session: null };
+        }
         if (p.aiProvider === "groq") {
           return { ...p, aiProvider: "zen" };
         }

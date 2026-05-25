@@ -665,6 +665,7 @@ export function WorkspaceAssistantChat({
   const setStoredMessages = useStore((s) => s.setChatMessages);
   const storeUsers = useStore((s) => s.users);
   const session = useStore((s) => s.session);
+  const aiProvider = useStore((s) => s.aiProvider);
 
   const [messages, setMessages] = useState<UiMessage[]>(() =>
     storedMessages.length > 0
@@ -868,11 +869,11 @@ export function WorkspaceAssistantChat({
       const collectedToolCalls: OllamaToolCall[] = [];
 
       for await (const event of streamAiChat({
-        model: "claude-sonnet-4-6",
+        model: aiProvider === "anthropic" ? "claude-sonnet-4-6" : "deepseek-v4-0324-fast",
         messages: history,
         tools: assistantTools,
         signal: ac.signal,
-        provider: "anthropic",
+        provider: aiProvider,
       })) {
         if (event.type === "text") {
           fullContent += event.content;
@@ -1147,8 +1148,14 @@ export function WorkspaceAssistantChat({
         )}
       </div>
       <p className="text-[11px] text-muted-foreground">
-        Asistente vía <code className="rounded bg-muted px-0.5">Anthropic</code>{" "}
-        (modelo: <span className="font-mono">claude-sonnet-4-6</span>).
+        Asistente vía{" "}
+        <code className="rounded bg-muted px-0.5">
+          {aiProvider === "anthropic" ? "Anthropic" : "OpenCode Zen"}
+        </code>{" "}
+        (modelo:{" "}
+        <span className="font-mono">
+          {aiProvider === "anthropic" ? "claude-sonnet-4-6" : "deepseek-v4-0324-fast"}
+        </span>).
       </p>
 
       <Dialog open={!!pendingTransfer} onOpenChange={(o) => !o && !confirming && setPendingTransfer(null)}>

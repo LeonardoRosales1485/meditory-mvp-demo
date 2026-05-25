@@ -121,8 +121,8 @@ interface State {
   session: Session | null;
   /** True mientras se ejecuta fetch de datos del workspace (post-login, F5, tras mutaciones). */
   workspaceDataLoading: boolean;
-  aiProvider: "groq" | "zen";
-  setAiProvider: (provider: "groq" | "zen") => void;
+  aiProvider: "anthropic" | "zen";
+  setAiProvider: (provider: "anthropic" | "zen") => void;
   chatMessages: { role: string; content: string }[];
   setChatMessages: (messages: { role: string; content: string }[]) => void;
   warehouses: Warehouse[];
@@ -261,7 +261,7 @@ export const useStore = create<State>()(
       user: { name: "L. Rosales", role: "Admin cliente" },
       session: null,
       workspaceDataLoading: false,
-      aiProvider: "zen",
+      aiProvider: "anthropic",
       setAiProvider: (provider) => set({ aiProvider: provider }),
       chatMessages: [],
       setChatMessages: (messages) => set({ chatMessages: messages.slice(-20) }),
@@ -596,15 +596,14 @@ export const useStore = create<State>()(
     }),
     {
       name: "meditory-store",
-      version: 2,
+      version: 3,
       migrate: (persisted, fromVersion) => {
         const p = persisted as { aiProvider?: string; session?: { email?: string } | null };
-        // v1→v2: if session has no email field, clear it to force re-login
         if (fromVersion < 2 && p.session && !p.session.email) {
           return { ...p, session: null };
         }
-        if (p.aiProvider === "groq") {
-          return { ...p, aiProvider: "zen" };
+        if (fromVersion < 3 && (p.aiProvider === "groq" || p.aiProvider === "zen")) {
+          return { ...p, aiProvider: "anthropic" };
         }
         return persisted;
       },

@@ -1,4 +1,4 @@
-import { createFileRoute, Outlet, useNavigate, Link, useLocation } from "@tanstack/react-router";
+import { createFileRoute, Outlet, useNavigate, Link, useLocation, redirect } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Building2, Users, Database, LogOut, ShieldCheck, Menu, X, Activity,
@@ -73,7 +73,8 @@ function BackofficeLayout() {
   const isLoginRoute = pathname === "/backoffice/login";
 
   if (isLoginRoute) return <Outlet />;
-  if (!mounted || !session) return null;
+  if (!mounted) return null;
+  if (!session) throw redirect({ to: "/backoffice/login" });
 
   return (
     <div className="flex h-svh min-h-0 w-full overflow-hidden bg-background">

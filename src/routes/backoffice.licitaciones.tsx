@@ -191,13 +191,18 @@ function LicitacionesPage() {
       const rpc = await import("@/lib/server-rpc");
       const updated = await rpc.licitacionesCambiarEstadoRpc({
         data: { licitacionId, nuevoEstado },
-      }) as LicitacionRow;
-      setLicitaciones((prev) => prev.map((l) => l.id === licitacionId ? updated : l));
+      }) as LicitacionRow | undefined;
+      if (!updated) {
+        toast.error("Error al cambiar estado: el servidor no devolvió datos");
+        return;
+      }
+      setLicitaciones((prev) => prev.map((l) => (l.id === licitacionId ? updated : l)));
       if (detailId === licitacionId) {
-        loadDetailAgain(licitacionId);
+        await loadDetailAgain(licitacionId);
       }
       toast.success(`Estado cambiado a ${ESTADO_LABELS[nuevoEstado]}`);
-    } catch {
+    } catch (e) {
+      console.error("Error cambiando estado:", e);
       toast.error("Error al cambiar estado");
     }
   }
@@ -597,7 +602,6 @@ function LicitacionesPage() {
         proveedores={proveedores}
         medMap={medMap}
         onCambiarEstado={handleCambiarEstado}
-        onRefresh={loadDetailAgain}
       />
     </div>
   );
@@ -1136,7 +1140,7 @@ function CreateLicitacionDialog({ open, onOpenChange, lowStock, allMeds, onConfi
   );
 }
 
-function DetailLicitacionDialog({ licitacionId, open, onOpenChange, licitaciones, items, ofertas, historial, proveedores, medMap, onCambiarEstado, onRefresh }: {
+function DetailLicitacionDialog({ licitacionId, open, onOpenChange, licitaciones, items, ofertas, historial, proveedores, medMap, onCambiarEstado }: {
   licitacionId: string | null;
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -1147,7 +1151,6 @@ function DetailLicitacionDialog({ licitacionId, open, onOpenChange, licitaciones
   proveedores: ProveedorRow[];
   medMap: Map<string, string>;
   onCambiarEstado: (id: string, estado: LicitacionEstado) => void;
-  onRefresh: (id: string) => void;
 }) {
   const lic = licitaciones.find((l) => l.id === licitacionId);
   if (!lic) return null;
@@ -1188,10 +1191,7 @@ function DetailLicitacionDialog({ licitacionId, open, onOpenChange, licitaciones
                   size="sm"
                   variant={accion.variant ?? "default"}
                   className="h-7 text-xs gap-1"
-                  onClick={() => {
-                    onCambiarEstado(lic.id, accion.hacia);
-                    onRefresh(lic.id);
-                  }}
+                  onClick={() => onCambiarEstado(lic.id, accion.hacia)}
                 >
                   {accion.hacia === "cancelado" ? <X size={12} /> : <Check size={12} />}
                   {accion.label}

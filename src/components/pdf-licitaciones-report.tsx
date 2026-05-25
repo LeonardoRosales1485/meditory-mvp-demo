@@ -38,29 +38,40 @@ export default function DownloadLicitacionesPdf(props: Props) {
 
   const handleDownload = useCallback(async () => {
     if (busy) return;
+    const win = window.open("", "_blank");
     setBusy(true);
     try {
       const doc = new jsPDF("p", "mm", "a4");
       const el = reportRef.current;
-      if (!el) return;
+      if (!el) {
+        win?.close();
+        return;
+      }
       el.style.display = "block";
       await new Promise((r) => setTimeout(r, 400));
 
-      const canvas = await html2canvas(el, { scale: 2, useCORS: true, logging: false, backgroundColor: "#ffffff" });
+      const canvas = await html2canvas(el, {
+        scale: 2, useCORS: true, logging: false, backgroundColor: "#ffffff",
+      });
       el.style.display = "none";
 
-      const imgW = CONTENT_W;
-      const imgH = (canvas.height / canvas.width) * imgW;
-      const pageContentH = PAGE_H - MARGIN * 2;
-      let remaining = imgH;
-      let posY = 0;
-      let page = 0;
+      // Multi-page slicing
+      const MARGIN = 10;
+      const imgW = 190;
+      const pageH = 277;
+      const imgH = (canvas.height * imgW) / canvas.width;
 
+      doc.setFontSize(8);
+      doc.text(`Reporte Licitaciones - ${wsName}`, MARGIN, 5);
+
+      let remaining = imgH;
+      let srcY = 0;
+      let page = 1;
       while (remaining > 0) {
-        if (page > 0) doc.addPage();
-        const sliceH = Math.min(pageContentH, remaining);
-        const srcH = (sliceH / imgH) * canvas.height;
-        const srcY = (posY / imgH) * canvas.height;
+        if (page > 1) doc.addPage();
+        const sliceH = Math.min(remaining, pageH);
+        const srcH = (sliceH * canvas.width) / imgW;
+
         const sliceCanvas = document.createElement("canvas");
         sliceCanvas.width = canvas.width;
         sliceCanvas.height = srcH;
@@ -69,13 +80,18 @@ export default function DownloadLicitacionesPdf(props: Props) {
         const sliceData = sliceCanvas.toDataURL("image/jpeg", 0.92);
         doc.addImage(sliceData, "JPEG", MARGIN, MARGIN, imgW, sliceH);
         remaining -= sliceH;
-        posY += sliceH;
         page++;
       }
 
-      doc.save(`reporte-licitaciones-${new Date().toISOString().slice(0, 10)}.pdf`);
+      const pdfUrl = doc.output("bloburi");
+      if (win) {
+        win.location.href = pdfUrl;
+      } else {
+        doc.save(`reporte-licitaciones-${new Date().toISOString().slice(0, 10)}.pdf`);
+      }
     } catch (e) {
       console.error("PDF error:", e);
+      win?.close();
     } finally {
       setBusy(false);
     }

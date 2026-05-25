@@ -50,6 +50,10 @@ import {
   deleteOferta,
   adjudicarOferta,
   findSimilarLicitaciones,
+  getPublicLicitaciones,
+  getPublicLicitacionDetail,
+  getPublicMiOferta,
+  identifyProveedor,
 } from "./server/backoffice-service";
 
 export const fetchWorkspaceDataRpc = createServerFn({ method: "POST" })
@@ -169,13 +173,9 @@ export const aiChatRpc = createServerFn({ method: "POST" })
     provider?: string;
   }) => data)
   .handler(async ({ data }) => {
-    const provider = data.provider ?? process.env.LLM_PROVIDER ?? "groq";
+    const provider = data.provider ?? process.env.LLM_PROVIDER ?? "zen";
 
     const configs: Record<string, { baseUrl: string; apiKey: string | undefined }> = {
-      groq: {
-        baseUrl: "https://api.groq.com/openai/v1",
-        apiKey: process.env.GROQ_API_KEY,
-      },
       zen: {
         baseUrl: "https://opencode.ai/zen/v1",
         apiKey: process.env.ZEN_API_KEY,
@@ -548,4 +548,40 @@ export const licitacionesFindSimilarRpc = createServerFn({ method: "POST" })
   .inputValidator((data: { medicationIds: string[] }) => data)
   .handler(async ({ data }) => {
     return findSimilarLicitaciones(data.medicationIds);
+  });
+
+// ─── RPCs Portal Público de Proveedores ─────────────────────
+
+export const proveedoresGetLicitacionesRpc = createServerFn({ method: "GET" }).handler(async () => {
+  return getPublicLicitaciones();
+});
+
+export const proveedoresGetLicitacionDetailRpc = createServerFn({ method: "GET" })
+  .inputValidator((data: { id: string }) => data)
+  .handler(async ({ data }) => {
+    return getPublicLicitacionDetail(data.id);
+  });
+
+export const proveedoresGetMiOfertaRpc = createServerFn({ method: "GET" })
+  .inputValidator((data: { licitacionId: string; proveedorId: string }) => data)
+  .handler(async ({ data }) => {
+    return getPublicMiOferta(data.licitacionId, data.proveedorId);
+  });
+
+export const proveedoresIdentifyRpc = createServerFn({ method: "POST" })
+  .inputValidator((data: { cuit: string }) => data)
+  .handler(async ({ data }) => {
+    return identifyProveedor(data.cuit);
+  });
+
+export const proveedoresCrearOfertaRpc = createServerFn({ method: "POST" })
+  .inputValidator((data: {
+    licitacion_id: string;
+    proveedor_id: string;
+    monto_total: number;
+    plazo_entrega_dias: number;
+    observaciones?: string;
+  }) => data)
+  .handler(async ({ data }) => {
+    return createOferta(data);
   });

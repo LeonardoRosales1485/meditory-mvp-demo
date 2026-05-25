@@ -2255,3 +2255,52 @@ export async function findSimilarLicitaciones(medicationIds: string[]): Promise<
     }))
     .sort((a, b) => b.matchCount - a.matchCount);
 }
+
+// ─────────────────────────────────────────────────────────────
+//  PROVEEDORES — Portal público
+// ─────────────────────────────────────────────────────────────
+
+export async function getPublicLicitaciones(): Promise<LicitacionRow[]> {
+  const all = await db<LicitacionRow[]>(
+    supabaseAdmin.from("licitaciones").select("*").eq("estado", "en_licitacion").order("fecha_creacion", { ascending: false }),
+  );
+  return all;
+}
+
+export async function getPublicLicitacionDetail(id: string): Promise<{
+  licitacion: LicitacionRow;
+  items: Array<LicitacionItemRow & { medicationName: string }>;
+}> {
+  const licitacion = await getLicitacion(id);
+  if (!licitacion) throw new Error("Licitación no encontrada");
+
+  const items = await getLicitacionItems(id);
+  const meds = await getAllMedications();
+  const medMap = new Map(meds.map((m) => [m.id, `${m.name} ${m.concentration_value}${m.concentration_unit}`]));
+
+  return {
+    licitacion,
+    items: items.map((i) => ({
+      ...i,
+      medicationName: medMap.get(i.medication_id) ?? i.medication_id,
+    })),
+  };
+}
+
+export async function getPublicMiOferta(licitacionId: string, proveedorId: string): Promise<LicitacionOfertaRow | null> {
+  const rows = await db<LicitacionOfertaRow[]>(
+    supabaseAdmin.from("licitacion_ofertas")
+      .select("*")
+      .eq("licitacion_id", licitacionId)
+      .eq("proveedor_id", proveedorId)
+      .limit(1),
+  );
+  return rows[0] ?? null;
+}
+
+export async function identifyProveedor(cuit: string): Promise<ProveedorRow | null> {
+  const rows = await db<ProveedorRow[]>(
+    supabaseAdmin.from("proveedores").select("*").eq("cuit", cuit).limit(1),
+  );
+  return rows[0] ?? null;
+}

@@ -27,6 +27,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { assistantTools, parseCreateLicitacionArgs, parseFindSimilarLicitacionesArgs } from "@/lib/assistant-tools";
 import { useStore } from "@/lib/store";
+import DownloadLicitacionesPdf from "@/components/pdf-licitaciones-report";
+import DownloadTransferenciasPdf from "@/components/pdf-transferencias-report";
 import type {
   LowStockMedication, OverstockMedication, ProveedorRow,
   LicitacionRow, LicitacionItemRow, LicitacionOfertaRow,
@@ -247,6 +249,7 @@ function LicitacionesPage() {
   const activeTransfers = transfers.filter((t) => !["recibido", "rechazado"].includes(t.status)).length;
 
   const medMap = new Map(allMeds.map((m) => [m.id, m.name]));
+  const whMap = new Map(warehouses.map((w) => [w.id, w.name]));
 
   return (
     <div className="space-y-6 pb-12">
@@ -409,9 +412,19 @@ function LicitacionesPage() {
         <TabsContent value="licitaciones" className="space-y-4">
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">{filteredLicitaciones.length} licitaciones registradas</p>
-            <Button size="sm" onClick={() => setCreateOpen(true)} className="gap-1.5">
-              <Plus size={14} /> Nueva
-            </Button>
+            <div className="flex items-center gap-2">
+              <DownloadLicitacionesPdf
+                lowStock={filteredLowStock}
+                overstock={filteredOverstock}
+                licitaciones={filteredLicitaciones}
+                proveedores={proveedores}
+                medMap={medMap}
+                wsName={selectedWsName}
+              />
+              <Button size="sm" onClick={() => setCreateOpen(true)} className="gap-1.5">
+                <Plus size={14} /> Nueva
+              </Button>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <div className="relative flex-1 max-w-sm">
@@ -451,6 +464,12 @@ function LicitacionesPage() {
         <TabsContent value="transferencias" className="space-y-4">
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">{transfers.length} transferencias registradas</p>
+            <DownloadTransferenciasPdf
+              transfers={transfers}
+              medMap={medMap}
+              whMap={whMap}
+              wsName={selectedWsName}
+            />
           </div>
           <div className="flex items-center gap-2">
             <div className="relative flex-1 max-w-sm">

@@ -1246,11 +1246,9 @@ export function WorkspaceAssistantChat({
         )}
       </div>
       <p className="text-[11px] text-muted-foreground">
-        Asistente vía <code className="rounded bg-muted px-0.5">{aiProvider === "zen" ? "OpenCode Zen" : "Groq"}</code>{" "}
-        (modelo: <span className="font-mono">{aiProvider === "zen" ? "deepseek-v4-flash-free" : "llama3.1:8b"}</span>).
-        <span className="ml-2 text-amber-500">
-          {aiProvider === "groq" ? "Free-tier ~12k tokens/min" : "Modelos gratuitos"}
-        </span>
+        Asistente vía <code className="rounded bg-muted px-0.5">OpenCode Zen</code>{" "}
+        (modelo: <span className="font-mono">deepseek-v4-flash-free</span>).
+        <span className="ml-2 text-amber-500">Modelos gratuitos</span>
       </p>
 
       <Dialog open={!!pendingTransfer} onOpenChange={(o) => !o && !confirming && setPendingTransfer(null)}>

@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as ProveedoresRouteImport } from './routes/proveedores'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as BackofficeRouteImport } from './routes/backoffice'
 import { Route as AppRouteImport } from './routes/app'
@@ -46,6 +47,11 @@ import { Route as AppCatalogoRouteImport } from './routes/app.catalogo'
 import { Route as AppAuditoriaRouteImport } from './routes/app.auditoria'
 import { Route as AppAjustesRouteImport } from './routes/app.ajustes'
 
+const ProveedoresRoute = ProveedoresRouteImport.update({
+  id: '/proveedores',
+  path: '/proveedores',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -235,6 +241,7 @@ export interface FileRoutesByFullPath {
   '/app': typeof AppRouteWithChildren
   '/backoffice': typeof BackofficeRouteWithChildren
   '/login': typeof LoginRoute
+  '/proveedores': typeof ProveedoresRoute
   '/app/ajustes': typeof AppAjustesRoute
   '/app/auditoria': typeof AppAuditoriaRoute
   '/app/catalogo': typeof AppCatalogoRoute
@@ -271,6 +278,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/proveedores': typeof ProveedoresRoute
   '/app/ajustes': typeof AppAjustesRoute
   '/app/auditoria': typeof AppAuditoriaRoute
   '/app/catalogo': typeof AppCatalogoRoute
@@ -310,6 +318,7 @@ export interface FileRoutesById {
   '/app': typeof AppRouteWithChildren
   '/backoffice': typeof BackofficeRouteWithChildren
   '/login': typeof LoginRoute
+  '/proveedores': typeof ProveedoresRoute
   '/app/ajustes': typeof AppAjustesRoute
   '/app/auditoria': typeof AppAuditoriaRoute
   '/app/catalogo': typeof AppCatalogoRoute
@@ -350,6 +359,7 @@ export interface FileRouteTypes {
     | '/app'
     | '/backoffice'
     | '/login'
+    | '/proveedores'
     | '/app/ajustes'
     | '/app/auditoria'
     | '/app/catalogo'
@@ -386,6 +396,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/login'
+    | '/proveedores'
     | '/app/ajustes'
     | '/app/auditoria'
     | '/app/catalogo'
@@ -424,6 +435,7 @@ export interface FileRouteTypes {
     | '/app'
     | '/backoffice'
     | '/login'
+    | '/proveedores'
     | '/app/ajustes'
     | '/app/auditoria'
     | '/app/catalogo'
@@ -463,10 +475,18 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   BackofficeRoute: typeof BackofficeRouteWithChildren
   LoginRoute: typeof LoginRoute
+  ProveedoresRoute: typeof ProveedoresRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/proveedores': {
+      id: '/proveedores'
+      path: '/proveedores'
+      fullPath: '/proveedores'
+      preLoaderRoute: typeof ProveedoresRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -809,6 +829,7 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   BackofficeRoute: BackofficeRouteWithChildren,
   LoginRoute: LoginRoute,
+  ProveedoresRoute: ProveedoresRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

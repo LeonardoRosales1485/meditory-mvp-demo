@@ -34,7 +34,7 @@ export const assistantTools = [
     "function": {
       name: "create_transfer",
       description:
-        "Solicita transferencia de stock solo si el usuario pidió EXPLÍCITAMENTE crear/solicitar/iniciar una transferencia con datos del snapshot (medicationId, sourceBatchId, depósitos, cantidad). PROHIBIDO para consultas del tipo «¿cuánto hay en transferencia?» o «¿qué está por recibir?» (respondé con pendingTransfers y summary). Requiere confirmación en pantalla.",
+        "Crea una transferencia de stock entre depósitos. Usar cuando el usuario pida ejecutar una transferencia y tengas los datos (medicationId, sourceBatchId, depósitos, cantidad). Requiere confirmación en pantalla.",
       parameters: {
         type: "object",
         properties: {
@@ -367,6 +367,58 @@ export const assistantTools = [
     },
   },
   /** Rutas internas permitidas para la tool `navigate` (evita open redirect). */
+  {
+    type: "function" as const,
+    "function": {
+      name: "create_licitacion",
+      description:
+        "Crea una nueva licitación con sus items. Usar cuando el usuario pida crear una licitación y hayas acordado los detalles (título, descripción, medicamentos, cantidades).",
+      parameters: {
+        type: "object",
+        properties: {
+            codigo: { type: "string", description: "Código único de la licitación (opcional - si no se provee se genera automáticamente), ej: LIC-0005" },
+          titulo: { type: "string", description: "Título descriptivo de la licitación" },
+          descripcion: { type: "string", description: "Descripción detallada" },
+          items: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                medication_id: { type: "string", description: "ID del medicamento" },
+                workspace_id: { type: "string", description: "ID del workspace/hospital" },
+                cantidad_solicitada: { type: "number", description: "Cantidad solicitada" },
+                justificacion: { type: "string", description: "Justificación del item" },
+              },
+              required: ["medication_id", "workspace_id", "cantidad_solicitada"],
+            },
+          },
+        },
+        required: ["titulo", "items"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    "function": {
+      name: "find_similar_licitaciones",
+      description:
+        "Busca licitaciones activas existentes que ya incluyan los medicamentos especificados. Usar ANTES de crear una licitación nueva para evitar duplicados.",
+      parameters: {
+        type: "object",
+        properties: {
+          medicationIds: {
+            type: "array",
+            items: { type: "string" },
+            description: "IDs de los medicamentos a verificar",
+          },
+        },
+        required: ["medicationIds"],
+      },
+    },
+  },
+];
+
+export const licitacionTools = [
   {
     type: "function" as const,
     "function": {

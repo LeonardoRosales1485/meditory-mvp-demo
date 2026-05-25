@@ -975,6 +975,10 @@ export function WorkspaceAssistantChat({
         } else if (event.type === "error") {
           toast.error("Error al consultar el asistente", { description: event.message.slice(0, 280) });
           setMessages((m) => [...m, { role: "assistant", content: `No pude obtener respuesta: ${event.message}` }]);
+          useStore.getState().setChatMessages([
+            ...useStore.getState().chatMessages,
+            { role: "assistant", content: `No pude obtener respuesta: ${event.message}` },
+          ]);
           setStreaming(false);
           setStreamingText("");
           return;
@@ -1028,6 +1032,10 @@ export function WorkspaceAssistantChat({
       chartGeneratedRef.current = false;
 
       setMessages((m) => [...m, { role: "assistant", content: assistantText }]);
+      useStore.getState().setChatMessages([
+        ...useStore.getState().chatMessages,
+        { role: "assistant", content: assistantText },
+      ]);
 
       // Refresh suggestions after response
       const freshState = useStore.getState();
@@ -1044,6 +1052,10 @@ export function WorkspaceAssistantChat({
       chartGeneratedRef.current = false;
       toast.error("Error al consultar el asistente", { description: err.slice(0, 280) });
       setMessages((m) => [...m, { role: "assistant", content: `No pude obtener respuesta: ${err}` }]);
+      useStore.getState().setChatMessages([
+        ...useStore.getState().chatMessages,
+        { role: "assistant", content: `No pude obtener respuesta: ${err}` },
+      ]);
     } finally {
       setStreaming(false);
       setStreamingText("");

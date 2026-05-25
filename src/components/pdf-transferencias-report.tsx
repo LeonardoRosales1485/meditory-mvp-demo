@@ -21,6 +21,47 @@ const STATUS_LABELS: Record<string, string> = {
 
 const STATUS_FLOW = ["solicitado", "autorizado", "despachado", "recibir", "recibido", "aceptado"];
 
+function buildStandaloneReportHtml(
+  reportHtml: string,
+  pdfDataUrl: string | null,
+  title: string,
+  wsName: string | null,
+): string {
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${title}</title>
+<style>
+  *,*::before,*::after{box-sizing:border-box}
+  body{
+    margin:0;padding:15px;
+    font-family:Arial,Helvetica,sans-serif;
+    color:#1e293b;background:#fff;
+    font-size:10px;line-height:1.5;
+  }
+  table{border-collapse:collapse}
+  .no-print{display:flex;gap:8px;align-items:center;margin-bottom:12px}
+  .no-print button{
+    padding:6px 14px;font-size:13px;border:1px solid #cbd5e1;
+    border-radius:6px;background:#f8fafc;cursor:pointer;
+    display:inline-flex;align-items:center;gap:6px;
+  }
+  .no-print button:hover{background:#f1f5f9}
+  @media print{.no-print{display:none}}
+</style>
+</head>
+<body>
+  <div class="no-print">
+    ${pdfDataUrl ? `<button onclick="location.href='${pdfDataUrl}'" download><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Descargar PDF</button>` : `<span style="color:#94a3b8;font-size:11px">PDF no disponible (error al generar)</span>`}
+    <button onclick="window.print()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M18 9h3a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1h3"/><rect x="6" y="14" width="12" height="8"/></svg> Imprimir</button>
+  </div>
+  ${reportHtml}
+</body>
+</html>`;
+}
+
 interface Props {
   transfers: any[];
   medMap: Map<string, string>;
@@ -35,64 +76,72 @@ export default function DownloadTransferenciasPdf(props: Props) {
 
   const handleDownload = useCallback(async () => {
     if (busy) return;
-    const win = window.open("", "_blank");
     setBusy(true);
+
+    const el = reportRef.current;
+    const reportHtml = el?.innerHTML ?? "";
+    let pdfDataUrl: string | null = null;
+    let doc: jsPDF | undefined;
+
     try {
-      const doc = new jsPDF("p", "mm", "a4");
-      const el = reportRef.current;
-      if (!el) {
-        win?.close();
-        return;
+      doc = new jsPDF("p", "mm", "a4");
+      if (el) {
+        const fixStyle = document.createElement("style");
+        fixStyle.id = "pdf-temp-fix";
+        fixStyle.textContent = `* { border-color: #e2e8f0 !important; }`;
+        el.appendChild(fixStyle);
+
+        await new Promise((r) => setTimeout(r, 100));
+
+        const canvas = await html2canvas(el, {
+          scale: 2, useCORS: true, logging: false, backgroundColor: "#ffffff",
+        });
+
+        el.removeChild(fixStyle);
+
+        const imgW = 190;
+        const pageH = 277;
+        const imgH = (canvas.height * imgW) / canvas.width;
+
+        doc.setFontSize(8);
+        doc.text(`Reporte Transferencias - ${wsName}`, MARGIN, 5);
+
+        let remaining = imgH;
+        let srcY = 0;
+        let page = 1;
+        while (remaining > 0) {
+          if (page > 1) doc.addPage();
+          const sliceH = Math.min(remaining, pageH);
+          const srcH = (sliceH * canvas.width) / imgW;
+
+          const sliceCanvas = document.createElement("canvas");
+          sliceCanvas.width = canvas.width;
+          sliceCanvas.height = srcH;
+          const ctx = sliceCanvas.getContext("2d")!;
+          ctx.drawImage(canvas, 0, srcY, canvas.width, srcH, 0, 0, canvas.width, srcH);
+          const sliceData = sliceCanvas.toDataURL("image/jpeg", 0.92);
+          doc.addImage(sliceData, "JPEG", MARGIN, MARGIN, imgW, sliceH);
+          remaining -= sliceH;
+          page++;
+        }
       }
-      el.style.display = "block";
-      await new Promise((r) => setTimeout(r, 400));
 
-      const canvas = await html2canvas(el, {
-        scale: 2, useCORS: true, logging: false, backgroundColor: "#ffffff",
-      });
-      el.style.display = "none";
-
-      // Multi-page slicing
-      const MARGIN = 10;
-      const imgW = 190;
-      const pageH = 277;
-      const imgH = (canvas.height * imgW) / canvas.width;
-
-      doc.setFontSize(8);
-      doc.text(`Reporte Transferencias - ${wsName}`, MARGIN, 5);
-
-      let remaining = imgH;
-      let srcY = 0;
-      let page = 1;
-      while (remaining > 0) {
-        if (page > 1) doc.addPage();
-        const sliceH = Math.min(remaining, pageH);
-        const srcH = (sliceH * canvas.width) / imgW;
-
-        const sliceCanvas = document.createElement("canvas");
-        sliceCanvas.width = canvas.width;
-        sliceCanvas.height = srcH;
-        const ctx = sliceCanvas.getContext("2d")!;
-        ctx.drawImage(canvas, 0, srcY, canvas.width, srcH, 0, 0, canvas.width, srcH);
-        const sliceData = sliceCanvas.toDataURL("image/jpeg", 0.92);
-        doc.addImage(sliceData, "JPEG", MARGIN, MARGIN, imgW, sliceH);
-        remaining -= sliceH;
-        page++;
-      }
-
-      const pdfUrl = doc.output("bloburi");
-      if (win) {
-        win.location.href = pdfUrl;
-      } else {
-        doc.save(`reporte-transferencias-${new Date().toISOString().slice(0, 10)}.pdf`);
-      }
+      pdfDataUrl = doc.output("datauristring");
     } catch (e) {
       console.error("PDF error:", e);
-      win?.close();
-    } finally {
-      setBusy(false);
     }
-  }, [busy]);
+
+    const win = window.open("", "_blank");
+    if (win) {
+      const standalone = buildStandaloneReportHtml(reportHtml, pdfDataUrl, "Reporte Transferencias", wsName);
+      win.document.write(standalone);
+      win.document.close();
+    } else if (pdfDataUrl && doc) {
+      doc.save(`reporte-transferencias-${new Date().toISOString().slice(0, 10)}.pdf`);
+    }
+
+    setBusy(false);
+  }, [busy, wsName]);
 
   const total = transfers.length;
   const enCurso = transfers.filter((t: any) => !["aceptado", "rechazado"].includes(t.status)).length;
@@ -120,7 +169,7 @@ export default function DownloadTransferenciasPdf(props: Props) {
       </Button>
 
       <div ref={reportRef} style={{
-        display: "none", width: `${CONTENT_W}mm`,
+        position: "absolute", left: "-9999px", top: 0, width: `${CONTENT_W}mm`,
         fontFamily: "Arial, Helvetica, sans-serif",
         color: "#1e293b", background: "#fff",
         padding: "5mm 0", fontSize: "10px", lineHeight: 1.5,

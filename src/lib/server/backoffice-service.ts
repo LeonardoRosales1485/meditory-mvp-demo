@@ -2304,3 +2304,75 @@ export async function identifyProveedor(cuit: string): Promise<ProveedorRow | nu
   );
   return rows[0] ?? null;
 }
+
+export async function createBackofficeTransfer(data: {
+  medicationId: string;
+  sourceBatchId: string;
+  fromWarehouseId: string;
+  toWarehouseId: string;
+  quantity: number;
+}): Promise<void> {
+  const med = await db<{ id: string }[]>(
+    supabaseAdmin.from("medications").select("id").eq("id", data.medicationId).limit(1)
+  );
+  if (!med.length) throw new Error("Medicamento no encontrado");
+
+  const fromWh = await db<{ id: string; workspace_id: string; type: string; deleted_at: string | null }[]>(
+    supabaseAdmin.from("warehouses").select("id, workspace_id, type, deleted_at").eq("id", data.fromWarehouseId).limit(1)
+  );
+  if (!fromWh.length) throw new Error("Depósito origen no encontrado");
+  if (fromWh[0].type !== "central") throw new Error("Las transferencias deben originarse en el depósito central");
+  if (fromWh[0].deleted_at) throw new Error("El depósito origen está dado de baja");
+
+  const toWh = await db<{ id: string; workspace_id: string; deleted_at: string | null }[]>(
+    supabaseAdmin.from("warehouses").select("id, workspace_id, deleted_at").eq("id", data.toWarehouseId).limit(1)
+  );
+  if (!toWh.length) throw new Error("Depósito destino no encontrado");
+  if (toWh[0].deleted_at) throw new Error("El depósito destino está dado de baja");
+  if (data.fromWarehouseId === data.toWarehouseId) throw new Error("Origen y destino deben ser distintos");
+
+  const batch = await db<{ id: string; medication_id: string; warehouse_id: string; quantity: number }[]>(
+    supabaseAdmin.from("batches").select("id, medication_id, warehouse_id, quantity").eq("id", data.sourceBatchId).limit(1)
+  );
+  if (!batch.length) throw new Error("Lote origen no encontrado");
+  if (batch[0].medication_id !== data.medicationId || batch[0].warehouse_id !== data.fromWarehouseId) {
+    throw new Error("El lote seleccionado no corresponde al medicamento/depósito origen");
+  }
+  if (Number(batch[0].quantity) < data.quantity) {
+    throw new Error("El lote seleccionado no tiene stock suficiente");
+  }
+
+  const transferId = randomUUID();
+  const transferCode = `BO-${Date.now().toString(36).toUpperCase()}`;
+  const workspaceId = fromWh[0].workspace_id;
+
+  await db(
+    supabaseAdmin.from("transfer_requests").insert({
+      id: transferId,
+      workspace_id: workspaceId,
+      transfer_code: transferCode,
+      medication_id: data.medicationId,
+      source_batch_id: data.sourceBatchId,
+      from_warehouse_id: data.fromWarehouseId,
+      to_warehouse_id: data.toWarehouseId,
+      quantity: data.quantity,
+      status: "solicitado",
+      requested_by: "Asistente Medi",
+      date: new Date().toISOString(),
+    })
+  );
+
+  await db(
+    supabaseAdmin.from("movements").insert({
+      id: randomUUID(),
+      workspace_id: workspaceId,
+      medication_id: data.medicationId,
+      warehouse_id: data.fromWarehouseId,
+      type: "transferencia_salida",
+      quantity: data.quantity,
+      user_name: "Asistente Medi",
+      date: new Date().toISOString(),
+      notes: `Transferencia ${transferCode} → ${toWh[0].id}`,
+    })
+  );
+}

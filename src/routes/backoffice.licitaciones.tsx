@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/tabs";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { assistantTools, parseCreateLicitacionArgs, parseFindSimilarLicitacionesArgs } from "@/lib/assistant-tools";
+import { licitacionTools, parseCreateLicitacionArgs, parseFindSimilarLicitacionesArgs } from "@/lib/assistant-tools";
 import { useStore } from "@/lib/store";
 import DownloadLicitacionesPdf from "@/components/pdf-licitaciones-report";
 import DownloadTransferenciasPdf from "@/components/pdf-transferencias-report";
@@ -234,7 +234,7 @@ function LicitacionesPage() {
   const filteredLicitaciones = useMemo(() => {
     let list = licitaciones;
     if (selectedWs !== "__all__") {
-      list = list.filter((l) => l.workspace_ids.includes(selectedWs));
+      list = list.filter((l) => l.workspace_ids?.includes(selectedWs));
     }
     if (searchLic) {
       const q = searchLic.toLowerCase();
@@ -850,8 +850,8 @@ function LicitacionesTable({ items, onOpenDetail, onCambiarEstado, lowStock, ove
             <TableCell className="text-right">
               <div className="flex items-center justify-end gap-1">
                 <DownloadLicitacionesPdf
-                  lowStock={lowStock.filter((i) => lic.workspace_ids.includes(i.workspaceId))}
-                  overstock={overstock.filter((i) => lic.workspace_ids.includes(i.workspaceId))}
+                  lowStock={lowStock.filter((i) => lic.workspace_ids?.includes(i.workspaceId))}
+                  overstock={overstock.filter((i) => lic.workspace_ids?.includes(i.workspaceId))}
                   licitaciones={[lic]}
                   proveedores={proveedores}
                   medMap={medMap}
@@ -1340,27 +1340,18 @@ function LicitacionesAssistant({ lowStock, overstock, licitaciones, proveedores,
     setStoredMessages(textMessages);
   }, [messages, setStoredMessages]);
 
-  async function send() {
-    if (!input.trim()) return;
-    const userMsg = input.trim();
-    setInput("");
-    setMessages((prev) => [...prev, { role: "user", content: userMsg }]);
-    setLoading(true);
-
+  function buildSystemPrompt(): string {
     const lowStockSummary = lowStock.slice(0, 30).map((i) =>
       `- ${i.medicationName} (${i.workspaceName}): stock ${i.currentStock}, mínimo ${i.minStock}, déficit ${i.deficit}`
     ).join("\n");
-
     const overstockSummary = overstock.slice(0, 20).map((i) =>
       `- ${i.medicationName} (${i.workspaceName}): stock ${i.currentStock}, óptimo ${i.optimalStock}, excedente ${i.surplus}`
     ).join("\n");
-
     const activeLics = licitaciones.filter((l) => !["completado", "cancelado"].includes(l.estado));
     const activeLicSummary = activeLics.length > 0
       ? activeLics.map((l) => `- ${l.codigo}: ${l.titulo} (${l.estado})`).join("\n")
       : "Ninguna";
-
-    const systemPrompt = `Eres un asistente especializado en licitaciones de compra de medicamentos hospitalarios.
+    return `Eres un asistente especializado en licitaciones de compra de medicamentos hospitalarios.
 
 Contexto actual:
 - Medicamentos con bajo stock: ${lowStock.length} items
@@ -1378,71 +1369,127 @@ Reglas:
 4. Siempre confirmá con el usuario antes de crear.
 5. También podés sugerir transferencias de stock entre hospitales cuando veas sobrestock en uno y déficit de ese mismo medicamento en otro. Informá la sugerencia al usuario para que un administrador la apruebe, sin usar herramientas de transferencia.
 6. Respondé de forma clara y concisa.`;
+  }
+
+  async function callLlm(
+    history: { role: string; content: string }[],
+    systemPrompt: string,
+  ): Promise<{ content: string; tool_calls: { id: string; type: string; function: { name: string; arguments: string } }[] }> {
+    const rpc = await import("@/lib/server-rpc");
+    return rpc.aiChatRpc({
+      data: {
+        model: "deepseek-v4-flash-free",
+        messages: [
+          { role: "system", content: systemPrompt },
+          ...history.filter((m) => m.role !== "system"),
+        ],
+        tools: licitacionTools,
+      },
+    }) as Promise<{ content: string; tool_calls: { id: string; type: string; function: { name: string; arguments: string } }[] }>;
+  }
+
+  async function send() {
+    if (!input.trim()) return;
+    const userMsg = input.trim();
+    setInput("");
+    setMessages((prev) => [...prev, { role: "user", content: userMsg }]);
+    setLoading(true);
+
+    const systemPrompt = buildSystemPrompt();
 
     try {
-      const rpc = await import("@/lib/server-rpc");
-      const res = await rpc.aiChatRpc({
-        data: {
-          model: "deepseek-v4-flash-free",
-          messages: [
-            { role: "system", content: systemPrompt },
-            ...messages.filter((m) => m.role !== "system"),
-            { role: "user", content: userMsg },
-          ],
-          tools: assistantTools,
-        },
-      }) as { content: string; tool_calls: { id: string; type: string; function: { name: string; arguments: string } }[] };
-
-      if (res.tool_calls && res.tool_calls.length > 0) {
-        for (const tc of res.tool_calls) {
-          if (tc.function.name === "create_licitacion") {
-            const args = parseCreateLicitacionArgs(JSON.parse(tc.function.arguments));
-            if (!args) {
-              setMessages((prev) => [...prev, { role: "assistant", content: "❌ Parámetros inválidos para crear licitación." }]);
-              continue;
-            }
-            try {
-              const created = await onCreateLicitacion(args as any);
-              setMessages((prev) => [...prev, {
-                role: "assistant",
-                content: `✅ Licitación **${created.codigo}** creada exitosamente como borrador.\n\n${created.titulo}\n${created.descripcion}`,
-              }]);
-            } catch {
-              setMessages((prev) => [...prev, {
-                role: "assistant",
-                content: "❌ Ocurrió un error al crear la licitación. Intentalo de nuevo.",
-              }]);
-            }
-          } else if (tc.function.name === "find_similar_licitaciones") {
-            const args = parseFindSimilarLicitacionesArgs(JSON.parse(tc.function.arguments));
-            if (!args) {
-              setMessages((prev) => [...prev, { role: "assistant", content: "❌ Parámetros inválidos para buscar licitaciones similares." }]);
-              continue;
-            }
-            try {
-              const rpc = await import("@/lib/server-rpc");
-              const result = await rpc.licitacionesFindSimilarRpc({ data: { medicationIds: args.medicationIds } });
-              const sims = result as { licitacion: { codigo: string; titulo: string; estado: string }; matchCount: number }[];
-              if (sims.length > 0) {
-                const lines = sims.map((s) => `- **${s.licitacion.codigo}**: ${s.licitacion.titulo} (${s.licitacion.estado}, ${s.matchCount} medicamento(s) en común)`);
-                setMessages((prev) => [...prev, { role: "assistant", content: `🔍 Se encontraron licitaciones activas similares:\n${lines.join("\n")}\n\n¿Querés revisarlas antes de crear una nueva?` }]);
-              } else {
-                setMessages((prev) => [...prev, { role: "assistant", content: "✅ No se encontraron licitaciones activas que incluyan esos medicamentos. Podés proceder a crear una nueva." }]);
-              }
-            } catch {
-              setMessages((prev) => [...prev, { role: "assistant", content: "❌ Error al buscar licitaciones similares." }]);
-            }
-          }
-        }
-      } else if (res.content) {
-        setMessages((prev) => [...prev, { role: "assistant", content: res.content }]);
-      } else {
-        setMessages((prev) => [...prev, { role: "assistant", content: "No pude procesar la solicitud." }]);
-      }
-    } catch (e) {
-      setMessages((prev) => [...prev, { role: "assistant", content: "Error al conectar con el asistente." }]);
+      await processLlmCall(
+        [...messages, { role: "user", content: userMsg }],
+        systemPrompt,
+        0,
+      );
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function processLlmCall(
+    history: { role: string; content: string }[],
+    systemPrompt: string,
+    depth: number,
+  ) {
+    if (depth > 3) {
+      setMessages((prev) => [...prev, { role: "assistant", content: "No pude completar la operación. Intentá de nuevo." }]);
+      return;
+    }
+
+    const rpc = await import("@/lib/server-rpc");
+    let res: { content: string; tool_calls: { id: string; type: string; function: { name: string; arguments: string } }[] };
+
+    try {
+      res = await callLlm(history, systemPrompt);
+    } catch (e) {
+      setMessages((prev) => [...prev, { role: "assistant", content: "Error al conectar con el asistente." }]);
+      return;
+    }
+
+    if (res.tool_calls && res.tool_calls.length > 0) {
+      // Mostrar el texto del LLM antes de procesar herramientas
+      let updatedHistory = history;
+      if (res.content) {
+        setMessages((prev) => [...prev, { role: "assistant", content: res.content }]);
+        updatedHistory = [...updatedHistory, { role: "assistant", content: res.content }];
+      }
+
+      const toolResults: { role: string; content: string }[] = [];
+
+      for (const tc of res.tool_calls) {
+        if (tc.function.name === "create_licitacion") {
+          const args = parseCreateLicitacionArgs(JSON.parse(tc.function.arguments));
+          if (!args) {
+            setMessages((prev) => [...prev, { role: "assistant", content: "❌ Parámetros inválidos para crear licitación." }]);
+            continue;
+          }
+          try {
+            const created = await onCreateLicitacion(args as any);
+            const msg = `✅ Licitación **${created.codigo}** creada exitosamente como borrador.\n\n${created.titulo}\n${created.descripcion}`;
+            setMessages((prev) => [...prev, { role: "assistant", content: msg }]);
+            return;
+          } catch {
+            setMessages((prev) => [...prev, {
+              role: "assistant",
+              content: "❌ Ocurrió un error al crear la licitación. Intentalo de nuevo.",
+            }]);
+          }
+        } else if (tc.function.name === "find_similar_licitaciones") {
+          const args = parseFindSimilarLicitacionesArgs(JSON.parse(tc.function.arguments));
+          if (!args) {
+            toolResults.push({ role: "assistant", content: "❌ Parámetros inválidos para buscar licitaciones similares." });
+            continue;
+          }
+          try {
+            const rpc = await import("@/lib/server-rpc");
+            const result = await rpc.licitacionesFindSimilarRpc({ data: { medicationIds: args.medicationIds } });
+            const sims = result as { licitacion: { codigo: string; titulo: string; estado: string }; matchCount: number }[];
+            if (sims.length > 0) {
+              const lines = sims.map((s) => `- ${s.licitacion.codigo}: ${s.licitacion.titulo} (${s.licitacion.estado}, ${s.matchCount} medicamento(s) en común)`);
+              const msg = `🔍 Se encontraron licitaciones activas que incluyen esos medicamentos:\n${lines.join("\n")}\n\nRevisalas antes de crear una nueva.`;
+              setMessages((prev) => [...prev, { role: "assistant", content: msg }]);
+              return;
+            } else {
+              toolResults.push({ role: "assistant", content: "✅ No se encontraron licitaciones activas similares. Podés proceder a crear una nueva." });
+            }
+          } catch {
+            toolResults.push({ role: "assistant", content: "Error al buscar licitaciones similares." });
+          }
+        }
+      }
+
+      if (toolResults.length > 0) {
+        for (const r of toolResults) {
+          setMessages((prev) => [...prev, r]);
+        }
+        await processLlmCall([...updatedHistory, ...toolResults], systemPrompt, depth + 1);
+      }
+    } else if (res.content) {
+      setMessages((prev) => [...prev, { role: "assistant", content: res.content }]);
+    } else {
+      setMessages((prev) => [...prev, { role: "assistant", content: "No pude procesar la solicitud." }]);
     }
   }
 

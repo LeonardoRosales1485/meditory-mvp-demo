@@ -113,7 +113,7 @@ ${lines.join("\n")}
 
 **Resumen**: ${totalExcess} u. excedentes por un valor de $${totalValue.toLocaleString("es-AR")}.
 
-**Para ejecutar**: andá al módulo _Transferencias Internas_ (sidebar → Transferencias) y creá una transferencia desde un depósito del Alemán hacia uno de ${top3[0]?.deficitHospital ?? franciscoName}. Ingresá manualmente las cantidades indicadas arriba según cada medicamento. No se crearon registros automáticos.`;
+**Nota**: como Alemán y ${top3[0]?.deficitHospital ?? franciscoName} son hospitales distintos, no puedo crear las transferencias automáticamente. Un administrador debe ejecutarlas desde el módulo _Transferencias Internas_. Te paso los detalles exactos para que las gestiones.`;
   }
 
   if (text === PRESET_SAVING_TEXT) {
@@ -132,7 +132,7 @@ ${lines.join("\n")}
 **Ahorro acumulado**: $${totalSaving.toLocaleString("es-AR")}.
 **Ahorro total posible**: $${ld.totalSavingWithTransfers.toLocaleString("es-AR")}.
 
-Para ejecutarlas, andá al módulo _Transferencias Internas_ y creá cada transferencia indicando depósito origen (hospital con excedente) y depósito destino (hospital con déficit).`;
+**Nota**: como los hospitales son distintos, no puedo crear estas transferencias automáticamente. Un administrador debe ejecutarlas desde el módulo _Transferencias Internas_. Los detalles están arriba para que las gestiones.`;
   }
 
   if (text === PRESET_CRITICAL_TEXT) {
@@ -166,6 +166,10 @@ Para ejecutarlas, andá al módulo _Transferencias Internas_ y creá cada transf
     }
     if (lines.length === 0) {
       return "No se detectaron medicamentos por debajo del mínimo en ningún hospital.";
+    }
+    const isCrossHospital = transferSuggestions.some((s) => s.includes(alemanName));
+    if (isCrossHospital) {
+      lines.push("", "**Nota**: las transferencias sugeridas son entre hospitales distintos y no pueden ejecutarse automáticamente. Un administrador debe crearlas desde el módulo _Transferencias Internas_.");
     }
     return lines.join("\n");
   }
@@ -294,7 +298,7 @@ ${snapshotText}
 - Responder siempre en español, tono profesional pero amigable.
 - No inventar datos. Si no están en el snapshot, decirlo.
 - Para agregar stock: usar SIEMPRE la tool add_stock con los IDs reales del snapshot. Si el usuario menciona un medicamento por nombre, buscar su ID en la lista de medicamentos. Si hay múltiples hospitales, preguntar cuál corresponde y luego llamar la tool. No responder en texto sobre acciones que deberías ejecutar — ejecutalas con la tool.
-- Para transferencias: si ves sobrestock en un hospital y déficit del mismo medicamento en otro, podés planificar una transferencia. Usá la tool create_transfer SOLO cuando el usuario autorice explícitamente, con los IDs reales del snapshot (medicationId, sourceBatchId, fromWarehouseId, toWarehouseId, quantity).`;
+- Para transferencias de stock: si ves sobrestock en un depósito y déficit en otro, podés crear la transferencia usando la tool create_transfer cuando el usuario lo solicite, con los IDs reales del snapshot (medicationId, sourceBatchId, fromWarehouseId, toWarehouseId, quantity). Funciona tanto para transferencias dentro del mismo hospital como entre hospitales distintos.`;
 }
 
 function PendingConfirmBubble({
@@ -567,13 +571,14 @@ async function executeConfirmedAction(
       }
       case "create_transfer": {
         const args = data as CreateTransferToolArgs;
-        const store = await import("@/lib/store");
-        await store.useStore.getState().createTransfer({
-          medicationId: args.medicationId,
-          sourceBatchId: args.sourceBatchId,
-          fromWarehouseId: args.fromWarehouseId,
-          toWarehouseId: args.toWarehouseId,
-          quantity: args.quantity,
+        await rpc.backofficeCreateTransferRpc({
+          data: {
+            medicationId: args.medicationId,
+            sourceBatchId: args.sourceBatchId,
+            fromWarehouseId: args.fromWarehouseId,
+            toWarehouseId: args.toWarehouseId,
+            quantity: args.quantity,
+          },
         });
         addMsg({ role: "action_result", success: true, message: `Transferencia creada: ${args.quantity} u. de ${args.medicationId.slice(0,8)} → destino.` });
         rpc.backofficeGetAssistantFullSnapshotRpc().then(setFullSnapshot).catch(console.error);
@@ -648,27 +653,49 @@ export function DemoAssistantChat({ variant = "floating", ...props }: DemoAssist
       return;
     }
 
-    // Fallback a Groq/ Zen
+    // Fallback a LLM
     setStreaming(true);
     setStreamingText("");
-    abortRef.current = new AbortController();
 
     try {
-      const chatMessages = [
-        { role: "system" as const, content: buildSystemPrompt(fullSnapshot, ctx) },
-        ...updatedMessages.slice(-8).flatMap((m): { role: "user" | "assistant"; content: string }[] =>
-          m.role === "chart" || m.role === "pending_confirm" || m.role === "action_result"
-            ? []
-            : [{ role: m.role as "user" | "assistant", content: m.content }],
-        ),
-      ];
+      await streamWithLoop(updatedMessages, 0);
+    } catch {
+      setMessages([...updatedMessages, { role: "assistant", content: "No pude conectarme ahora. ¡Intentá de nuevo!" }]);
+    } finally {
+      setStreaming(false);
+      setStreamingText("");
+    }
+  }, [messages, streaming, ctx, fullSnapshot]);
 
-      const aiProvider = useStore.getState().aiProvider;
-      const model = "deepseek-v4-flash-free";
+  async function streamWithLoop(
+    history: Message[],
+    depth: number,
+  ) {
+    if (depth > 3) {
+      if (!history.some((m) => m.role === "assistant" && m.content.startsWith("No pude completar"))) {
+        setMessages([...history, { role: "assistant", content: "No pude completar la operación." }]);
+      }
+      return;
+    }
 
-      console.debug("[chat] prompt chars:", chatMessages.reduce((s, m) => s + m.content.length, 0));
-      let fullText = "";
-      const collectedToolCalls: OllamaToolCall[] = [];
+    const chatMessages = [
+      { role: "system" as const, content: buildSystemPrompt(fullSnapshot, ctx) },
+      ...history.slice(-8).flatMap((m): { role: "user" | "assistant"; content: string }[] =>
+        m.role === "chart" || m.role === "pending_confirm" || m.role === "action_result"
+          ? []
+          : [{ role: m.role as "user" | "assistant", content: m.content }],
+      ),
+    ];
+
+    abortRef.current = new AbortController();
+    const aiProvider = useStore.getState().aiProvider;
+    const model = "deepseek-v4-flash-free";
+
+    console.debug("[chat] prompt chars:", chatMessages.reduce((s, m) => s + m.content.length, 0));
+    let fullText = "";
+    const collectedToolCalls: OllamaToolCall[] = [];
+
+    try {
       for await (const event of streamAiChat({
         model,
         messages: chatMessages,
@@ -701,199 +728,257 @@ export function DemoAssistantChat({ variant = "floating", ...props }: DemoAssist
           break;
         }
       }
+    } catch {
+      setMessages([...history, { role: "assistant", content: "No pude conectarme ahora. ¡Intentá de nuevo!" }]);
+      return;
+    }
 
-      const nextMessages: Message[] = [...updatedMessages];
-      for (const tc of collectedToolCalls) {
-        const name = tc.function?.name ?? "";
-        const parsedArgs = parseOllamaToolArguments(tc);
-        if (name === "render_chart") {
-          const args = parseRenderChartArgs(parsedArgs);
-          if (args) {
-            nextMessages.push({ role: "chart", spec: args });
-          }
-        } else if (name === "add_stock") {
-          const args = parseAddStockArgs(parsedArgs);
-          if (!args) {
-            nextMessages.push({ role: "action_result", success: false, message: "Parámetros inválidos para agregar stock." });
-          } else {
-            const med = fullSnapshot?.medications.find((m) => m.id === args.medicationId);
-            const wh = fullSnapshot?.warehouses.find((w) => w.id === args.warehouseId);
-            const label = `Agregar ${args.quantity} u. de "${med?.name ?? args.medicationId}" al depósito "${wh?.name ?? args.warehouseId}" (${wh?.workspaceName ?? ""})${args.registerAsPurchase ? " — registrar como compra" : ""}`;
-            nextMessages.push({ role: "pending_confirm", label, toolName: "add_stock", data: args });
-          }
-        } else if (name === "list_users") {
-          const args = parseListUsersArgs(parsedArgs);
-          const users = fullSnapshot?.users ?? [];
-          const filtered = args.workspaceId
-            ? users.filter((u) => u.workspaceId === args.workspaceId)
-            : users;
-          const text = filtered.length === 0
-            ? "No se encontraron usuarios."
-            : filtered.map((u) => `• **${u.name}** — ${u.email} | rol: ${u.role} | ${u.workspaceName}`).join("\n");
-          nextMessages.push({ role: "assistant", content: text });
-        } else if (name === "create_user") {
-          const args = parseCreateUserArgs(parsedArgs);
-          if (!args) {
-            nextMessages.push({ role: "action_result", success: false, message: "Parámetros inválidos para crear usuario." });
-          } else {
-            const ws = fullSnapshot?.workspaces.find((w) => w.id === args.workspaceId);
-            const label = `Crear usuario "${args.name}" <${args.email}> con rol "${args.role}" en ${ws?.name ?? args.workspaceId}`;
-            nextMessages.push({ role: "pending_confirm", label, toolName: "create_user", data: args });
-          }
-        } else if (name === "delete_user") {
-          const args = parseDeleteUserArgs(parsedArgs);
-          if (!args) {
-            nextMessages.push({ role: "action_result", success: false, message: "ID de usuario inválido." });
-          } else {
-            const user = fullSnapshot?.users.find((u) => u.id === args.userId);
-            const label = `Eliminar usuario "${user?.name ?? args.userId}" <${user?.email ?? ""}> de ${user?.workspaceName ?? ""}`;
-            nextMessages.push({ role: "pending_confirm", label, toolName: "delete_user", data: args });
-          }
-        } else if (name === "create_sale") {
-          const args = parseCreateSaleArgs(parsedArgs);
-          if (!args) {
-            nextMessages.push({ role: "action_result", success: false, message: "Parámetros inválidos para venta." });
-          } else {
-            const label = `Vender ${args.quantity} u. a $${args.price}/u. (total: $${(args.price * args.quantity).toLocaleString("es-AR")})`;
-            nextMessages.push({ role: "pending_confirm", label, toolName: "create_sale", data: args });
-          }
-        } else if (name === "create_dispensation") {
-          const args = parseCreateDispensationArgs(parsedArgs);
-          if (!args) {
-            nextMessages.push({ role: "action_result", success: false, message: "Parámetros inválidos para dispensación." });
-          } else {
-            const label = `Dispensar ${args.quantity} u. de medicación a ${args.patient} (Dr. ${args.doctor})`;
-            nextMessages.push({ role: "pending_confirm", label, toolName: "create_dispensation", data: args });
-          }
-        } else if (name === "create_order") {
-          const args = parseCreateOrderArgs(parsedArgs);
-          if (!args) {
-            nextMessages.push({ role: "action_result", success: false, message: "Parámetros inválidos para pedido." });
-          } else {
-            const label = `Crear pedido de ${args.quantity} u. para ${args.patient} (${args.room})`;
-            nextMessages.push({ role: "pending_confirm", label, toolName: "create_order", data: args });
-          }
-        } else if (name === "process_order") {
-          const args = parseProcessOrderArgs(parsedArgs);
-          if (!args) {
-            nextMessages.push({ role: "action_result", success: false, message: "Parámetros inválidos para procesar pedido." });
-          } else {
-            const actionLabel: Record<string, string> = { aprobar: "Aprobar", despachar: "Despachar", confirmar_recepcion: "Confirmar recepción", administrar: "Administrar", rechazar: "Rechazar" };
-            const label = `${actionLabel[args.action] ?? args.action} pedido ${args.orderId}`;
-            nextMessages.push({ role: "pending_confirm", label, toolName: "process_order", data: args });
-          }
-        } else if (name === "advance_transfer") {
-          const args = parseAdvanceTransferArgs(parsedArgs);
-          if (!args) {
-            nextMessages.push({ role: "action_result", success: false, message: "ID de transferencia inválido." });
-          } else {
-            const label = `Avanzar transferencia ${args.transferId}`;
-            nextMessages.push({ role: "pending_confirm", label, toolName: "advance_transfer", data: args });
-          }
-        } else if (name === "reject_transfer") {
-          const args = parseRejectTransferArgs(parsedArgs);
-          if (!args) {
-            nextMessages.push({ role: "action_result", success: false, message: "Parámetros inválidos para rechazar transferencia." });
-          } else {
-            const label = `Rechazar transferencia ${args.transferId}: ${args.reason}`;
-            nextMessages.push({ role: "pending_confirm", label, toolName: "reject_transfer", data: args });
-          }
-        } else if (name === "manage_medication") {
-          const args = parseManageMedicationArgs(parsedArgs);
-          if (!args) {
-            nextMessages.push({ role: "action_result", success: false, message: "Parámetros inválidos para medicamento." });
-          } else {
-            const label = args.medicationId ? `Actualizar medicamento "${args.name}"` : `Crear medicamento "${args.name}"`;
-            nextMessages.push({ role: "pending_confirm", label, toolName: "manage_medication", data: args });
-          }
-        } else if (name === "manage_warehouse") {
-          const args = parseManageWarehouseArgs(parsedArgs);
-          if (!args) {
-            nextMessages.push({ role: "action_result", success: false, message: "Parámetros inválidos para depósito." });
-          } else {
-            const label = args.warehouseId ? `Actualizar depósito "${args.name}"` : `Crear depósito "${args.name}" [${args.type}]`;
-            nextMessages.push({ role: "pending_confirm", label, toolName: "manage_warehouse", data: args });
-          }
-        } else if (name === "manage_patient") {
-          const args = parseManagePatientArgs(parsedArgs);
-          if (!args) {
-            nextMessages.push({ role: "action_result", success: false, message: "Parámetros inválidos para paciente." });
-          } else {
-            const label = args.patientId ? `Actualizar paciente ${args.firstName} ${args.lastName}` : `Internar paciente ${args.firstName} ${args.lastName}`;
-            nextMessages.push({ role: "pending_confirm", label, toolName: "manage_patient", data: args });
-          }
-        } else if (name === "update_stock_config") {
-          const args = parseUpdateStockConfigArgs(parsedArgs);
-          if (!args) {
-            nextMessages.push({ role: "action_result", success: false, message: "Parámetros inválidos para configurar stock." });
-          } else {
-            const label = `Configurar stock: mínimo ${args.minStock}, óptimo ${args.optimalStock}`;
-            nextMessages.push({ role: "pending_confirm", label, toolName: "update_stock_config", data: args });
-          }
-        } else if (name === "generate_report") {
-          const args = parseGenerateReportArgs(parsedArgs);
-          if (!args) {
-            nextMessages.push({ role: "action_result", success: false, message: "Tipo de reporte inválido." });
-          } else {
-            const label = `Generar reporte: ${args.reportType}${args.title ? ` — ${args.title}` : ""}`;
-            nextMessages.push({ role: "pending_confirm", label, toolName: "generate_report", data: args });
-          }
-        } else if (name === "create_licitacion") {
-          const args = parseCreateLicitacionArgs(parsedArgs);
-          if (!args) {
-            nextMessages.push({ role: "action_result", success: false, message: "Parámetros inválidos para crear licitación." });
-          } else {
-            const label = `Crear licitación ${args.codigo}: ${args.titulo} (${args.items.length} items)`;
-            nextMessages.push({ role: "pending_confirm", label, toolName: "create_licitacion", data: args });
-          }
-        } else if (name === "create_transfer") {
-          const args = parseCreateTransferArgs(parsedArgs);
-          if (!args) {
-            nextMessages.push({ role: "action_result", success: false, message: "Parámetros inválidos para crear transferencia." });
-          } else {
-            const label = `Transferir ${args.quantity} u. de ${args.medicationId.slice(0, 8)}: ${args.fromWarehouseId.slice(0, 8)} → ${args.toWarehouseId.slice(0, 8)}`;
-            nextMessages.push({ role: "pending_confirm", label, toolName: "create_transfer", data: args });
-          }
-        } else if (name === "find_similar_licitaciones") {
-          const args = parseFindSimilarLicitacionesArgs(parsedArgs);
-          if (args) {
-            try {
-              const rpc = await import("@/lib/server-rpc");
-              const result = await rpc.licitacionesFindSimilarRpc({ data: { medicationIds: args.medicationIds } });
-              const sims = result as { licitacion: { codigo: string; titulo: string; estado: string }; matchCount: number; matchedMedicationIds: string[] }[];
-              if (sims.length > 0) {
-                const lines = sims.map((s) => `- **${s.licitacion.codigo}**: ${s.licitacion.titulo} (${s.licitacion.estado}, ${s.matchCount} medicamento(s) en común)`);
-                nextMessages.push({ role: "action_result", success: true, message: `Se encontraron licitaciones similares:\n${lines.join("\n")}` });
-              } else {
-                nextMessages.push({ role: "action_result", success: true, message: "No se encontraron licitaciones activas similares." });
-              }
-            } catch {
-              nextMessages.push({ role: "action_result", success: false, message: "Error al buscar licitaciones similares." });
+    const nextMessages: Message[] = [...history];
+    const inlineResults: { role: "assistant" | "action_result"; content: string; success?: boolean }[] = [];
+    let hasInlineTool = false;
+    let showMatchesAndStop = false;
+
+    for (const tc of collectedToolCalls) {
+      const name = tc.function?.name ?? "";
+      const parsedArgs = parseOllamaToolArguments(tc);
+      if (name === "render_chart") {
+        const args = parseRenderChartArgs(parsedArgs);
+        if (args) {
+          nextMessages.push({ role: "chart", spec: args });
+        }
+        hasInlineTool = true;
+      } else if (name === "add_stock") {
+        const args = parseAddStockArgs(parsedArgs);
+        if (!args) {
+          inlineResults.push({ role: "action_result", success: false, content: "Parámetros inválidos para agregar stock." });
+        } else {
+          const med = fullSnapshot?.medications.find((m) => m.id === args.medicationId);
+          const wh = fullSnapshot?.warehouses.find((w) => w.id === args.warehouseId);
+          const label = `Agregar ${args.quantity} u. de "${med?.name ?? args.medicationId}" al depósito "${wh?.name ?? args.warehouseId}" (${wh?.workspaceName ?? ""})${args.registerAsPurchase ? " — registrar como compra" : ""}`;
+          nextMessages.push({ role: "pending_confirm", label, toolName: "add_stock", data: args });
+        }
+      } else if (name === "list_users") {
+        const args = parseListUsersArgs(parsedArgs);
+        const users = fullSnapshot?.users ?? [];
+        const filtered = args.workspaceId
+          ? users.filter((u) => u.workspaceId === args.workspaceId)
+          : users;
+        const text = filtered.length === 0
+          ? "No se encontraron usuarios."
+          : filtered.map((u) => `• **${u.name}** — ${u.email} | rol: ${u.role} | ${u.workspaceName}`).join("\n");
+        inlineResults.push({ role: "assistant", content: text });
+        hasInlineTool = true;
+      } else if (name === "create_user") {
+        const args = parseCreateUserArgs(parsedArgs);
+        if (!args) {
+          inlineResults.push({ role: "action_result", success: false, content: "Parámetros inválidos para crear usuario." });
+        } else {
+          const ws = fullSnapshot?.workspaces.find((w) => w.id === args.workspaceId);
+          const label = `Crear usuario "${args.name}" <${args.email}> con rol "${args.role}" en ${ws?.name ?? args.workspaceId}`;
+          nextMessages.push({ role: "pending_confirm", label, toolName: "create_user", data: args });
+        }
+      } else if (name === "delete_user") {
+        const args = parseDeleteUserArgs(parsedArgs);
+        if (!args) {
+          inlineResults.push({ role: "action_result", success: false, content: "ID de usuario inválido." });
+        } else {
+          const user = fullSnapshot?.users.find((u) => u.id === args.userId);
+          const label = `Eliminar usuario "${user?.name ?? args.userId}" <${user?.email ?? ""}> de ${user?.workspaceName ?? ""}`;
+          nextMessages.push({ role: "pending_confirm", label, toolName: "delete_user", data: args });
+        }
+      } else if (name === "create_sale") {
+        const args = parseCreateSaleArgs(parsedArgs);
+        if (!args) {
+          inlineResults.push({ role: "action_result", success: false, content: "Parámetros inválidos para venta." });
+        } else {
+          const label = `Vender ${args.quantity} u. a $${args.price}/u. (total: $${(args.price * args.quantity).toLocaleString("es-AR")})`;
+          nextMessages.push({ role: "pending_confirm", label, toolName: "create_sale", data: args });
+        }
+      } else if (name === "create_dispensation") {
+        const args = parseCreateDispensationArgs(parsedArgs);
+        if (!args) {
+          inlineResults.push({ role: "action_result", success: false, content: "Parámetros inválidos para dispensación." });
+        } else {
+          const label = `Dispensar ${args.quantity} u. de medicación a ${args.patient} (Dr. ${args.doctor})`;
+          nextMessages.push({ role: "pending_confirm", label, toolName: "create_dispensation", data: args });
+        }
+      } else if (name === "create_order") {
+        const args = parseCreateOrderArgs(parsedArgs);
+        if (!args) {
+          inlineResults.push({ role: "action_result", success: false, content: "Parámetros inválidos para pedido." });
+        } else {
+          const label = `Crear pedido de ${args.quantity} u. para ${args.patient} (${args.room})`;
+          nextMessages.push({ role: "pending_confirm", label, toolName: "create_order", data: args });
+        }
+      } else if (name === "process_order") {
+        const args = parseProcessOrderArgs(parsedArgs);
+        if (!args) {
+          inlineResults.push({ role: "action_result", success: false, content: "Parámetros inválidos para procesar pedido." });
+        } else {
+          const actionLabel: Record<string, string> = { aprobar: "Aprobar", despachar: "Despachar", confirmar_recepcion: "Confirmar recepción", administrar: "Administrar", rechazar: "Rechazar" };
+          const label = `${actionLabel[args.action] ?? args.action} pedido ${args.orderId}`;
+          nextMessages.push({ role: "pending_confirm", label, toolName: "process_order", data: args });
+        }
+      } else if (name === "advance_transfer") {
+        const args = parseAdvanceTransferArgs(parsedArgs);
+        if (!args) {
+          inlineResults.push({ role: "action_result", success: false, content: "ID de transferencia inválido." });
+        } else {
+          const label = `Avanzar transferencia ${args.transferId}`;
+          nextMessages.push({ role: "pending_confirm", label, toolName: "advance_transfer", data: args });
+        }
+      } else if (name === "reject_transfer") {
+        const args = parseRejectTransferArgs(parsedArgs);
+        if (!args) {
+          inlineResults.push({ role: "action_result", success: false, content: "Parámetros inválidos para rechazar transferencia." });
+        } else {
+          const label = `Rechazar transferencia ${args.transferId}: ${args.reason}`;
+          nextMessages.push({ role: "pending_confirm", label, toolName: "reject_transfer", data: args });
+        }
+      } else if (name === "manage_medication") {
+        const args = parseManageMedicationArgs(parsedArgs);
+        if (!args) {
+          inlineResults.push({ role: "action_result", success: false, content: "Parámetros inválidos para medicamento." });
+        } else {
+          const label = args.medicationId ? `Actualizar medicamento "${args.name}"` : `Crear medicamento "${args.name}"`;
+          nextMessages.push({ role: "pending_confirm", label, toolName: "manage_medication", data: args });
+        }
+      } else if (name === "manage_warehouse") {
+        const args = parseManageWarehouseArgs(parsedArgs);
+        if (!args) {
+          inlineResults.push({ role: "action_result", success: false, content: "Parámetros inválidos para depósito." });
+        } else {
+          const label = args.warehouseId ? `Actualizar depósito "${args.name}"` : `Crear depósito "${args.name}" [${args.type}]`;
+          nextMessages.push({ role: "pending_confirm", label, toolName: "manage_warehouse", data: args });
+        }
+      } else if (name === "manage_patient") {
+        const args = parseManagePatientArgs(parsedArgs);
+        if (!args) {
+          inlineResults.push({ role: "action_result", success: false, content: "Parámetros inválidos para paciente." });
+        } else {
+          const label = args.patientId ? `Actualizar paciente ${args.firstName} ${args.lastName}` : `Internar paciente ${args.firstName} ${args.lastName}`;
+          nextMessages.push({ role: "pending_confirm", label, toolName: "manage_patient", data: args });
+        }
+      } else if (name === "update_stock_config") {
+        const args = parseUpdateStockConfigArgs(parsedArgs);
+        if (!args) {
+          inlineResults.push({ role: "action_result", success: false, content: "Parámetros inválidos para configurar stock." });
+        } else {
+          const label = `Configurar stock: mínimo ${args.minStock}, óptimo ${args.optimalStock}`;
+          nextMessages.push({ role: "pending_confirm", label, toolName: "update_stock_config", data: args });
+        }
+      } else if (name === "generate_report") {
+        const args = parseGenerateReportArgs(parsedArgs);
+        if (!args) {
+          inlineResults.push({ role: "action_result", success: false, content: "Tipo de reporte inválido." });
+        } else {
+          const label = `Generar reporte: ${args.reportType}${args.title ? ` — ${args.title}` : ""}`;
+          nextMessages.push({ role: "pending_confirm", label, toolName: "generate_report", data: args });
+        }
+      } else if (name === "create_licitacion") {
+        const args = parseCreateLicitacionArgs(parsedArgs);
+        if (!args) {
+          inlineResults.push({ role: "action_result", success: false, content: "Parámetros inválidos para crear licitación." });
+        } else {
+          const label = `Crear licitación ${args.codigo}: ${args.titulo} (${args.items.length} items)`;
+          nextMessages.push({ role: "pending_confirm", label, toolName: "create_licitacion", data: args });
+        }
+      } else if (name === "create_transfer") {
+        const args = parseCreateTransferArgs(parsedArgs);
+        if (!args) {
+          inlineResults.push({ role: "action_result", success: false, content: "Parámetros inválidos para crear transferencia." });
+        } else {
+          const label = `Transferir ${args.quantity} u. de ${args.medicationId.slice(0, 8)}: ${args.fromWarehouseId.slice(0, 8)} → ${args.toWarehouseId.slice(0, 8)}`;
+          nextMessages.push({ role: "pending_confirm", label, toolName: "create_transfer", data: args });
+        }
+      } else if (name === "find_similar_licitaciones") {
+        const args = parseFindSimilarLicitacionesArgs(parsedArgs);
+        if (args) {
+          try {
+            const rpc = await import("@/lib/server-rpc");
+            const result = await rpc.licitacionesFindSimilarRpc({ data: { medicationIds: args.medicationIds } });
+            const sims = result as { licitacion: { codigo: string; titulo: string; estado: string }; matchCount: number; matchedMedicationIds: string[] }[];
+            if (sims.length > 0) {
+              const lines = sims.map((s) => `- ${s.licitacion.codigo}: ${s.licitacion.titulo} (${s.licitacion.estado}, ${s.matchCount} medicamento(s) en común)`);
+              nextMessages.push({ role: "action_result", success: true, message: `🔍 Se encontraron licitaciones activas que incluyen esos medicamentos:\n${lines.join("\n")}\n\nRevisalas antes de crear una nueva.` });
+              showMatchesAndStop = true;
+            } else {
+              inlineResults.push({ role: "action_result", success: true, content: "✅ No se encontraron licitaciones activas similares. Podés proceder a crear una nueva." });
+              hasInlineTool = true;
             }
-          } else {
-            nextMessages.push({ role: "action_result", success: false, message: "Parámetros inválidos." });
+          } catch {
+            inlineResults.push({ role: "action_result", success: false, content: "Error al buscar licitaciones similares." });
+            hasInlineTool = true;
           }
+        } else {
+          inlineResults.push({ role: "action_result", success: false, content: "Parámetros inválidos." });
+          hasInlineTool = true;
         }
       }
+    }
 
-      console.debug("[chat] post-loop: fullText len:", fullText.length, "toolCalls:", collectedToolCalls.length);
+    // Si hay tool calls que requieren confirmación (pending_confirm), agregamos el texto original del LLM
+    // Si hay inline tools, alimentamos el resultado al LLM para una segunda vuelta
+    // Si no hay tool calls, mostramos el texto del LLM
 
+    if (showMatchesAndStop) {
+      setMessages(nextMessages);
+      return;
+    }
+
+    const hasPendingConfirm = collectedToolCalls.some((tc) => {
+      const name = tc.function?.name ?? "";
+      return !["render_chart", "list_users", "find_similar_licitaciones"].includes(name);
+    });
+
+    if (hasInlineTool && !hasPendingConfirm) {
+      // Solo inline tools: mostrar el texto del LLM antes del resultado
       if (fullText.trim()) {
         nextMessages.push({ role: "assistant", content: fullText });
-      } else if (collectedToolCalls.length > 0) {
-        nextMessages.push({ role: "assistant", content: "Acción ejecutada." });
-      } else {
-        nextMessages.push({ role: "assistant", content: "No obtuve respuesta del asistente. Probá de nuevo o reformulá la consulta." });
       }
-
+      for (const r of inlineResults) {
+        if (r.role === "action_result") {
+          nextMessages.push({ role: "action_result", success: r.success ?? false, message: r.content });
+        } else {
+          nextMessages.push({ role: "assistant", content: r.content });
+        }
+      }
       setMessages(nextMessages);
-    } catch {
-      setMessages([...updatedMessages, { role: "assistant", content: "No pude conectarme ahora. ¡Intentá de nuevo!" }]);
-    } finally {
-      setStreaming(false);
-      setStreamingText("");
+      await streamWithLoop(nextMessages, depth + 1);
+    } else if (hasPendingConfirm) {
+      // Pending confirm: show LLM text + confirm buttons
+      if (fullText.trim()) {
+        nextMessages.push({ role: "assistant", content: fullText });
+      }
+      for (const r of inlineResults) {
+        if (r.role === "action_result") {
+          nextMessages.push({ role: "action_result", success: r.success ?? false, message: r.content });
+        } else {
+          nextMessages.push({ role: "assistant", content: r.content });
+        }
+      }
+      setMessages(nextMessages);
+    } else if (collectedToolCalls.length > 0) {
+      // Solo render_chart: show LLM text + chart
+      if (fullText.trim()) {
+        nextMessages.push({ role: "assistant", content: fullText });
+      }
+      for (const r of inlineResults) {
+        if (r.role === "action_result") {
+          nextMessages.push({ role: "action_result", success: r.success ?? false, message: r.content });
+        } else {
+          nextMessages.push({ role: "assistant", content: r.content });
+        }
+      }
+      setMessages(nextMessages);
+    } else if (fullText.trim()) {
+      nextMessages.push({ role: "assistant", content: fullText });
+      setMessages(nextMessages);
+    } else {
+      nextMessages.push({ role: "assistant", content: "No obtuve respuesta del asistente. Probá de nuevo o reformulá la consulta." });
+      setMessages(nextMessages);
     }
-  }, [messages, streaming, ctx, fullSnapshot]);
+  }
 
   // Ref for preset event (avoids stale closure)
   const sendMessageRef = useRef<(text: string) => void>(sendMessage);

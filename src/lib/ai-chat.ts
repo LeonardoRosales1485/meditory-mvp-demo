@@ -46,7 +46,8 @@ export async function* streamAiChat(input: {
 
     yield { type: "done", content: result.content ?? "", tool_calls: toolCalls };
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    yield { type: "error", message: msg };
+    const raw = String(e);
+    console.warn("[streamAiChat] caught:", raw, e instanceof Error ? e.stack : "");
+    yield { type: "error", message: raw };
   }
 }

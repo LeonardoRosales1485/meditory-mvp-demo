@@ -36,6 +36,7 @@ import {
   createProveedor,
   updateProveedor,
   deleteProveedor,
+  createBackofficeTransfer,
   getLicitaciones,
   getLicitacion,
   getLicitacionItems,
@@ -173,69 +174,79 @@ export const aiChatRpc = createServerFn({ method: "POST" })
     provider?: string;
   }) => data)
   .handler(async ({ data }) => {
-    const provider = data.provider ?? process.env.LLM_PROVIDER ?? "zen";
+    try {
+      const provider = data.provider ?? "zen";
 
-    const configs: Record<string, { baseUrl: string; apiKey: string | undefined }> = {
-      zen: {
-        baseUrl: "https://opencode.ai/zen/v1",
-        apiKey: process.env.ZEN_API_KEY,
-      },
-    };
+      const configs: Record<string, { baseUrl: string; apiKey: string | undefined }> = {
+        zen: {
+          baseUrl: "https://opencode.ai/zen/v1",
+          apiKey: process.env.ZEN_API_KEY,
+        },
+      };
 
-    const cfg = configs[provider];
-    if (!cfg) throw new Error(`Unknown AI provider: ${provider}`);
+      const cfg = configs[provider];
+      if (!cfg) throw new Error(`Unknown AI provider: ${provider}`);
 
-    const baseUrl = cfg.baseUrl;
-    const apiKey = cfg.apiKey;
-    console.debug("[aiChatRpc] provider:", provider, "model:", data.model, "hasApiKey:", !!apiKey, "toolsCount:", data.tools?.length ?? 0);
+      const baseUrl = cfg.baseUrl;
+      const apiKey = cfg.apiKey;
+      console.debug("[aiChatRpc] provider:", provider, "model:", data.model, "hasApiKey:", !!apiKey, "toolsCount:", data.tools?.length ?? 0);
 
-    if (!apiKey) {
-      throw new Error(`${provider.toUpperCase()}_API_KEY no está configurada en el servidor`);
+      if (!apiKey) {
+        throw new Error(`${provider.toUpperCase()}_API_KEY no está configurada en el servidor`);
+      }
+
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      headers["Authorization"] = `Bearer ${apiKey}`;
+
+      const bodyPayload = {
+        model: data.model,
+        messages: data.messages,
+        ...(data.tools?.length ? { tools: data.tools } : {}),
+        max_tokens: 1024,
+        stream: false,
+      };
+      console.debug("[aiChatRpc] request body keys:", Object.keys(bodyPayload).join(", "));
+
+      const res = await fetch(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(bodyPayload),
+      });
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        console.error("[aiChatRpc] HTTP error:", res.status, text.slice(0, 500));
+        throw new Error(`LLM API error ${res.status}: ${text.slice(0, 500)}`);
+      }
+
+      const json = await res.json() as {
+        choices?: { message?: { content?: string; tool_calls?: unknown[] } }[];
+        error?: { message?: string };
+      };
+      console.debug("[aiChatRpc] raw response:", JSON.stringify(json).slice(0, 2000));
+
+      const choice = json.choices?.[0];
+      const content = choice?.message?.content ?? "";
+      const rawToolCalls = choice?.message?.tool_calls ?? [];
+
+      const tool_calls = rawToolCalls.map((tc: any) => ({
+        id: String(tc?.id ?? ""),
+        type: String(tc?.type ?? ""),
+        function: {
+          name: String(tc?.function?.name ?? ""),
+          arguments: String(tc?.function?.arguments ?? ""),
+        },
+      }));
+
+      if (!content && tool_calls.length === 0) {
+        console.warn("[aiChatRpc] empty response — choices:", JSON.stringify(json.choices));
+      }
+
+      return { content, tool_calls };
+    } catch (e) {
+      console.error("[aiChatRpc] handler error:", e);
+      throw e;
     }
-
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    headers["Authorization"] = `Bearer ${apiKey}`;
-
-    const bodyPayload = {
-      model: data.model,
-      messages: data.messages,
-      ...(data.tools?.length ? { tools: data.tools } : {}),
-      max_tokens: 1024,
-      stream: false,
-    };
-    console.debug("[aiChatRpc] request body keys:", Object.keys(bodyPayload).join(", "));
-
-    const res = await fetch(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(bodyPayload),
-    });
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      console.error("[aiChatRpc] HTTP error:", res.status, text.slice(0, 500));
-      throw new Error(`LLM API error ${res.status}: ${text.slice(0, 500)}`);
-    }
-
-    const json = await res.json() as {
-      choices?: { message?: { content?: string; tool_calls?: unknown[] } }[];
-      error?: { message?: string };
-    };
-    console.debug("[aiChatRpc] raw response:", JSON.stringify(json).slice(0, 2000));
-
-    if (json.error) {
-      console.error("[aiChatRpc] API error in body:", json.error.message);
-    }
-
-    const choice = json.choices?.[0];
-    const content = choice?.message?.content ?? "";
-    const tool_calls = choice?.message?.tool_calls ?? [];
-
-    if (!content && (!tool_calls || tool_calls.length === 0)) {
-      console.warn("[aiChatRpc] empty response — choices:", JSON.stringify(json.choices));
-    }
-
-    return { content, tool_calls };
   });
 
 // ─────────────────────────────────────────────────────────────
@@ -310,6 +321,18 @@ export const backofficeAddStockWithPurchaseRpc = createServerFn({ method: "POST"
   }) => data)
   .handler(async ({ data }) => {
     return addStockWithPurchase(data);
+  });
+
+export const backofficeCreateTransferRpc = createServerFn({ method: "POST" })
+  .inputValidator((data: {
+    medicationId: string;
+    sourceBatchId: string;
+    fromWarehouseId: string;
+    toWarehouseId: string;
+    quantity: number;
+  }) => data)
+  .handler(async ({ data }) => {
+    return createBackofficeTransfer(data);
   });
 
 export const backofficeGetAssistantFullSnapshotRpc = createServerFn({ method: "GET" })

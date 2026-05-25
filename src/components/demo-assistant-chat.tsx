@@ -939,7 +939,12 @@ export function DemoAssistantChat({ variant = "floating", ...props }: DemoAssist
       return !["render_chart", "list_users", "find_similar_licitaciones", "navigate"].includes(name);
     });
 
-    if (hasInlineTool && !hasPendingConfirm) {
+    const hasNonChartInlineTool = collectedToolCalls.some((tc) => {
+      const name = tc.function?.name ?? "";
+      return name === "list_users" || name === "find_similar_licitaciones";
+    });
+
+    if (hasInlineTool && !hasPendingConfirm && hasNonChartInlineTool) {
       // Solo inline tools: mostrar el texto del LLM antes del resultado
       if (fullText.trim()) {
         nextMessages.push({ role: "assistant", content: fullText });

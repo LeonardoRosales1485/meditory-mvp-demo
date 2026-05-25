@@ -166,6 +166,7 @@ export const backofficeGetSchemaRpc = createServerFn({ method: "GET" })
     return getSchema();
   });
 
+let _rpcCallId = 0;
 export const aiChatRpc = createServerFn({ method: "POST" })
   .inputValidator((data: {
     model: string;
@@ -174,9 +175,17 @@ export const aiChatRpc = createServerFn({ method: "POST" })
     provider?: string;
   }) => data)
   .handler(async ({ data }) => {
+    const callId = ++_rpcCallId;
     try {
       const provider = data.provider ?? "anthropic";
-      console.debug("[aiChatRpc] provider:", provider, "model:", data.model, "toolsCount:", data.tools?.length ?? 0);
+      const PROVIDER_MODELS: Record<string, string> = {
+        anthropic: "claude-sonnet-4-6",
+        zen: "deepseek-v4-flash-free",
+      };
+      const model = PROVIDER_MODELS[provider] ?? data.model;
+      const msgRoles = data.messages.map(m => m.role).join(",");
+      const lastMsg = data.messages[data.messages.length - 1];
+      console.debug(`[aiChatRpc#${callId}] provider:`, provider, "model:", model, "toolsCount:", data.tools?.length ?? 0, "msgs:", data.messages.length, "roles:", msgRoles, "lastUser:", lastMsg?.role === "user" ? lastMsg.content.slice(0, 80) : "(not user)");
 
       // ── Anthropic (Claude) ──────────────────────────────────────────────────
       if (provider === "anthropic") {
@@ -189,6 +198,26 @@ export const aiChatRpc = createServerFn({ method: "POST" })
         const systemContent = data.messages.find((m) => m.role === "system")?.content ?? "";
         const conversationMsgs = data.messages.filter((m) => m.role !== "system");
 
+        // Anthropic requires messages to alternate user/assistant, start with user, and end with user.
+        // Normalize: strip leading assistants, remove consecutive same-role, ensure first/last is user.
+        const cleaned = conversationMsgs.slice();
+        while (cleaned.length > 0 && cleaned[0].role !== "user") cleaned.shift();
+        const deduped: typeof cleaned = [];
+        for (const m of cleaned) {
+          const prev = deduped[deduped.length - 1];
+          if (!prev || m.role !== prev.role) deduped.push(m);
+        }
+        let normalizedMsgs = deduped.map((m) => ({
+          role: m.role as "user" | "assistant",
+          content: m.content,
+        }));
+        if (normalizedMsgs.length > 0 && normalizedMsgs[0].role !== "user") {
+          normalizedMsgs.unshift({ role: "user", content: "Continuemos." });
+        }
+        if (normalizedMsgs.length > 0 && normalizedMsgs[normalizedMsgs.length - 1].role !== "user") {
+          normalizedMsgs.push({ role: "user", content: "Continuemos." });
+        }
+
         type AnthropicTool = { name: string; description: string; input_schema: Record<string, unknown> };
         const anthropicTools: AnthropicTool[] = ((data.tools ?? []) as { function: { name: string; description: string; parameters: Record<string, unknown> } }[])
           .map((t) => ({
@@ -198,17 +227,14 @@ export const aiChatRpc = createServerFn({ method: "POST" })
           }));
 
         const response = await client.messages.create({
-          model: data.model,
+          model: model,
           max_tokens: 2048,
           // Prompt caching: el system prompt (instrucciones + snapshot) se cachea 5 min,
           // reduciendo latencia y costo ~90% en requests sucesivos.
           ...(systemContent ? {
             system: [{ type: "text" as const, text: systemContent, cache_control: { type: "ephemeral" as const } }],
           } : {}),
-          messages: conversationMsgs.map((m) => ({
-            role: m.role as "user" | "assistant",
-            content: m.content,
-          })),
+          messages: normalizedMsgs,
           ...(anthropicTools.length > 0 ? { tools: anthropicTools as Parameters<typeof client.messages.create>[0]["tools"] } : {}),
         });
 
@@ -226,7 +252,7 @@ export const aiChatRpc = createServerFn({ method: "POST" })
           }
         }
 
-        console.debug("[aiChatRpc] anthropic usage:", JSON.stringify(response.usage));
+        console.debug(`[aiChatRpc#${callId}] anthropic usage:`, JSON.stringify(response.usage));
         return { content, tool_calls };
       }
 
@@ -249,7 +275,7 @@ export const aiChatRpc = createServerFn({ method: "POST" })
       if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
 
       const bodyPayload = {
-        model: data.model,
+        model: model,
         messages: data.messages,
         ...(data.tools?.length ? { tools: data.tools } : {}),
         max_tokens: 1024,
@@ -264,7 +290,7 @@ export const aiChatRpc = createServerFn({ method: "POST" })
 
       if (!res.ok) {
         const text = await res.text().catch(() => "");
-        console.error("[aiChatRpc] HTTP error:", res.status, text.slice(0, 500));
+        console.error(`[aiChatRpc#${callId}] HTTP error:`, res.status, text.slice(0, 500));
         throw new Error(`LLM API error ${res.status}: ${text.slice(0, 500)}`);
       }
 
@@ -387,6 +413,20 @@ export const backofficeCreateTransferRpc = createServerFn({ method: "POST" })
     return createBackofficeTransfer(data);
   });
 
+export const backofficeCreateOverstockTransferRpc = createServerFn({ method: "POST" })
+  .inputValidator((data: {
+    medicationId: string;
+    fromWarehouseId: string;
+    toWarehouseId: string;
+    quantity: number;
+    requestedBy?: string;
+  }) => data)
+  .handler(async ({ data }) => {
+    const { createOverstockTransfer } = await import("@/lib/server/backoffice-service");
+    await createOverstockTransfer(data);
+    return { ok: true };
+  });
+
 export const backofficeAdvanceTransferRpc = createServerFn({ method: "POST" })
   .inputValidator((data: { id: string }) => data)
   .handler(async ({ data }) => {
@@ -413,6 +453,14 @@ export const backofficeRejectTransferRpc = createServerFn({ method: "POST" })
       reason: data.reason,
       outcome: data.outcome,
     });
+  });
+
+export const backofficeCancelTransferRpc = createServerFn({ method: "POST" })
+  .inputValidator((data: { id: string }) => data)
+  .handler(async ({ data }) => {
+    const { cancelBackofficeTransfer } = await import("@/lib/server/backoffice-service");
+    await cancelBackofficeTransfer(data);
+    return { ok: true };
   });
 
 export const backofficeGetAssistantFullSnapshotRpc = createServerFn({ method: "GET" })

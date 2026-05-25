@@ -75,7 +75,6 @@ import {
 } from "@/lib/assistant-workflows";
 import { generateStockReport, generateExpiriesReport, generateMovementsReport, downloadReport, type ReportData } from "@/lib/assistant-reports";
 import { streamAiChat, type ChatMessage } from "@/lib/ai-chat";
-import { medName, warehouseName } from "@/lib/domain-types";
 import { useStore } from "@/lib/store";
 
 const MODULE_KNOWLEDGE = `
@@ -453,6 +452,14 @@ async function executeConfirmedAction(
   }
 }
 
+
+function resolveEntityName(list: { id: string; name: string }[], id: string): string {
+  return (
+    list.find((x) => x.id === id)?.name ??
+    list.find((x) => x.id.startsWith(id) || id.startsWith(x.id))?.name ??
+    id
+  );
+}
 
 function processToolCalls(
   toolCalls: OllamaToolCall[],
@@ -913,11 +920,7 @@ export function WorkspaceAssistantChat({
       );
 
       const suffix = actionLines.length > 0 ? `\n\n_${actionLines.join(" ")}_` : "";
-      let assistantText = content + suffix;
-
-      if (chartGeneratedRef.current) {
-        assistantText = `Acá tenés el gráfico con los datos solicitados.` + suffix;
-      }
+      const assistantText = content + suffix;
 
       chartGeneratedRef.current = false;
 
@@ -951,7 +954,7 @@ export function WorkspaceAssistantChat({
       setStreamingText("");
       abortRef.current = null;
     }
-  }, [input, streaming, messages, snapshotJson, snapshotInput, navigate, batches, openTransferDialog, addChart, workspaceUsers, activeWorkflow, proactivityInput]);
+  }, [input, streaming, messages, snapshotJson, snapshotInput, navigate, batches, openTransferDialog, addChart, workspaceUsers, activeWorkflow, proactivityInput, aiProvider]);
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
@@ -1170,15 +1173,15 @@ export function WorkspaceAssistantChat({
             <ul className="space-y-1 text-sm text-muted-foreground">
               <li>
                 <span className="font-medium text-foreground">Medicamento: </span>
-                {medName(pendingTransfer.medicationId)}
+                {resolveEntityName(snapshotInput.medications, pendingTransfer.medicationId)}
               </li>
               <li>
                 <span className="font-medium text-foreground">Origen: </span>
-                {warehouseName(pendingTransfer.fromWarehouseId)}
+                {resolveEntityName(snapshotInput.warehouses, pendingTransfer.fromWarehouseId)}
               </li>
               <li>
                 <span className="font-medium text-foreground">Destino: </span>
-                {warehouseName(pendingTransfer.toWarehouseId)}
+                {resolveEntityName(snapshotInput.warehouses, pendingTransfer.toWarehouseId)}
               </li>
               <li>
                 <span className="font-medium text-foreground">Cantidad: </span>

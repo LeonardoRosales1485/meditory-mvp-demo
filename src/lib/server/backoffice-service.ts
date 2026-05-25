@@ -2377,3 +2377,75 @@ export async function createBackofficeTransfer(data: {
     })
   );
 }
+
+export async function createOverstockTransfer(data: {
+  medicationId: string;
+  fromWarehouseId: string;
+  toWarehouseId: string;
+  quantity: number;
+  requestedBy?: string;
+}): Promise<void> {
+  const med = await db<{ id: string }[]>(
+    supabaseAdmin.from("medications").select("id").eq("id", data.medicationId).limit(1)
+  );
+  if (!med.length) throw new Error("Medicamento no encontrado");
+
+  const fromWh = await db<{ id: string; workspace_id: string; deleted_at: string | null }[]>(
+    supabaseAdmin.from("warehouses").select("id, workspace_id, deleted_at").eq("id", data.fromWarehouseId).limit(1)
+  );
+  if (!fromWh.length) throw new Error("Depósito origen no encontrado");
+  if (fromWh[0].deleted_at) throw new Error("El depósito origen está dado de baja");
+
+  const toWh = await db<{ id: string; workspace_id: string; deleted_at: string | null }[]>(
+    supabaseAdmin.from("warehouses").select("id, workspace_id, deleted_at").eq("id", data.toWarehouseId).limit(1)
+  );
+  if (!toWh.length) throw new Error("Depósito destino no encontrado");
+  if (toWh[0].deleted_at) throw new Error("El depósito destino está dado de baja");
+  if (data.fromWarehouseId === data.toWarehouseId) throw new Error("Origen y destino deben ser distintos");
+
+  const batches = await db<{ id: string; quantity: number }[]>(
+    supabaseAdmin.from("batches")
+      .select("id, quantity")
+      .eq("medication_id", data.medicationId)
+      .eq("warehouse_id", data.fromWarehouseId)
+      .order("expiry", { ascending: true })
+  );
+  const suitable = batches.find((b) => Number(b.quantity) >= data.quantity);
+  if (!suitable) throw new Error("No hay lote con stock suficiente en el depósito origen");
+
+  const transferId = randomUUID();
+  const transferCode = `BO-${Date.now().toString(36).toUpperCase()}`;
+  const workspaceId = fromWh[0].workspace_id;
+
+  await db(
+    supabaseAdmin.from("transfer_requests").insert({
+      id: transferId,
+      workspace_id: workspaceId,
+      transfer_code: transferCode,
+      medication_id: data.medicationId,
+      source_batch_id: suitable.id,
+      from_warehouse_id: data.fromWarehouseId,
+      to_warehouse_id: data.toWarehouseId,
+      quantity: data.quantity,
+      status: "solicitado",
+      requested_by: data.requestedBy ?? "Admin",
+      date: new Date().toISOString(),
+    })
+  );
+}
+
+export async function cancelBackofficeTransfer(data: { id: string }): Promise<void> {
+  const { data: transfer } = await supabaseAdmin
+    .from("transfer_requests")
+    .select("id, status, workspace_id")
+    .eq("id", data.id)
+    .single();
+  if (!transfer) throw new Error("Transferencia no encontrada");
+  if (transfer.status !== "solicitado") throw new Error("Solo se pueden cancelar transferencias en estado 'Solicitado'");
+
+  await db(
+    supabaseAdmin.from("transfer_requests").update({
+      status: "rechazado",
+    }).eq("id", data.id),
+  );
+}

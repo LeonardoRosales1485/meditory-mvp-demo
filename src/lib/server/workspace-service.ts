@@ -484,6 +484,7 @@ async function assertWarehouseAccess(workspaceId: string, actor: string, warehou
   // System actor (backoffice) has full warehouse access
   if (isSystemActor(actor)) return;
   const actorUser = await resolveActorUser(workspaceId, actor);
+  if (actorUser.role === "admin") return; // Admins have full warehouse access
   const { data, error } = await supabaseAdmin
     .from("workspace_user_warehouses")
     .select("warehouse_id")
@@ -873,10 +874,10 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
     }
     const next = TRANSFER_NEXT[transfer.status as keyof typeof TRANSFER_NEXT];
     if (!next) return;
-    if (next === "recibido") {
+    if (next === "recibido" && actorUser.role !== "admin") {
       await assertWarehouseAccess(payload.workspaceId, payload.actor, transfer.to_warehouse_id);
     }
-    if (next === "aceptado") {
+    if (next === "aceptado" && actorUser.role !== "admin") {
       await assertWarehouseAccess(payload.workspaceId, payload.actor, transfer.to_warehouse_id);
     }
     await db(supabaseAdmin.from("transfer_requests").update({ status: next }).eq("id", payload.id));
@@ -958,7 +959,9 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
       throw new Error("Solo se puede rechazar una transferencia en etapa de revisión post-recepción.");
     }
     const actorUser = await resolveActorUser(payload.workspaceId, payload.actor);
-    await assertWarehouseAccess(payload.workspaceId, payload.actor, transfer.to_warehouse_id);
+    if (actorUser.role !== "admin") {
+      await assertWarehouseAccess(payload.workspaceId, payload.actor, transfer.to_warehouse_id);
+    }
     await db(supabaseAdmin.from("transfer_requests").update({ status: "rechazado" }).eq("id", payload.id));
     if (payload.outcome === "devolver") {
       let returnLot = `TR-RET-${String(transfer.id).slice(0, 8)}`;

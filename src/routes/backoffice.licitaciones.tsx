@@ -81,6 +81,7 @@ const ESTADO_LABELS: Record<LicitacionEstado, string> = {
 
 function LicitacionesPage() {
   const [tab, setTab] = useState("stock");
+  const [stockSubTab, setStockSubTab] = useState("bajo");
   const [lowStock, setLowStock] = useState<LowStockMedication[]>([]);
   const [overstock, setOverstock] = useState<OverstockMedication[]>([]);
   const [licitaciones, setLicitaciones] = useState<LicitacionRow[]>([]);
@@ -164,25 +165,80 @@ function LicitacionesPage() {
   }[]) {
     try {
       const rpc = await import("@/lib/server-rpc");
-      const nextNum = licitaciones.length + 1;
-      const newLic = await rpc.licitacionesCreateRpc({
-        data: {
-          codigo: `LIC-${String(nextNum).padStart(4, "0")}`,
-          titulo: `Licitación ${nextNum}`,
-          descripcion: "Creada desde alerta de stock bajo",
-          items: items.map((i) => ({
-            medication_id: i.medicationId,
-            workspace_id: i.workspaceId,
-            cantidad_solicitada: i.cantidad,
-            justificacion: i.justificacion,
-          })),
-        },
-      });
-      setLicitaciones((prev) => [newLic as LicitacionRow, ...prev]);
+      const grupos = new Map<string, typeof items>();
+      for (const item of items) {
+        const grupo = grupos.get(item.workspaceId) ?? [];
+        grupo.push(item);
+        grupos.set(item.workspaceId, grupo);
+      }
+
+      let baseNum = licitaciones.length + 1;
+      const created: LicitacionRow[] = [];
+
+      for (const [wsId, wsItems] of grupos) {
+        const wsName = workspaces.find((w) => w.id === wsId)?.name ?? wsId;
+
+        const invalid = wsItems.find((i) => i.workspaceId !== wsId);
+        if (invalid) throw new Error(`El medicamento ${invalid.medicationId} no pertenece al hospital ${wsName}`);
+
+        const merged = new Map<string, { medicationId: string; workspaceId: string; cantidad: number; justificacion: string }>();
+        for (const item of wsItems) {
+          const existing = merged.get(item.medicationId);
+          if (existing) {
+            existing.cantidad += item.cantidad;
+            existing.justificacion = item.justificacion.length > existing.justificacion.length
+              ? item.justificacion
+              : existing.justificacion;
+          } else {
+            merged.set(item.medicationId, { ...item });
+          }
+        }
+
+        const newLic = await rpc.licitacionesCreateRpc({
+          data: {
+            codigo: `LIC-${String(baseNum).padStart(4, "0")}`,
+            titulo: `Licitación ${baseNum} - ${wsName}`,
+            descripcion: "Creada desde alerta de stock bajo",
+            items: [...merged.values()].map((i) => ({
+              medication_id: i.medicationId,
+              workspace_id: i.workspaceId,
+              cantidad_solicitada: i.cantidad,
+              justificacion: i.justificacion,
+            })),
+          },
+        });
+        created.push(newLic as LicitacionRow);
+        baseNum++;
+      }
+
+      setLicitaciones((prev) => [...created, ...prev]);
       setCreateOpen(false);
-      toast.success("Licitación creada como borrador");
+      toast.success(`${created.length} licitación(es) creada(s) como borrador(es)`);
     } catch {
-      toast.error("Error al crear licitación");
+      toast.error("Error al crear licitación(es)");
+    }
+  }
+
+  async function handleCreateTransfer(items: {
+    medicationId: string; fromWarehouseId: string; toWarehouseId: string; quantity: number;
+  }[]) {
+    try {
+      const rpc = await import("@/lib/server-rpc");
+      for (const item of items) {
+        await rpc.backofficeCreateOverstockTransferRpc({
+          data: {
+            medicationId: item.medicationId,
+            fromWarehouseId: item.fromWarehouseId,
+            toWarehouseId: item.toWarehouseId,
+            quantity: item.quantity,
+            requestedBy: "Admin",
+          },
+        });
+      }
+      toast.success(`${items.length} transferencia(s) creada(s) correctamente`);
+      loadAll();
+    } catch {
+      toast.error("Error al crear transferencia(s)");
     }
   }
 
@@ -370,46 +426,70 @@ function LicitacionesPage() {
           {loading ? (
             <p className="text-sm text-muted-foreground py-8 text-center">Cargando datos de stock...</p>
           ) : (
-            <>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <TrendingDown size={14} className="text-red-500" />
-                    Medicamentos con Bajo Stock
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="pt-0">
-                  {filteredLowStock.length === 0 ? (
-                    <p className="text-xs text-muted-foreground py-4 text-center">Sin medicamentos con bajo stock</p>
-                  ) : (
-                    <LowStockTable
-                      items={filteredLowStock}
-                      medMap={medMap}
-                      onCreateLicitacion={handleCreateLicitacion}
-                    />
-                  )}
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <TrendingUp size={14} className="text-amber-500" />
-                    Medicamentos con Sobre Stock — Pérdida Estimada
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="pt-0">
-                  {filteredOverstock.length === 0 ? (
-                    <p className="text-xs text-muted-foreground py-4 text-center">Sin medicamentos con sobre stock</p>
-                  ) : (
-                    <OverstockTable
-                      items={filteredOverstock}
-                      medMap={medMap}
-                      onCreateLicitacion={handleCreateLicitacion}
-                    />
-                  )}
-                </CardContent>
-              </Card>
-            </>
+            <div className="space-y-4">
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant={stockSubTab === "bajo" ? "default" : "outline"}
+                  onClick={() => setStockSubTab("bajo")}
+                  className="gap-1.5 text-xs"
+                >
+                  <TrendingDown size={14} />Bajo Stock
+                </Button>
+                <Button
+                  size="sm"
+                  variant={stockSubTab === "sobre" ? "default" : "outline"}
+                  onClick={() => setStockSubTab("sobre")}
+                  className="gap-1.5 text-xs"
+                >
+                  <TrendingUp size={14} />Sobre Stock
+                </Button>
+              </div>
+              {stockSubTab === "bajo" && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <TrendingDown size={14} className="text-red-500" />
+                      Medicamentos con Bajo Stock
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    {filteredLowStock.length === 0 ? (
+                      <p className="text-xs text-muted-foreground py-4 text-center">Sin medicamentos con bajo stock</p>
+                    ) : (
+                      <LowStockTable
+                        items={filteredLowStock}
+                        medMap={medMap}
+                        onCreateLicitacion={handleCreateLicitacion}
+                      />
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+              {stockSubTab === "sobre" && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <TrendingUp size={14} className="text-amber-500" />
+                      Medicamentos con Sobre Stock — Pérdida Estimada
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    {filteredOverstock.length === 0 ? (
+                      <p className="text-xs text-muted-foreground py-4 text-center">Sin medicamentos con sobre stock</p>
+                    ) : (
+                      <OverstockTable
+                        items={filteredOverstock}
+                        medMap={medMap}
+                        warehouses={warehouses}
+                        workspaces={workspaces}
+                        onCreateTransfer={handleCreateTransfer}
+                      />
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+            </div>
           )}
         </TabsContent>
 
@@ -557,6 +637,28 @@ function LicitacionesPage() {
                                   <ArrowRight size={14} />
                                 </Button>
                               )}
+                              {t.status === "solicitado" && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 w-7 p-0 text-red-500"
+                                  onClick={async () => {
+                                    const rpc = await import("@/lib/server-rpc");
+                                    try {
+                                      await rpc.backofficeCancelTransferRpc({ data: { id: t.id } });
+                                      setTransfers((prev) => prev.map((x) =>
+                                        x.id === t.id ? { ...x, status: "rechazado" } : x
+                                      ));
+                                      toast.success("Transferencia cancelada");
+                                    } catch (e) {
+                                      toast.error("Error al cancelar transferencia");
+                                    }
+                                  }}
+                                  title="Cancelar transferencia"
+                                >
+                                  <X size={14} />
+                                </Button>
+                              )}
                               {t.status === "recibido" && (
                                 <Button
                                   size="sm"
@@ -651,12 +753,13 @@ function LicitacionesPage() {
 
 // ─── Sub-components ────────────────────────────────────────────
 
-function StockTableToolbar({ selectedCount, totalCount, onSelectAll, onDeselectAll, onCreateLicitacion }: {
+function StockTableToolbar({ selectedCount, totalCount, onSelectAll, onDeselectAll, onCreateLicitacion, actionLabel }: {
   selectedCount: number;
   totalCount: number;
   onSelectAll: () => void;
   onDeselectAll: () => void;
   onCreateLicitacion: () => void;
+  actionLabel?: string;
 }) {
   if (selectedCount === 0 && totalCount === 0) return null;
   return (
@@ -673,7 +776,7 @@ function StockTableToolbar({ selectedCount, totalCount, onSelectAll, onDeselectA
       )}
       {selectedCount > 0 && (
         <Button size="sm" onClick={onCreateLicitacion} className="gap-1.5 h-7 text-xs ml-auto">
-          <Plus size={12} /> Crear licitación ({selectedCount})
+          <Plus size={12} /> {actionLabel ?? `Crear licitación (${selectedCount})`}
         </Button>
       )}
     </div>
@@ -686,6 +789,8 @@ function LowStockTable({ items, medMap, onCreateLicitacion }: {
   onCreateLicitacion: (items: { medicationId: string; workspaceId: string; cantidad: number; justificacion: string }[]) => void;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmItems, setConfirmItems] = useState<{ medicationId: string; workspaceId: string; cantidad: number; justificacion: string; medicationName: string; workspaceName: string }[]>([]);
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -697,7 +802,7 @@ function LowStockTable({ items, medMap, onCreateLicitacion }: {
   }
 
   function selectAll() {
-    setSelected(new Set(items.map((i) => i.medicationId + i.workspaceId)));
+    setSelected(new Set(items.map((i) => i.medicationId + "::" + i.workspaceId)));
   }
 
   function deselectAll() {
@@ -705,13 +810,23 @@ function LowStockTable({ items, medMap, onCreateLicitacion }: {
   }
 
   function createFromSelected() {
-    const selectedItems = items.filter((i) => selected.has(i.medicationId + i.workspaceId));
-    onCreateLicitacion(selectedItems.map((i) => ({
+    const selectedItems = items.filter((i) => selected.has(i.medicationId + "::" + i.workspaceId));
+    setConfirmItems(selectedItems.map((i) => ({
       medicationId: i.medicationId,
       workspaceId: i.workspaceId,
       cantidad: i.deficit,
       justificacion: `Stock bajo: actual ${i.currentStock}, mínimo ${i.minStock}, déficit ${i.deficit}`,
+      medicationName: i.medicationName,
+      workspaceName: i.workspaceName,
     })));
+    setConfirmOpen(true);
+  }
+
+  function confirmCreate() {
+    onCreateLicitacion(confirmItems.map(({ medicationId, workspaceId, cantidad, justificacion }) => ({
+      medicationId, workspaceId, cantidad, justificacion,
+    })));
+    setConfirmOpen(false);
     setSelected(new Set());
   }
 
@@ -736,10 +851,10 @@ function LowStockTable({ items, medMap, onCreateLicitacion }: {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {items.slice(0, 50).map((item) => {
-            const key = item.medicationId + item.workspaceId;
+          {items.slice(0, 50).map((item, idx) => {
+            const key = item.medicationId + "::" + item.workspaceId;
             return (
-              <TableRow key={key}>
+              <TableRow key={key + "::" + idx}>
                 <TableCell>
                   <input
                     type="checkbox"
@@ -760,16 +875,40 @@ function LowStockTable({ items, medMap, onCreateLicitacion }: {
           })}
         </TableBody>
       </Table>
+
+      <ConfirmLicitacionDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        items={confirmItems}
+        onConfirm={confirmCreate}
+      />
     </div>
   );
 }
 
-function OverstockTable({ items, medMap, onCreateLicitacion }: {
+function OverstockTable({ items, medMap, warehouses, workspaces, onCreateTransfer }: {
   items: OverstockMedication[];
   medMap: Map<string, string>;
-  onCreateLicitacion: (items: { medicationId: string; workspaceId: string; cantidad: number; justificacion: string }[]) => void;
+  warehouses: { id: string; name: string; workspace_id: string }[];
+  workspaces: { id: string; name: string }[];
+  onCreateTransfer: (items: { medicationId: string; fromWarehouseId: string; toWarehouseId: string; quantity: number }[]) => void;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [transferItems, setTransferItems] = useState<{
+    medicationId: string; fromWarehouseId: string; toWarehouseId: string; quantity: number;
+    medicationName: string; fromWorkspaceName: string;
+  }[]>([]);
+
+  const whByWorkspace = useMemo(() => {
+    const map = new Map<string, { id: string; name: string }[]>();
+    for (const w of warehouses) {
+      const list = map.get(w.workspace_id) ?? [];
+      list.push({ id: w.id, name: w.name });
+      map.set(w.workspace_id, list);
+    }
+    return map;
+  }, [warehouses]);
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -781,21 +920,41 @@ function OverstockTable({ items, medMap, onCreateLicitacion }: {
   }
 
   function selectAll() {
-    setSelected(new Set(items.map((i) => i.medicationId + i.workspaceId)));
+    setSelected(new Set(items.map((i) => i.medicationId + "::" + i.workspaceId)));
   }
 
   function deselectAll() {
     setSelected(new Set());
   }
 
-  function createFromSelected() {
-    const selectedItems = items.filter((i) => selected.has(i.medicationId + i.workspaceId));
-    onCreateLicitacion(selectedItems.map((i) => ({
-      medicationId: i.medicationId,
-      workspaceId: i.workspaceId,
-      cantidad: Math.max(i.surplus, 100),
-      justificacion: `Sobre stock: actual ${i.currentStock}, óptimo ${i.optimalStock}, excedente ${i.surplus}, pérdida estimada $${i.lossAmount}`,
+  function openTransferModal() {
+    const selectedItems = items.filter((i) => selected.has(i.medicationId + "::" + i.workspaceId));
+    const whs = whByWorkspace;
+    const defaultItems = selectedItems.map((i) => {
+      const wsWhs = whs.get(i.workspaceId) ?? [];
+      return {
+        medicationId: i.medicationId,
+        fromWarehouseId: wsWhs[0]?.id ?? "",
+        toWarehouseId: "",
+        quantity: i.surplus,
+        medicationName: i.medicationName,
+        fromWorkspaceName: i.workspaceName,
+      };
+    });
+    setTransferItems(defaultItems);
+    setConfirmOpen(true);
+  }
+
+  function confirmCreate() {
+    const validItems = transferItems.filter((i) => i.toWarehouseId && i.fromWarehouseId && i.quantity > 0);
+    if (validItems.length === 0) {
+      toast.error("Seleccioná un destino para al menos un item");
+      return;
+    }
+    onCreateTransfer(validItems.map(({ medicationId, fromWarehouseId, toWarehouseId, quantity }) => ({
+      medicationId, fromWarehouseId, toWarehouseId, quantity,
     })));
+    setConfirmOpen(false);
     setSelected(new Set());
   }
 
@@ -806,7 +965,8 @@ function OverstockTable({ items, medMap, onCreateLicitacion }: {
         totalCount={items.length}
         onSelectAll={selectAll}
         onDeselectAll={deselectAll}
-        onCreateLicitacion={createFromSelected}
+        onCreateLicitacion={openTransferModal}
+        actionLabel={`Crear transferencia (${selected.size})`}
       />
       <Table>
         <TableHeader>
@@ -822,10 +982,10 @@ function OverstockTable({ items, medMap, onCreateLicitacion }: {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {items.slice(0, 50).map((item) => {
-            const key = item.medicationId + item.workspaceId;
+          {items.slice(0, 50).map((item, idx) => {
+            const key = item.medicationId + "::" + item.workspaceId;
             return (
-              <TableRow key={key}>
+              <TableRow key={key + "::" + idx}>
                 <TableCell>
                   <input
                     type="checkbox"
@@ -852,7 +1012,200 @@ function OverstockTable({ items, medMap, onCreateLicitacion }: {
           })}
         </TableBody>
       </Table>
+
+      <ConfirmTransferDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        items={transferItems}
+        warehouses={warehouses}
+        workspaces={workspaces}
+        onUpdateItem={(index, updates) => {
+          setTransferItems((prev) => prev.map((item, i) => i === index ? { ...item, ...updates } : item));
+        }}
+        onConfirm={confirmCreate}
+      />
     </div>
+  );
+}
+
+function ConfirmLicitacionDialog({ open, onOpenChange, items, onConfirm }: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  items: { medicationId: string; workspaceId: string; cantidad: number; justificacion: string; medicationName: string; workspaceName: string }[];
+  onConfirm: () => void;
+}) {
+  const grupos = useMemo(() => {
+    const map = new Map<string, typeof items>();
+    for (const item of items) {
+      const grupo = map.get(item.workspaceName) ?? [];
+      grupo.push(item);
+      map.set(item.workspaceName, grupo);
+    }
+    return [...map.entries()];
+  }, [items]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Confirmar creación de licitación</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Se crearán <strong>{grupos.length} licitaciones</strong> agrupadas por hospital ({items.length} item(s) total):
+          </p>
+          {items.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">No hay items seleccionados</p>
+          ) : (
+            <div className="space-y-4">
+              {grupos.map(([wsName, wsItems]) => (
+                <div key={wsName}>
+                  <h4 className="text-sm font-semibold mb-1 flex items-center gap-2">
+                    <Building2 size={14} className="text-muted-foreground" />
+                    {wsName}
+                    <span className="text-xs font-normal text-muted-foreground">({wsItems.length} item(s))</span>
+                  </h4>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="text-xs">Medicamento</TableHead>
+                        <TableHead className="text-xs text-right">Cantidad</TableHead>
+                        <TableHead className="text-xs">Justificación</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {wsItems.map((item, i) => (
+                        <TableRow key={i}>
+                          <TableCell className="text-sm font-medium">{item.medicationName}</TableCell>
+                          <TableCell className="text-right text-sm font-semibold">{item.cantidad.toLocaleString("es-AR")}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">{item.justificacion}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>Cancelar</Button>
+          <Button size="sm" onClick={onConfirm} disabled={items.length === 0}>
+            Confirmar ({grupos.length} licitaciones)
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ConfirmTransferDialog({ open, onOpenChange, items, warehouses, workspaces, onUpdateItem, onConfirm }: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  items: { medicationId: string; fromWarehouseId: string; toWarehouseId: string; quantity: number; medicationName: string; fromWorkspaceName: string }[];
+  warehouses: { id: string; name: string; workspace_id: string }[];
+  workspaces: { id: string; name: string }[];
+  onUpdateItem: (index: number, updates: Partial<{ toWarehouseId: string; quantity: number }>) => void;
+  onConfirm: () => void;
+}) {
+  const wsWarehouses = useMemo(() => {
+    const map = new Map<string, { id: string; name: string }[]>();
+    for (const w of warehouses) {
+      const list = map.get(w.workspace_id) ?? [];
+      list.push({ id: w.id, name: w.name });
+      map.set(w.workspace_id, list);
+    }
+    return map;
+  }, [warehouses]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Crear transferencia por sobre stock</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Seleccioná el hospital y depósito destino para cada item con excedente de stock.
+          </p>
+          {items.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">No hay items seleccionados</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-xs">Medicamento</TableHead>
+                  <TableHead className="text-xs">Origen</TableHead>
+                  <TableHead className="text-xs">Hospital Destino</TableHead>
+                  <TableHead className="text-xs">Depósito Destino</TableHead>
+                  <TableHead className="text-xs text-right">Cantidad</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {items.map((item, i) => {
+                  const currentWh = warehouses.find((w) => w.id === item.fromWarehouseId);
+                  const currentWs = currentWh ? currentWh.workspace_id : "";
+
+                  return (
+                    <TableRow key={i}>
+                      <TableCell className="text-sm font-medium">{item.medicationName}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{item.fromWorkspaceName}</TableCell>
+                      <TableCell>
+                        <Select
+                          value={item.toWarehouseId ? warehouses.find((w) => w.id === item.toWarehouseId)?.workspace_id ?? "" : ""}
+                          onValueChange={(wsId) => {
+                            const whs = wsWarehouses.get(wsId);
+                            const firstWh = whs?.[0]?.id ?? "";
+                            onUpdateItem(i, { toWarehouseId: firstWh });
+                          }}
+                        >
+                          <SelectTrigger className="h-7 text-xs">
+                            <SelectValue placeholder="Seleccionar..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {[...wsWarehouses.entries()]
+                              .filter(([wsId]) => wsId !== currentWs)
+                              .map(([wsId, whs]) => (
+                                <SelectItem key={wsId} value={wsId}>
+                                  {workspaces.find((ws) => ws.id === wsId)?.name ?? wsId}
+                                </SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
+                      <TableCell>
+                        {item.toWarehouseId ? (
+                          <span className="text-xs text-muted-foreground">
+                            {warehouses.find((w) => w.id === item.toWarehouseId)?.name ?? item.toWarehouseId}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Input
+                          type="number"
+                          className="h-7 w-20 text-xs text-right"
+                          value={item.quantity}
+                          onChange={(e) => onUpdateItem(i, { quantity: Number(e.target.value) })}
+                          min={1}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>Cancelar</Button>
+          <Button size="sm" onClick={onConfirm} disabled={items.length === 0}>
+            Confirmar transferencia(s)
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1096,9 +1449,9 @@ function CreateLicitacionDialog({ open, onOpenChange, lowStock, allMeds, onConfi
 
   function confirm() {
     const items = filteredLowStock
-      .filter((i) => selectedMeds.has(i.medicationId + i.workspaceId))
+      .filter((i) => selectedMeds.has(i.medicationId + "::" + i.workspaceId))
       .map((i) => {
-        const key = i.medicationId + i.workspaceId;
+        const key = i.medicationId + "::" + i.workspaceId;
         return {
           medicationId: i.medicationId,
           workspaceId: i.workspaceId,
@@ -1140,10 +1493,10 @@ function CreateLicitacionDialog({ open, onOpenChange, lowStock, allMeds, onConfi
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredLowStock.map((item) => {
-                  const key = item.medicationId + item.workspaceId;
+                {filteredLowStock.map((item, idx) => {
+                  const key = item.medicationId + "::" + item.workspaceId;
                   return (
-                    <TableRow key={key}>
+                    <TableRow key={key + "::" + idx}>
                       <TableCell>
                         <input
                           type="checkbox"

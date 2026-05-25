@@ -298,7 +298,7 @@ ${snapshotText}
 - Responder siempre en español, tono profesional pero amigable.
 - No inventar datos. Si no están en el snapshot, decirlo.
 - Para agregar stock: usar SIEMPRE la tool add_stock con los IDs reales del snapshot. Si el usuario menciona un medicamento por nombre, buscar su ID en la lista de medicamentos. Si hay múltiples hospitales, preguntar cuál corresponde y luego llamar la tool. No responder en texto sobre acciones que deberías ejecutar — ejecutalas con la tool.
-- Para transferencias de stock: si ves sobrestock en un depósito y déficit en otro, podés crear la transferencia usando la tool create_transfer cuando el usuario lo solicite, con los IDs reales del snapshot (medicationId, sourceBatchId, fromWarehouseId, toWarehouseId, quantity). Funciona tanto para transferencias dentro del mismo hospital como entre hospitales distintos.`;
+- Para transferencias de stock: si ves sobrestock en un depósito y déficit en otro, llamá create_transfer INMEDIATAMENTE con los IDs reales del snapshot (medicationId, fromWarehouseId, toWarehouseId, quantity). NO expliques ni resumas — ejecutala directo. sourceBatchId es opcional (se selecciona automáticamente). Funciona intra-hospital y cross-hospital.`;
 }
 
 function PendingConfirmBubble({
@@ -571,17 +571,22 @@ async function executeConfirmedAction(
       }
       case "create_transfer": {
         const args = data as CreateTransferToolArgs;
-        await rpc.backofficeCreateTransferRpc({
-          data: {
-            medicationId: args.medicationId,
-            sourceBatchId: args.sourceBatchId,
-            fromWarehouseId: args.fromWarehouseId,
-            toWarehouseId: args.toWarehouseId,
-            quantity: args.quantity,
-          },
-        });
-        addMsg({ role: "action_result", success: true, message: `Transferencia creada: ${args.quantity} u. de ${args.medicationId.slice(0,8)} → destino.` });
-        rpc.backofficeGetAssistantFullSnapshotRpc().then(setFullSnapshot).catch(console.error);
+        try {
+          await rpc.backofficeCreateTransferRpc({
+            data: {
+              medicationId: args.medicationId,
+              sourceBatchId: args.sourceBatchId,
+              fromWarehouseId: args.fromWarehouseId,
+              toWarehouseId: args.toWarehouseId,
+              quantity: args.quantity,
+            },
+          });
+          addMsg({ role: "action_result", success: true, message: `Transferencia creada: ${args.quantity} u. → destino.` });
+          rpc.backofficeGetAssistantFullSnapshotRpc().then(setFullSnapshot).catch(console.error);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          addMsg({ role: "action_result", success: false, message: `Error al crear transferencia: ${msg}` });
+        }
         break;
       }
       default:
@@ -892,9 +897,8 @@ export function DemoAssistantChat({ variant = "floating", ...props }: DemoAssist
           nextMessages.push({ role: "pending_confirm", label, toolName: "create_transfer", data: args });
         }
       } else if (name === "navigate") {
-        const navArgs = parsedArgs as { path?: string };
-        inlineResults.push({ role: "action_result", success: true, content: `🔗 Navegación a "${navArgs.path ?? "desconocido"}" — podés ir desde el menú lateral.` });
-        hasInlineTool = true;
+        const msg = "⚠️ No es necesario navegar. Todos los IDs de medicamentos, depósitos y workspaces están disponibles en el contexto. Usá las tools directamente.";
+        nextMessages.push({ role: "action_result", success: true, message: msg });
       } else if (name === "find_similar_licitaciones") {
         const args = parseFindSimilarLicitacionesArgs(parsedArgs);
         if (args) {

@@ -329,13 +329,41 @@ export const backofficeAddStockWithPurchaseRpc = createServerFn({ method: "POST"
 export const backofficeCreateTransferRpc = createServerFn({ method: "POST" })
   .inputValidator((data: {
     medicationId: string;
-    sourceBatchId: string;
+    sourceBatchId?: string;
     fromWarehouseId: string;
     toWarehouseId: string;
     quantity: number;
   }) => data)
   .handler(async ({ data }) => {
     return createBackofficeTransfer(data);
+  });
+
+export const backofficeAdvanceTransferRpc = createServerFn({ method: "POST" })
+  .inputValidator((data: { id: string }) => data)
+  .handler(async ({ data }) => {
+    const supabaseAdmin = (await import("@/lib/server/supabase-admin")).supabaseAdmin;
+    const { data: transfer } = await supabaseAdmin.from("transfer_requests").select("workspace_id").eq("id", data.id).single();
+    if (!transfer) throw new Error("Transferencia no encontrada");
+    return runAction("advanceTransfer", {
+      workspaceId: transfer.workspace_id,
+      actor: "Asistente Medi",
+      id: data.id,
+    });
+  });
+
+export const backofficeRejectTransferRpc = createServerFn({ method: "POST" })
+  .inputValidator((data: { id: string; reason: string; outcome: "devolver" | "descartar" }) => data)
+  .handler(async ({ data }) => {
+    const supabaseAdmin = (await import("@/lib/server/supabase-admin")).supabaseAdmin;
+    const { data: transfer } = await supabaseAdmin.from("transfer_requests").select("workspace_id").eq("id", data.id).single();
+    if (!transfer) throw new Error("Transferencia no encontrada");
+    return runAction("rejectTransfer", {
+      workspaceId: transfer.workspace_id,
+      actor: "Asistente Medi",
+      id: data.id,
+      reason: data.reason,
+      outcome: data.outcome,
+    });
   });
 
 export const backofficeGetAssistantFullSnapshotRpc = createServerFn({ method: "GET" })

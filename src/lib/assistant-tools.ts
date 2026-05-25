@@ -39,12 +39,12 @@ export const assistantTools = [
         type: "object",
         properties: {
           medicationId: { type: "string" },
-          sourceBatchId: { type: "string" },
+          sourceBatchId: { type: "string", description: "Opcional — si no se pasa, se selecciona automáticamente un lote con stock suficiente." },
           fromWarehouseId: { type: "string" },
           toWarehouseId: { type: "string" },
           quantity: { type: "number" },
         },
-        required: ["medicationId", "sourceBatchId", "fromWarehouseId", "toWarehouseId", "quantity"],
+        required: ["medicationId", "fromWarehouseId", "toWarehouseId", "quantity"],
       },
     },
   },
@@ -452,7 +452,7 @@ export type NavigateToolArgs = {
 
 export type CreateTransferToolArgs = {
   medicationId: string;
-  sourceBatchId: string;
+  sourceBatchId?: string;
   fromWarehouseId: string;
   toWarehouseId: string;
   quantity: number;
@@ -501,9 +501,9 @@ export function parseCreateTransferArgs(raw: unknown): CreateTransferToolArgs | 
   const fromWarehouseId = typeof o.fromWarehouseId === "string" ? o.fromWarehouseId.trim() : "";
   const toWarehouseId = typeof o.toWarehouseId === "string" ? o.toWarehouseId.trim() : "";
   const quantity = typeof o.quantity === "number" ? o.quantity : Number(o.quantity);
-  if (!medicationId || !sourceBatchId || !fromWarehouseId || !toWarehouseId) return null;
+  if (!medicationId || !fromWarehouseId || !toWarehouseId) return null;
   if (!Number.isFinite(quantity) || quantity <= 0 || quantity > 1_000_000) return null;
-  return { medicationId, sourceBatchId, fromWarehouseId, toWarehouseId, quantity: Math.floor(quantity) };
+  return { medicationId, sourceBatchId: sourceBatchId || undefined, fromWarehouseId, toWarehouseId, quantity: Math.floor(quantity) };
 }
 
 export function navigateToolToOptions(args: NavigateToolArgs): AssistantNavigateOptions {
@@ -992,11 +992,13 @@ export function validateTransferAgainstBatches(
   args: CreateTransferToolArgs,
   batches: { id: string; medicationId: string; warehouseId: string; quantity: number }[],
 ): string | null {
-  const b = batches.find((x) => x.id === args.sourceBatchId);
-  if (!b) return "Lote origen no encontrado.";
-  if (b.warehouseId !== args.fromWarehouseId) return "El lote no está en el depósito origen indicado.";
-  if (b.medicationId !== args.medicationId) return "El lote no corresponde al medicamento indicado.";
-  if (args.quantity > b.quantity) return `Cantidad mayor al stock del lote (${b.quantity} u).`;
   if (args.fromWarehouseId === args.toWarehouseId) return "Origen y destino no pueden ser el mismo depósito.";
+  if (args.sourceBatchId) {
+    const b = batches.find((x) => x.id === args.sourceBatchId);
+    if (!b) return "Lote origen no encontrado.";
+    if (b.warehouseId !== args.fromWarehouseId) return "El lote no está en el depósito origen indicado.";
+    if (b.medicationId !== args.medicationId) return "El lote no corresponde al medicamento indicado.";
+    if (args.quantity > b.quantity) return `Cantidad mayor al stock del lote (${b.quantity} u).`;
+  }
   return null;
 }

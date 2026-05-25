@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ShoppingCart, Plus, Search, TrendingDown, TrendingUp, Package,
-  Building2, Users, MessageSquare, Gavel, Eye, X, Check,
+  Building2, Users, MessageSquare, Gavel, Eye, X, Check, ArrowRight,
   RotateCcw, AlertCircle, Filter, ArrowLeftRight,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -537,12 +537,52 @@ function LicitacionesPage() {
                           </TableCell>
                           <TableCell className="text-muted-foreground">{t.date ? new Date(t.date).toLocaleDateString("es-AR") : "-"}</TableCell>
                           <TableCell className="text-right">
-                            <DownloadTransferenciasPdf
-                              transfers={[t]}
-                              medMap={medMap}
-                              whMap={whMap}
-                              wsName={t.transfer_code ?? t.id.slice(0, 8)}
-                            />
+                            <div className="flex items-center justify-end gap-1">
+                              {!["aceptado", "rechazado"].includes(t.status) && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 w-7 p-0"
+                                  onClick={async () => {
+                                    const rpc = await import("@/lib/server-rpc");
+                                    try {
+                                      await rpc.backofficeAdvanceTransferRpc({ data: { id: t.id } });
+                                      setTransfers((prev) => prev.map((x) =>
+                                        x.id === t.id ? { ...x, status: x.status === "solicitado" ? "autorizado" : x.status === "autorizado" ? "despachado" : x.status === "despachado" ? "recibir" : x.status === "recibir" ? "recibido" : "aceptado" } : x
+                                      ));
+                                    } catch { }
+                                  }}
+                                  title="Avanzar al siguiente estado"
+                                >
+                                  <ArrowRight size={14} />
+                                </Button>
+                              )}
+                              {t.status === "recibido" && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 w-7 p-0 text-red-500"
+                                  onClick={async () => {
+                                    const rpc = await import("@/lib/server-rpc");
+                                    try {
+                                      await rpc.backofficeRejectTransferRpc({ data: { id: t.id, reason: "Rechazado por administrador", outcome: "devolver" } });
+                                      setTransfers((prev) => prev.map((x) =>
+                                        x.id === t.id ? { ...x, status: "rechazado" } : x
+                                      ));
+                                    } catch { }
+                                  }}
+                                  title="Rechazar transferencia"
+                                >
+                                  <X size={14} />
+                                </Button>
+                              )}
+                              <DownloadTransferenciasPdf
+                                transfers={[t]}
+                                medMap={medMap}
+                                whMap={whMap}
+                                wsName={t.transfer_code ?? t.id.slice(0, 8)}
+                              />
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -569,6 +609,8 @@ function LicitacionesPage() {
                 overstock={filteredOverstock}
                 licitaciones={filteredLicitaciones}
                 proveedores={proveedores}
+                warehouses={warehouses}
+                allMeds={allMeds}
                 onCreateLicitacion={async (data) => {
                   const rpc = await import("@/lib/server-rpc");
                   const newLic = await rpc.licitacionesCreateRpc({ data }) as LicitacionRow;
@@ -1299,11 +1341,13 @@ function DetailLicitacionDialog({ licitacionId, open, onOpenChange, licitaciones
   );
 }
 
-function LicitacionesAssistant({ lowStock, overstock, licitaciones, proveedores, onCreateLicitacion }: {
+function LicitacionesAssistant({ lowStock, overstock, licitaciones, proveedores, warehouses, allMeds, onCreateLicitacion }: {
   lowStock: LowStockMedication[];
   overstock: OverstockMedication[];
   licitaciones: LicitacionRow[];
   proveedores: ProveedorRow[];
+  warehouses: { id: string; name: string; workspace_id: string }[];
+  allMeds: { id: string; name: string }[];
   onCreateLicitacion: (data: {
     codigo: string;
     titulo: string;
@@ -1342,15 +1386,21 @@ function LicitacionesAssistant({ lowStock, overstock, licitaciones, proveedores,
 
   function buildSystemPrompt(): string {
     const lowStockSummary = lowStock.slice(0, 30).map((i) =>
-      `- ${i.medicationName} (${i.workspaceName}): stock ${i.currentStock}, mínimo ${i.minStock}, déficit ${i.deficit}`
+      `- ${i.medicationName} (id:${i.medicationId}) en ${i.workspaceName} (ws:${i.workspaceId}): stock ${i.currentStock}, mínimo ${i.minStock}, déficit ${i.deficit}`
     ).join("\n");
     const overstockSummary = overstock.slice(0, 20).map((i) =>
-      `- ${i.medicationName} (${i.workspaceName}): stock ${i.currentStock}, óptimo ${i.optimalStock}, excedente ${i.surplus}`
+      `- ${i.medicationName} (id:${i.medicationId}) en ${i.workspaceName} (ws:${i.workspaceId}): stock ${i.currentStock}, óptimo ${i.optimalStock}, excedente ${i.surplus}`
     ).join("\n");
     const activeLics = licitaciones.filter((l) => !["completado", "cancelado"].includes(l.estado));
     const activeLicSummary = activeLics.length > 0
       ? activeLics.map((l) => `- ${l.codigo}: ${l.titulo} (${l.estado})`).join("\n")
       : "Ninguna";
+    const whSummary = warehouses.length > 0
+      ? warehouses.map((w) => `- ${w.name} (id:${w.id}, ws:${w.workspace_id})`).join("\n")
+      : "No disponible";
+    const medSummary = allMeds.length > 0
+      ? allMeds.map((m) => `- ${m.name} (id:${m.id})`).join("\n")
+      : "No disponible";
     return `Eres un asistente especializado en licitaciones de compra de medicamentos hospitalarios.
 
 Contexto actual:
@@ -1361,13 +1411,17 @@ ${overstockSummary}
 - Licitaciones activas (no completadas ni canceladas):
 ${activeLicSummary}
 - Proveedores registrados: ${proveedores.length}
+- Depósitos disponibles: ${warehouses.length}
+${whSummary}
+- Catálogo de medicamentos: ${allMeds.length} items
+${medSummary}
 
 Reglas:
 1. Cuando el usuario pida crear una licitación, guialo paso a paso para definir: título, medicamentos a incluir, cantidades y justificación.
 2. ANTES de crear una licitación, usá la herramienta find_similar_licitaciones para verificar si ya existe una licitación activa que cubra los mismos medicamentos. Si existe, informale al usuario.
 3. Una vez que tengas todos los datos acordados y hayas verificado que no hay duplicados, usá la herramienta create_licitacion para crearla automáticamente.
 4. Siempre confirmá con el usuario antes de crear.
-5. También podés crear transferencias de stock entre depósitos (mismo hospital u hospitales distintos) usando la tool create_transfer cuando el usuario lo solicite y tengas los datos necesarios (medicationId, sourceBatchId, fromWarehouseId, toWarehouseId, quantity).
+5. Cuando el usuario pida una transferencia y tengas los IDs necesarios, llamá create_transfer INMEDIATAMENTE sin explicar ni resumir — ejecutala directo. sourceBatchId es opcional (se selecciona automáticamente). NO intentes navegar a otras pantallas — todos los datos que necesitás están acá.
 6. Respondé de forma clara y concisa.`;
   }
 
@@ -1495,12 +1549,14 @@ Reglas:
               },
             });
             toolResults.push({ role: "assistant", content: `✅ Transferencia creada: ${args.quantity} u. al destino seleccionado.` });
-          } catch {
-            toolResults.push({ role: "assistant", content: "❌ Error al crear la transferencia." });
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            toolResults.push({ role: "assistant", content: `❌ Error al crear la transferencia: ${msg}` });
           }
         } else if (tc.function.name === "navigate") {
-          const args = JSON.parse(tc.function.arguments) as Record<string, unknown>;
-          toolResults.push({ role: "assistant", content: `🔗 Navegación a "${args.path ?? "desconocido"}" — podés ir manualmente desde el menú lateral.` });
+          const msg = "⚠️ No es necesario navegar a otras pantallas. Todos los IDs de medicamentos, depósitos y workspaces están disponibles en el contexto de esta conversación. Usá create_licitacion, create_transfer o find_similar_licitaciones directamente.";
+          setMessages((prev) => [...prev, { role: "assistant", content: msg }]);
+          return;
         }
       }
 

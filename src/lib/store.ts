@@ -158,7 +158,7 @@ interface State {
   }) => Promise<void>;
 
   createTransfer: (input: {
-    medicationId: string; sourceBatchId: string; fromWarehouseId: string; toWarehouseId: string; quantity: number;
+    medicationId: string; sourceBatchId?: string; fromWarehouseId: string; toWarehouseId: string; quantity: number;
   }) => Promise<void>;
 
   advanceTransfer: (id: string) => Promise<void>;
@@ -401,9 +401,9 @@ export const useStore = create<State>()(
         await get().fetchWorkspaceData(session.workspaceId);
       },
 
-      createTransfer: async ({ medicationId, sourceBatchId, fromWarehouseId, toWarehouseId, quantity }) => {
+      createTransfer: async ({ medicationId, sourceBatchId, fromWarehouseId, toWarehouseId, quantity }: { medicationId: string; sourceBatchId?: string; fromWarehouseId: string; toWarehouseId: string; quantity: number }) => {
         const { session, user } = get();
-        if (!session) return;
+        if (!session) { console.warn("store.createTransfer: no session"); return; }
         await apiPost("createTransfer", { workspaceId: session.workspaceId, actor: user.name, medicationId, sourceBatchId, fromWarehouseId, toWarehouseId, quantity });
         await get().fetchWorkspaceData(session.workspaceId);
       },

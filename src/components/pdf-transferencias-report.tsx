@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { FileText } from "lucide-react";
+import { FileText, Loader2 } from "lucide-react";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
@@ -163,9 +163,8 @@ export default function DownloadTransferenciasPdf(props: Props) {
 
   return (
     <>
-      <Button size="sm" variant="outline" onClick={handleDownload} disabled={busy} className="gap-1.5">
-        <FileText size={14} />
-        {busy ? "Generando..." : "PDF Analítico"}
+      <Button size="sm" variant="ghost" onClick={handleDownload} disabled={busy} className="h-7 w-7 p-0">
+        {busy ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
       </Button>
 
       <div ref={reportRef} style={{

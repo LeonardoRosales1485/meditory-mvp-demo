@@ -2307,7 +2307,7 @@ export async function identifyProveedor(cuit: string): Promise<ProveedorRow | nu
 
 export async function createBackofficeTransfer(data: {
   medicationId: string;
-  sourceBatchId: string;
+  sourceBatchId?: string;
   fromWarehouseId: string;
   toWarehouseId: string;
   quantity: number;
@@ -2331,15 +2331,30 @@ export async function createBackofficeTransfer(data: {
   if (toWh[0].deleted_at) throw new Error("El depósito destino está dado de baja");
   if (data.fromWarehouseId === data.toWarehouseId) throw new Error("Origen y destino deben ser distintos");
 
-  const batch = await db<{ id: string; medication_id: string; warehouse_id: string; quantity: number }[]>(
-    supabaseAdmin.from("batches").select("id, medication_id, warehouse_id, quantity").eq("id", data.sourceBatchId).limit(1)
-  );
-  if (!batch.length) throw new Error("Lote origen no encontrado");
-  if (batch[0].medication_id !== data.medicationId || batch[0].warehouse_id !== data.fromWarehouseId) {
-    throw new Error("El lote seleccionado no corresponde al medicamento/depósito origen");
-  }
-  if (Number(batch[0].quantity) < data.quantity) {
-    throw new Error("El lote seleccionado no tiene stock suficiente");
+  let batchId: string;
+  if (data.sourceBatchId) {
+    const batch = await db<{ id: string; medication_id: string; warehouse_id: string; quantity: number }[]>(
+      supabaseAdmin.from("batches").select("id, medication_id, warehouse_id, quantity").eq("id", data.sourceBatchId).limit(1)
+    );
+    if (!batch.length) throw new Error("Lote origen no encontrado");
+    if (batch[0].medication_id !== data.medicationId || batch[0].warehouse_id !== data.fromWarehouseId) {
+      throw new Error("El lote seleccionado no corresponde al medicamento/depósito origen");
+    }
+    if (Number(batch[0].quantity) < data.quantity) {
+      throw new Error("El lote seleccionado no tiene stock suficiente");
+    }
+    batchId = data.sourceBatchId;
+  } else {
+    const batches = await db<{ id: string; quantity: number }[]>(
+      supabaseAdmin.from("batches")
+        .select("id, quantity")
+        .eq("medication_id", data.medicationId)
+        .eq("warehouse_id", data.fromWarehouseId)
+        .order("expiry", { ascending: true })
+    );
+    const suitable = batches.find((b) => Number(b.quantity) >= data.quantity);
+    if (!suitable) throw new Error("No hay lote con stock suficiente en el depósito origen");
+    batchId = suitable.id;
   }
 
   const transferId = randomUUID();
@@ -2352,27 +2367,13 @@ export async function createBackofficeTransfer(data: {
       workspace_id: workspaceId,
       transfer_code: transferCode,
       medication_id: data.medicationId,
-      source_batch_id: data.sourceBatchId,
+      source_batch_id: batchId,
       from_warehouse_id: data.fromWarehouseId,
       to_warehouse_id: data.toWarehouseId,
       quantity: data.quantity,
       status: "solicitado",
       requested_by: "Asistente Medi",
       date: new Date().toISOString(),
-    })
-  );
-
-  await db(
-    supabaseAdmin.from("movements").insert({
-      id: randomUUID(),
-      workspace_id: workspaceId,
-      medication_id: data.medicationId,
-      warehouse_id: data.fromWarehouseId,
-      type: "transferencia_salida",
-      quantity: data.quantity,
-      user_name: "Asistente Medi",
-      date: new Date().toISOString(),
-      notes: `Transferencia ${transferCode} → ${toWh[0].id}`,
     })
   );
 }

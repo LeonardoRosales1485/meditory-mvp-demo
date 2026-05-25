@@ -796,13 +796,28 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
         throw new Error("Las transferencias deben originarse en el depósito central.");
       }
     }
-    const sourceBatch = await getBatchById(payload.sourceBatchId);
-    if (!sourceBatch) throw new Error("Lote origen no encontrado.");
-    if (sourceBatch.medication_id !== payload.medicationId || sourceBatch.warehouse_id !== payload.fromWarehouseId) {
-      throw new Error("El lote seleccionado no corresponde al medicamento/deposito origen.");
-    }
-    if (Number(sourceBatch.quantity) < payload.quantity) {
-      throw new Error("El lote seleccionado no tiene stock suficiente.");
+    let sourceBatchId: string;
+    if (payload.sourceBatchId) {
+      const sourceBatch = await getBatchById(payload.sourceBatchId);
+      if (!sourceBatch) throw new Error("Lote origen no encontrado.");
+      if (sourceBatch.medication_id !== payload.medicationId || sourceBatch.warehouse_id !== payload.fromWarehouseId) {
+        throw new Error("El lote seleccionado no corresponde al medicamento/depósito origen.");
+      }
+      if (Number(sourceBatch.quantity) < payload.quantity) {
+        throw new Error("El lote seleccionado no tiene stock suficiente.");
+      }
+      sourceBatchId = payload.sourceBatchId;
+    } else {
+      const batches = await db<{ id: string; quantity: number }[]>(
+        supabaseAdmin.from("batches")
+          .select("id, quantity")
+          .eq("medication_id", payload.medicationId)
+          .eq("warehouse_id", payload.fromWarehouseId)
+          .order("expiry", { ascending: true })
+      );
+      const suitable = batches.find((b) => Number(b.quantity) >= payload.quantity);
+      if (!suitable) throw new Error("No hay lote con stock suficiente en el depósito origen");
+      sourceBatchId = suitable.id;
     }
 
     const transferId = randomUUID();
@@ -813,7 +828,7 @@ export async function runAction<K extends keyof ActionPayloadMap>(action: K, pay
         workspace_id: payload.workspaceId,
         transfer_code: transferCode,
         medication_id: payload.medicationId,
-        source_batch_id: payload.sourceBatchId,
+        source_batch_id: sourceBatchId,
         from_warehouse_id: payload.fromWarehouseId,
         to_warehouse_id: payload.toWarehouseId,
         quantity: payload.quantity,

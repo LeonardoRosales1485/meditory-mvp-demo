@@ -294,6 +294,7 @@ ${snapshotText}
 - Usar tools SOLO cuando el usuario pida explícitamente la acción (navegar, agregar stock, crear usuario, crear transferencia).
 - Para preguntas informativas, responder en texto usando los datos del snapshot.
 - Para acciones destructivas (eliminar usuario), mostrar los datos y pedir confirmación antes de ejecutar.
+- Si el usuario cambia de tema, RESPONDÉ al nuevo tema. Ignorá el historial anterior si no está relacionado.
 - Si no tenés los IDs necesarios, preguntar primero.
 - Responder siempre en español, tono profesional pero amigable.
 - No inventar datos. Si no están en el snapshot, decirlo.
@@ -930,6 +931,9 @@ export function DemoAssistantChat({ variant = "floating", ...props }: DemoAssist
     // Si no hay tool calls, mostramos el texto del LLM
 
     if (showMatchesAndStop) {
+      if (fullText.trim()) {
+        nextMessages.push({ role: "assistant", content: fullText });
+      }
       setMessages(nextMessages);
       return;
     }
@@ -1090,7 +1094,7 @@ export function DemoAssistantChat({ variant = "floating", ...props }: DemoAssist
           }
           if (msg.role === "action_result") {
             return (
-              <div key={i} className={`rounded-lg p-3 text-sm ${msg.success ? "bg-green-50 border border-green-200 text-green-800 dark:bg-green-950/30 dark:border-green-800 dark:text-green-300" : "bg-red-50 border border-red-200 text-red-800 dark:bg-red-950/30 dark:border-red-800 dark:text-red-300"}`}>
+              <div key={i} className={`whitespace-pre-wrap rounded-lg p-3 text-sm ${msg.success ? "bg-green-50 border border-green-200 text-green-800 dark:bg-green-950/30 dark:border-green-800 dark:text-green-300" : "bg-red-50 border border-red-200 text-red-800 dark:bg-red-950/30 dark:border-red-800 dark:text-red-300"}`}>
                 {msg.success ? "✓ " : "✗ "}{msg.message}
               </div>
             );

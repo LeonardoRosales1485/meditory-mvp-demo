@@ -343,7 +343,7 @@ function GestionPedidosPage() {
           </div>
 
           {/* Tabs */}
-          <Tabs value={tab} onValueChange={setTab}>
+          <Tabs value={tab} onValueChange={(v) => { setTab(v); fetchData(); }}>
             <TabsList className="w-full sm:w-auto grid grid-cols-3 sm:inline-flex">
               <TabsTrigger value="activos" className="gap-1.5">
                 <Clock size={14} /> En curso

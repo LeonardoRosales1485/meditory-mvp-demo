@@ -629,7 +629,10 @@ export function syncUserAndFetchWorkspaceAfterRehydrate() {
 // Keep medName/warehouseName resolved with live store data
 useStore.subscribe((state) => {
   if (state.medications.length > 0 || state.warehouses.length > 0) {
-    registerNameProvider({ medications: state.medications, warehouses: state.warehouses });
+    const workspaces = state.session?.workspaceId
+      ? [{ id: state.session.workspaceId, name: state.session.workspaceName }]
+      : undefined;
+    registerNameProvider({ medications: state.medications, warehouses: state.warehouses, workspaces });
   }
 });
 

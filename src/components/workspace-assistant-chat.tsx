@@ -150,6 +150,7 @@ Consultas **solo informativas** (cantidades, listados, estados): respondé con t
 
 Para acciones con varios pasos (venta, dispensación, pedido): SIEMPRE guiá al usuario paso a paso. Preguntá cada dato de a uno, confirmá antes de ejecutar.
 
+Si el usuario cambia de tema, respondé al nuevo tema. Ignorá el historial anterior si no está relacionado.
 Si no tenés datos suficientes, decilo y sugerí la pantalla correspondiente según el caso.`;
 
 type UiMessage =
@@ -994,7 +995,7 @@ export function WorkspaceAssistantChat({
           }
           if (msg.role === "action_result") {
             return (
-              <motion.div key={i} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={`rounded-lg p-3 text-sm ${msg.success ? "bg-green-50 border border-green-200 text-green-800 dark:bg-green-950/30 dark:border-green-800 dark:text-green-300" : "bg-red-50 border border-red-200 text-red-800 dark:bg-red-950/30 dark:border-red-800 dark:text-red-300"}`}>
+              <motion.div key={i} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={`whitespace-pre-wrap rounded-lg p-3 text-sm ${msg.success ? "bg-green-50 border border-green-200 text-green-800 dark:bg-green-950/30 dark:border-green-800 dark:text-green-300" : "bg-red-50 border border-red-200 text-red-800 dark:bg-red-950/30 dark:border-red-800 dark:text-red-300"}`}>
                 {msg.success ? "✓ " : "✗ "}{msg.message}
               </motion.div>
             );

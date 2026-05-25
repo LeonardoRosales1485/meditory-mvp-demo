@@ -53,7 +53,7 @@ export const assistantTools = [
     "function": {
       name: "render_chart",
       description:
-        "Genera un gráfico visual (barra, torta, área o línea) con datos del snapshot. Usar cuando el usuario pida explícitamente «mostrar gráfico», «graficar», «chart», «pastel», «barras», «distribución visual», «comparar visualmente». Los datos deben extraerse del institucion_snapshot. Para stock por depósito usar stockByWarehouse; para vencimientos usar expiryDistribution; para top medicamentos usar topMedicationsByUnits.",
+        "Genera un gráfico visual (barra, torta, área o línea) con datos del snapshot. Usar cuando el usuario pida explícitamente «mostrar gráfico», «graficar», «chart», «pastel», «barras», «distribución visual», «comparar visualmente». Los datos deben extraerse del snapshot del sistema. Podés agrupar medicamentos por hospital (workspaceName), depósitos por tipo, o usar los campos numéricos disponibles (stock, cantidad de unidades, etc.) para construir los puntos {name, value} del gráfico.",
       parameters: {
         type: "object",
         properties: {

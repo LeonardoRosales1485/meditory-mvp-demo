@@ -179,7 +179,7 @@ export interface Room {
   beds: Bed[];
 }
 
-type NameProvider = { medications: Medication[]; warehouses: Warehouse[] };
+type NameProvider = { medications: Medication[]; warehouses: Warehouse[]; workspaces?: { id: string; name: string }[] };
 let nameProvider: NameProvider | null = null;
 
 export function registerNameProvider(provider: NameProvider) {
@@ -222,5 +222,8 @@ export function warehouseName(id: string): string {
   const list = nameProvider?.warehouses ?? [];
   const w = list.find((item) => item.id === id);
   if (!w) return id;
-  return w.deletedAt ? `${w.name} (baja)` : w.name;
+  const name = w.deletedAt ? `${w.name} (baja)` : w.name;
+  const wsList = nameProvider?.workspaces ?? [];
+  const ws = wsList.find((ws) => ws.id === w.workspaceId);
+  return ws ? `${ws.name} - ${name}` : name;
 }

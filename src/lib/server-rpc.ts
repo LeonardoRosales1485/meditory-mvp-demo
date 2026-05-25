@@ -50,6 +50,7 @@ import {
   updateOferta,
   deleteOferta,
   adjudicarOferta,
+  completarLicitacion,
   findSimilarLicitaciones,
   getPublicLicitaciones,
   getPublicLicitacionDetail,
@@ -691,8 +692,22 @@ export const licitacionesAdjudicarOfertaRpc = createServerFn({ method: "POST" })
     usuario?: string;
   }) => data)
   .handler(async ({ data }) => {
-    await adjudicarOferta(data);
-    return { ok: true };
+    return adjudicarOferta(data);
+  });
+
+export const licitacionesCompletarRpc = createServerFn({ method: "POST" })
+  .inputValidator((data: {
+    licitacionId: string;
+    items: Array<{
+      itemId: string;
+      quantity: number;
+      lot?: string;
+      expiry?: string;
+    }>;
+    usuario?: string;
+  }) => data)
+  .handler(async ({ data }) => {
+    return completarLicitacion(data);
   });
 
 export const licitacionesFindSimilarRpc = createServerFn({ method: "POST" })

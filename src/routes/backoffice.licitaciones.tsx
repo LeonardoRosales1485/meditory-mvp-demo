@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ShoppingCart, Plus, Search, TrendingDown, TrendingUp, Package,
   Building2, Users, MessageSquare, Gavel, Eye, X, Check, ArrowRight,
-  RotateCcw, AlertCircle, Filter, ArrowLeftRight,
+  RotateCcw, AlertCircle, Filter, ArrowLeftRight, Share2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -263,6 +263,50 @@ function LicitacionesPage() {
     }
   }
 
+  async function handleAdjudicarOferta(licitacionId: string, ofertaId: string) {
+    try {
+      const rpc = await import("@/lib/server-rpc");
+      const updated = await rpc.licitacionesAdjudicarOfertaRpc({
+        data: { licitacionId, ofertaId },
+      }) as LicitacionRow | undefined;
+      if (!updated) {
+        toast.error("Error al adjudicar: el servidor no devolvió datos");
+        return;
+      }
+      setLicitaciones((prev) => prev.map((l) => (l.id === licitacionId ? updated : l)));
+      if (detailId === licitacionId) {
+        await loadDetailAgain(licitacionId);
+      }
+      toast.success("Oferta adjudicada correctamente");
+    } catch (e) {
+      console.error("Error adjudicando oferta:", e);
+      toast.error("Error al adjudicar oferta");
+      throw e;
+    }
+  }
+
+  async function handleCompletarLicitacion(licitacionId: string, itemsData: Array<{ itemId: string; quantity: number; lot?: string; expiry?: string }>) {
+    try {
+      const rpc = await import("@/lib/server-rpc");
+      const updated = await rpc.licitacionesCompletarRpc({
+        data: { licitacionId, items: itemsData },
+      }) as LicitacionRow | undefined;
+      if (!updated) {
+        toast.error("Error al completar: el servidor no devolvió datos");
+        return;
+      }
+      setLicitaciones((prev) => prev.map((l) => (l.id === licitacionId ? updated : l)));
+      if (detailId === licitacionId) {
+        await loadDetailAgain(licitacionId);
+      }
+      toast.success("Licitación completada — stock ingresado al depósito");
+    } catch (e) {
+      console.error("Error completando licitación:", e);
+      toast.error("Error al completar licitación");
+      throw e;
+    }
+  }
+
   async function loadDetailAgain(id: string) {
     const rpc = await import("@/lib/server-rpc");
     const [items, ofertas, historial] = await Promise.all([
@@ -412,7 +456,7 @@ function LicitacionesPage() {
       </div>
 
       {/* Tabs */}
-      <Tabs value={tab} onValueChange={setTab}>
+      <Tabs value={tab} onValueChange={(v) => { setTab(v); loadAll(); }}>
         <TabsList className="grid grid-cols-5 w-full max-w-2xl">
           <TabsTrigger value="stock" className="gap-1.5 text-xs"><AlertCircle size={14} />Stock</TabsTrigger>
           <TabsTrigger value="licitaciones" className="gap-1.5 text-xs"><Gavel size={14} />Licitaciones</TabsTrigger>
@@ -576,7 +620,10 @@ function LicitacionesPage() {
               {(() => {
                 const tData = transfers as any[];
                 const wsMap = new Map(workspaces.map((w) => [w.id, w.name]));
-                const whMap = new Map(warehouses.map((w) => [w.id, w.name]));
+  const whMap = new Map(warehouses.map((w) => {
+    const wsName = workspaces.find((ws) => ws.id === w.workspace_id)?.name;
+    return [w.id, wsName ? `${wsName} - ${w.name}` : w.name];
+  }));
                 const filtered = tData
                   .filter((t) => {
                     if (!searchTransfer) return true;
@@ -746,6 +793,8 @@ function LicitacionesPage() {
         proveedores={proveedores}
         medMap={medMap}
         onCambiarEstado={handleCambiarEstado}
+        onAdjudicarOferta={handleAdjudicarOferta}
+        onCompletarLicitacion={handleCompletarLicitacion}
       />
     </div>
   );
@@ -1245,6 +1294,7 @@ function LicitacionesTable({ items, onOpenDetail, onCambiarEstado, lowStock, ove
             <TableCell className="text-right">
               <div className="flex items-center justify-end gap-1">
                 <DownloadLicitacionesPdf
+                  iconOnly
                   lowStock={lowStock.filter((i) => lic.workspace_ids?.includes(i.workspaceId))}
                   overstock={overstock.filter((i) => lic.workspace_ids?.includes(i.workspaceId))}
                   licitaciones={[lic]}
@@ -1535,7 +1585,7 @@ function CreateLicitacionDialog({ open, onOpenChange, lowStock, allMeds, onConfi
   );
 }
 
-function DetailLicitacionDialog({ licitacionId, open, onOpenChange, licitaciones, items, ofertas, historial, proveedores, medMap, onCambiarEstado }: {
+function DetailLicitacionDialog({ licitacionId, open, onOpenChange, licitaciones, items, ofertas, historial, proveedores, medMap, onCambiarEstado, onAdjudicarOferta, onCompletarLicitacion }: {
   licitacionId: string | null;
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -1546,12 +1596,33 @@ function DetailLicitacionDialog({ licitacionId, open, onOpenChange, licitaciones
   proveedores: ProveedorRow[];
   medMap: Map<string, string>;
   onCambiarEstado: (id: string, estado: LicitacionEstado) => void;
+  onAdjudicarOferta?: (licitacionId: string, ofertaId: string) => Promise<void>;
+  onCompletarLicitacion?: (licitacionId: string, items: Array<{ itemId: string; quantity: number; lot?: string; expiry?: string }>) => Promise<void>;
 }) {
   const lic = licitaciones.find((l) => l.id === licitacionId);
   if (!lic) return null;
 
   const provMap = new Map(proveedores.map((p) => [p.id, p.nombre]));
   const ofertasAdjudicadas = ofertas.filter((o) => o.adjudicado);
+  const [copied, setCopied] = useState(false);
+
+  const [showAdjudicarModal, setShowAdjudicarModal] = useState(false);
+  const [selectedOfertaId, setSelectedOfertaId] = useState<string | null>(null);
+  const [adjudicarLoading, setAdjudicarLoading] = useState(false);
+
+  const [showCompletarModal, setShowCompletarModal] = useState(false);
+  const [completarItems, setCompletarItems] = useState<Array<{ itemId: string; medicationId: string; medicationName: string; workspaceId: string; quantity: number; lot: string; expiry: string }>>([]);
+  const [completarLoading, setCompletarLoading] = useState(false);
+
+  function copyProveedorLink() {
+    if (!lic) return;
+    const url = `${window.location.origin}/proveedores?licitacion=${lic.id}`;
+    navigator.clipboard.writeText(url);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  const proveedorLink = `${window.location.origin}/proveedores?licitacion=${lic.id}`;
 
   const TRANSICIONES: { desde: LicitacionEstado[]; hacia: LicitacionEstado; label: string; variant?: "default" | "destructive" }[] = [
     { desde: ["borrador"], hacia: "en_licitacion", label: "Publicar" },
@@ -1576,22 +1647,64 @@ function DetailLicitacionDialog({ licitacionId, open, onOpenChange, licitaciones
           </DialogTitle>
         </DialogHeader>
 
+        {lic.estado === "en_licitacion" && (
+          <div className="rounded-lg border bg-muted/30 px-4 py-3 space-y-2">
+            <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+              <Share2 size={14} /> Link para proveedores
+            </div>
+            <p className="text-xs text-muted-foreground break-all select-all bg-background rounded border px-2 py-1.5 font-mono">
+              {proveedorLink}
+            </p>
+            <Button
+              size="sm"
+              variant={copied ? "default" : "outline"}
+              className="h-7 text-xs gap-1.5"
+              onClick={copyProveedorLink}
+            >
+              {copied ? <Check size={12} /> : <Share2 size={12} />}
+              {copied ? "Copiado!" : "Copiar link"}
+            </Button>
+          </div>
+        )}
+
         <div className="space-y-4">
           {/* Acciones */}
           {accionesDisponibles.length > 0 && (
             <div className="flex items-center gap-2 flex-wrap">
-              {accionesDisponibles.map((accion) => (
-                <Button
-                  key={accion.hacia}
-                  size="sm"
-                  variant={accion.variant ?? "default"}
-                  className="h-7 text-xs gap-1"
-                  onClick={() => onCambiarEstado(lic.id, accion.hacia)}
-                >
-                  {accion.hacia === "cancelado" ? <X size={12} /> : <Check size={12} />}
-                  {accion.label}
-                </Button>
-              ))}
+              {accionesDisponibles.map((accion) => {
+                const isAdjudicar = accion.hacia === "adjudicado";
+                const isCompletar = accion.hacia === "completado";
+                return (
+                  <Button
+                    key={accion.hacia}
+                    size="sm"
+                    variant={accion.variant ?? "default"}
+                    className="h-7 text-xs gap-1"
+                    onClick={() => {
+                      if (isAdjudicar) {
+                        setSelectedOfertaId(null);
+                        setShowAdjudicarModal(true);
+                      } else if (isCompletar) {
+                        setCompletarItems(items.map((it) => ({
+                          itemId: it.id,
+                          medicationId: it.medication_id,
+                          medicationName: medMap.get(it.medication_id) ?? it.medication_id,
+                          workspaceId: it.workspace_id,
+                          quantity: it.cantidad_adjudicada > 0 ? it.cantidad_adjudicada : it.cantidad_solicitada,
+                          lot: `LIC-${lic.codigo}`,
+                          expiry: "",
+                        })));
+                        setShowCompletarModal(true);
+                      } else {
+                        onCambiarEstado(lic.id, accion.hacia);
+                      }
+                    }}
+                  >
+                    {accion.hacia === "cancelado" ? <X size={12} /> : <Check size={12} />}
+                    {accion.label}
+                  </Button>
+                );
+              })}
             </div>
           )}
 
@@ -1689,6 +1802,142 @@ function DetailLicitacionDialog({ licitacionId, open, onOpenChange, licitaciones
             </div>
           )}
         </div>
+
+        {/* Modal de Adjudicación */}
+        {showAdjudicarModal && (
+          <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setShowAdjudicarModal(false)}>
+            <div className="bg-white rounded-lg shadow-xl max-w-lg w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-base font-semibold">Adjudicar oferta</h3>
+              <p className="text-xs text-muted-foreground">Seleccioná la oferta ganadora para esta licitación</p>
+              <div className="space-y-2 max-h-60 overflow-y-auto">
+                {ofertas.map((o) => (
+                  <label
+                    key={o.id}
+                    className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${selectedOfertaId === o.id ? "border-primary bg-primary/5" : "hover:bg-muted/50"}`}
+                    onClick={() => setSelectedOfertaId(o.id)}
+                  >
+                    <input
+                      type="radio"
+                      name="oferta"
+                      checked={selectedOfertaId === o.id}
+                      onChange={() => setSelectedOfertaId(o.id)}
+                      className="accent-primary"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium">{provMap.get(o.proveedor_id) ?? o.proveedor_id}</p>
+                      <p className="text-xs text-muted-foreground">
+                        ${o.monto_total.toLocaleString("es-AR")} — {o.plazo_entrega_dias} días plazo
+                      </p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" size="sm" onClick={() => setShowAdjudicarModal(false)} disabled={adjudicarLoading}>
+                  Cancelar
+                </Button>
+                <Button size="sm" onClick={async () => {
+                  if (!selectedOfertaId || !onAdjudicarOferta) return;
+                  setAdjudicarLoading(true);
+                  try {
+                    await onAdjudicarOferta(lic.id, selectedOfertaId);
+                    setShowAdjudicarModal(false);
+                  } catch {
+                    // error handled by parent
+                  } finally {
+                    setAdjudicarLoading(false);
+                  }
+                }} disabled={!selectedOfertaId || adjudicarLoading}>
+                  {adjudicarLoading ? "Adjudicando..." : "Confirmar adjudicación"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal de Completar con ingreso de stock */}
+        {showCompletarModal && (
+          <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setShowCompletarModal(false)}>
+            <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-base font-semibold">Completar licitación</h3>
+              <p className="text-xs text-muted-foreground">Ingresá los datos de lote para cada medicamento antes de finalizar</p>
+              <div className="max-h-72 overflow-y-auto space-y-3">
+                {completarItems.map((ci, idx) => (
+                  <div key={ci.itemId} className="rounded-lg border p-3 space-y-2">
+                    <p className="text-sm font-medium">{ci.medicationName}</p>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <label className="text-[10px] text-muted-foreground block mb-0.5">Cantidad</label>
+                        <input
+                          type="number"
+                          className="w-full h-8 rounded-md border border-input bg-background px-2 text-xs"
+                          value={ci.quantity}
+                          min={1}
+                          onChange={(e) => {
+                            const next = [...completarItems];
+                            next[idx] = { ...next[idx], quantity: Number(e.target.value) };
+                            setCompletarItems(next);
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-muted-foreground block mb-0.5">Lote</label>
+                        <input
+                          type="text"
+                          className="w-full h-8 rounded-md border border-input bg-background px-2 text-xs"
+                          value={ci.lot}
+                          onChange={(e) => {
+                            const next = [...completarItems];
+                            next[idx] = { ...next[idx], lot: e.target.value };
+                            setCompletarItems(next);
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-muted-foreground block mb-0.5">Vencimiento</label>
+                        <input
+                          type="date"
+                          className="w-full h-8 rounded-md border border-input bg-background px-2 text-xs"
+                          value={ci.expiry}
+                          onChange={(e) => {
+                            const next = [...completarItems];
+                            next[idx] = { ...next[idx], expiry: e.target.value };
+                            setCompletarItems(next);
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" size="sm" onClick={() => setShowCompletarModal(false)} disabled={completarLoading}>
+                  Cancelar
+                </Button>
+                <Button size="sm" onClick={async () => {
+                  if (!onCompletarLicitacion) return;
+                  setCompletarLoading(true);
+                  try {
+                    const payload = completarItems.map((ci) => ({
+                      itemId: ci.itemId,
+                      quantity: ci.quantity,
+                      lot: ci.lot || undefined,
+                      expiry: ci.expiry ? new Date(ci.expiry).toISOString() : undefined,
+                    }));
+                    await onCompletarLicitacion(lic.id, payload);
+                    setShowCompletarModal(false);
+                  } catch {
+                    // error handled
+                  } finally {
+                    setCompletarLoading(false);
+                  }
+                }} disabled={completarLoading}>
+                  {completarLoading ? "Completando..." : "Completar y registrar stock"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

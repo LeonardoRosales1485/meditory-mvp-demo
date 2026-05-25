@@ -163,7 +163,9 @@ export function BackofficeRealtimePanel({ workspaces }: { workspaces: { id: stri
 
   function warehouseName(id: string) {
     const wh = warehouses.find((w) => w.id === id);
-    return wh?.name ?? id;
+    if (!wh) return id;
+    const ws = workspaces.find((ws) => ws.id === wh.workspace_id);
+    return ws ? `${ws.name} - ${wh.name}` : wh.name;
   }
 
   return (

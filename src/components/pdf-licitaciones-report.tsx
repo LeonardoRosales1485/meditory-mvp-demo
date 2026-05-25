@@ -69,10 +69,11 @@ interface Props {
   proveedores: ProveedorRow[];
   medMap: Map<string, string>;
   wsName: string | null;
+  iconOnly?: boolean;
 }
 
 export default function DownloadLicitacionesPdf(props: Props) {
-  const { licitaciones, lowStock, overstock, proveedores, medMap, wsName } = props;
+  const { licitaciones, lowStock, overstock, proveedores, medMap, wsName, iconOnly } = props;
   const reportRef = useRef<HTMLDivElement>(null);
   const [busy, setBusy] = useState(false);
 
@@ -163,9 +164,9 @@ export default function DownloadLicitacionesPdf(props: Props) {
 
   return (
     <>
-      <Button size="sm" variant="outline" onClick={handleDownload} disabled={busy} className="gap-1.5">
+      <Button size="sm" variant={iconOnly ? "ghost" : "outline"} onClick={handleDownload} disabled={busy} className={iconOnly ? "h-7 w-7 p-0" : "gap-1.5"}>
         <FileText size={14} />
-        {busy ? "Generando..." : "PDF Analítico"}
+        {!iconOnly && (busy ? "Generando..." : "Generar informe")}
       </Button>
 
       <div ref={reportRef} style={{
@@ -183,20 +184,7 @@ export default function DownloadLicitacionesPdf(props: Props) {
           <div style={{ fontSize: 14, fontWeight: "bold", marginBottom: 4 }}>Reporte Analítico de Licitaciones</div>
           <div style={{ fontSize: 8, color: "#64748b", marginBottom: 16 }}>Fecha: {today}{wsName ? ` — ${wsName}` : ""}</div>
 
-          <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
-            {[
-              { label: "DÉFICIT TOTAL", value: totalDeficit.toLocaleString("es-AR"), desc: `${lowStock.length} medicamentos bajo stock`, color: "#dc2626" },
-              { label: "PÉRDIDA S/STOCK", value: `$${totalLoss.toLocaleString("es-AR")}`, desc: `${overstock.length} medicamentos excedidos`, color: "#d97706" },
-              { label: "LICITACIONES ACTIVAS", value: String(activeLics.length), desc: `${licitaciones.length} total creadas`, color: "#2563eb" },
-              { label: "PROVEEDORES", value: String(proveedores.length), desc: "Registrados en el sistema", color: "#16a34a" },
-            ].map((k) => (
-              <div key={k.label} style={{ flex: 1, border: "1px solid #e2e8f0", borderRadius: 4, padding: "5px 7px" }}>
-                <div style={{ fontSize: 7, fontWeight: "bold", color: k.color, marginBottom: 2 }}>{k.label}</div>
-                <div style={{ fontSize: 14, fontWeight: "bold" }}>{k.value}</div>
-                <div style={{ fontSize: 6, color: "#64748b" }}>{k.desc}</div>
-              </div>
-            ))}
-          </div>
+
 
           <div style={{ border: "1px solid #e2e8f0", borderRadius: 4, padding: 10, marginBottom: 10 }}>
             <div style={{ fontSize: 9, fontWeight: "bold", marginBottom: 8 }}>Distribución por Estado</div>

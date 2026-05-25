@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useSearch } from "@tanstack/react-router";
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -24,6 +24,9 @@ import type {
 } from "@/lib/server/backoffice-service";
 
 export const Route = createFileRoute("/proveedores")({
+  validateSearch: (search: Record<string, string | undefined>) => ({
+    licitacion: search.licitacion ?? undefined,
+  }),
   component: ProveedoresPage,
 });
 
@@ -50,6 +53,7 @@ const ESTADO_COLORS: Record<string, string> = {
 const SESION_KEY = "meditory-proveedor";
 
 function ProveedoresPage() {
+  const { licitacion: licitacionParam } = useSearch({ from: "/proveedores" });
   const [step, setStep] = useState<"identificar" | "dashboard">("identificar");
   const [cuit, setCuit] = useState("");
   const [cuitError, setCuitError] = useState("");
@@ -86,6 +90,13 @@ function ProveedoresPage() {
       loadLicitaciones();
     }
   }, [step, proveedor]);
+
+  useEffect(() => {
+    if (licitacionParam && licitaciones.length > 0) {
+      const found = licitaciones.find((l) => l.id === licitacionParam);
+      if (found) openDetail(found);
+    }
+  }, [licitaciones, licitacionParam]);
 
   async function handleIdentify() {
     const trimmed = cuit.trim();

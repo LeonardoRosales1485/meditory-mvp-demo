@@ -2190,7 +2190,7 @@ export async function adjudicarOferta(params: {
   licitacionId: string;
   ofertaId: string;
   usuario?: string;
-}): Promise<void> {
+}): Promise<LicitacionRow> {
   await db(
     supabaseAdmin.from("licitacion_ofertas").update({ adjudicado: true }).eq("id", params.ofertaId),
   );
@@ -2199,11 +2199,63 @@ export async function adjudicarOferta(params: {
       .eq("licitacion_id", params.licitacionId)
       .neq("id", params.ofertaId),
   );
-  await cambiarEstadoLicitacion({
+  return cambiarEstadoLicitacion({
     licitacionId: params.licitacionId,
     nuevoEstado: "adjudicado",
     usuario: params.usuario ?? "",
     comentario: `Oferta adjudicada: ${params.ofertaId}`,
+  });
+}
+
+export async function completarLicitacion(params: {
+  licitacionId: string;
+  items: Array<{
+    itemId: string;
+    quantity: number;
+    lot?: string;
+    expiry?: string;
+  }>;
+  usuario?: string;
+}): Promise<LicitacionRow> {
+  const lic = await getLicitacion(params.licitacionId);
+  if (!lic) throw new Error("Licitación no encontrada");
+  if (lic.estado !== "en_ejecucion") {
+    throw new Error(`La licitación debe estar en "En Ejecución" para completarse (estado actual: ${lic.estado})`);
+  }
+
+  for (const item of params.items) {
+    const itemRows = await db<LicitacionItemRow[]>(
+      supabaseAdmin.from("licitacion_items")
+        .select("*")
+        .eq("id", item.itemId)
+        .limit(1),
+    );
+    if (!itemRows.length) throw new Error(`Item no encontrado: ${item.itemId}`);
+
+    const li = itemRows[0];
+    const whRows = await db<{ id: string }[]>(
+      supabaseAdmin.from("warehouses")
+        .select("id")
+        .eq("workspace_id", li.workspace_id)
+        .eq("type", "central")
+        .limit(1),
+    );
+    if (!whRows.length) throw new Error(`No se encontró depósito central para el workspace ${li.workspace_id}`);
+
+    await addStockDirectly({
+      medicationId: li.medication_id,
+      warehouseId: whRows[0].id,
+      quantity: item.quantity,
+      lot: item.lot,
+      expiry: item.expiry,
+    });
+  }
+
+  return cambiarEstadoLicitacion({
+    licitacionId: params.licitacionId,
+    nuevoEstado: "completado",
+    usuario: params.usuario ?? "",
+    comentario: "Licitación completada — stock ingresado",
   });
 }
 
@@ -2299,8 +2351,15 @@ export async function getPublicMiOferta(licitacionId: string, proveedorId: strin
 }
 
 export async function identifyProveedor(cuit: string): Promise<ProveedorRow | null> {
+  const normalized = cuit.replace(/[-\s]/g, "");
+  const formatted = normalized.length === 11
+    ? `${normalized.slice(0, 2)}-${normalized.slice(2, 10)}-${normalized.slice(10)}`
+    : normalized;
+
   const rows = await db<ProveedorRow[]>(
-    supabaseAdmin.from("proveedores").select("*").eq("cuit", cuit).limit(1),
+    supabaseAdmin.from("proveedores").select("*")
+      .or(`cuit.eq.${cuit},cuit.eq.${normalized},cuit.eq.${formatted}`)
+      .limit(1),
   );
   return rows[0] ?? null;
 }

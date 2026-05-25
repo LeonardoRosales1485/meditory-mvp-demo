@@ -1,28 +1,24 @@
-feat: licitaciones assistant, transferencias tab, chat persistence, and transfer filters
+feat: proveedores portal, pdf reports, transferencias tab, and assistant tools
 
-- Add Transferencias tab inside licitaciones page (right of Proveedores)
-  with full table of transfers across hospitals, status badges, and
-  origin/destination warehouse resolution
-- Add persistent chat history to demo-assistant-chat (was reading from
-  store but never writing back) and LicitacionesAssistant (had no
-  persistence at all) — both now sync user/assistant messages to
-  shared Zustand store
-- Add find_similar_licitaciones tool that checks active licitaciones
-  for overlapping medications before allowing creation, preventing
-  duplicate purchase requests
-- Add server-side findSimilarLicitaciones(medicationIds) function +
-  RPC, tool definition, parser, and handlers in both assistants
-- Enrich LicitacionesAssistant system prompt with active licitacion
-  details (codigo, titulo, estado) and overstock summary for transfer
-  suggestions
-- Add create_transfer tool to demo-assistant-chat (tool + parser
-  already existed in shared module): the assistant can now plan and
-  create stock transfers between hospitals with user confirmation
-- Add transfer planning rules to demo-assistant system prompt and
-  transfer suggestion rules to licitaciones assistant prompt
-- Fix duplicate codigo error on licitacion creation: server now
-  checks if the provided codigo already exists and auto-generates
-  a unique one via nextLicitacionCodigo() — codigo is now optional
-  in the tool definition, type, parser, RPC, and server function
-- Add advanced filters to app.transferencias: medication search,
-  origin/destination warehouse selectors, and date range picker
+- Add public portal for suppliers (proveedores.tsx): licitaciones listing,
+  detail view, offer creation with CUIT-based identity verification
+- Add PDF report generation for licitaciones and transferencias with
+  professional formatting (pdf-licitaciones-report.tsx,
+  pdf-transferencias-report.tsx, pdf-reports.ts)
+- Add server-side RPCs for public proveedores portal: list licitaciones,
+  get detail, create offers, identify by CUIT
+- Add Transferencias tab inside licitaciones page with full table of
+  cross-hospital transfers, status badges, and warehouse name resolution
+- Add persistent chat history to demo-assistant-chat and
+  LicitacionesAssistant (sync user/assistant messages to Zustand store)
+- Add find_similar_licitaciones tool: checks active licitaciones for
+  overlapping medications before creation to prevent duplicates
+- Add create_transfer tool to demo-assistant-chat for cross-hospital
+  stock transfers with user confirmation
+- Enrich LicitacionesAssistant prompt with active licitacion details,
+  overstock summary, and transfer suggestion rules
+- Fix duplicate codigo on licitacion creation: server auto-generates
+  unique code when provided one already exists
+- Remove Groq provider option — lock assistant to OpenCode Zen
+  (deepseek-v4-flash-free)
+- Update dependencies and route tree

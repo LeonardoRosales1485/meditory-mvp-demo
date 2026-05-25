@@ -251,6 +251,23 @@ function LicitacionesPage() {
   const medMap = new Map(allMeds.map((m) => [m.id, m.name]));
   const whMap = new Map(warehouses.map((w) => [w.id, w.name]));
 
+  const wsWithLicitaciones = useMemo(() =>
+    workspaces.filter((ws) => filteredLicitaciones.some((l) => l.workspace_ids.includes(ws.id))),
+    [workspaces, filteredLicitaciones],
+  );
+
+  const wsWithTransfers = useMemo(() => {
+    const whByWs = new Map<string, string[]>();
+    for (const w of warehouses) {
+      if (!whByWs.has(w.workspace_id)) whByWs.set(w.workspace_id, []);
+      whByWs.get(w.workspace_id)!.push(w.id);
+    }
+    return workspaces.filter((ws) => {
+      const whIds = whByWs.get(ws.id) ?? [];
+      return transfers.some((t) => whIds.includes(t.from_warehouse_id) || whIds.includes(t.to_warehouse_id));
+    });
+  }, [workspaces, warehouses, transfers]);
+
   return (
     <div className="space-y-6 pb-12">
       <motion.div initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }}>
@@ -437,6 +454,22 @@ function LicitacionesPage() {
               />
             </div>
           </div>
+          {selectedWs === "__all__" && wsWithLicitaciones.length > 1 && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[11px] text-muted-foreground mr-1">PDF por hospital:</span>
+              {wsWithLicitaciones.map((ws) => (
+                <DownloadLicitacionesPdf
+                  key={ws.id}
+                  lowStock={filteredLowStock.filter((i) => i.workspaceId === ws.id)}
+                  overstock={filteredOverstock.filter((i) => i.workspaceId === ws.id)}
+                  licitaciones={filteredLicitaciones.filter((l) => l.workspace_ids.includes(ws.id))}
+                  proveedores={proveedores}
+                  medMap={medMap}
+                  wsName={ws.name}
+                />
+              ))}
+            </div>
+          )}
           <Card>
             <CardContent className="p-0">
               {filteredLicitaciones.length === 0 ? (
@@ -482,6 +515,24 @@ function LicitacionesPage() {
               />
             </div>
           </div>
+          {selectedWs === "__all__" && wsWithTransfers.length > 1 && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[11px] text-muted-foreground mr-1">PDF por hospital:</span>
+              {wsWithTransfers.map((ws) => {
+                const whIds = warehouses.filter((w) => w.workspace_id === ws.id).map((w) => w.id);
+                const wsTransfers = transfers.filter((t) => whIds.includes(t.from_warehouse_id) || whIds.includes(t.to_warehouse_id));
+                return (
+                  <DownloadTransferenciasPdf
+                    key={ws.id}
+                    transfers={wsTransfers}
+                    medMap={medMap}
+                    whMap={whMap}
+                    wsName={ws.name}
+                  />
+                );
+              })}
+            </div>
+          )}
           <Card>
             <CardContent className="p-0">
               {(() => {

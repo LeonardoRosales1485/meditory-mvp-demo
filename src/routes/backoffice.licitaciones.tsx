@@ -251,23 +251,6 @@ function LicitacionesPage() {
   const medMap = new Map(allMeds.map((m) => [m.id, m.name]));
   const whMap = new Map(warehouses.map((w) => [w.id, w.name]));
 
-  const wsWithLicitaciones = useMemo(() =>
-    workspaces.filter((ws) => filteredLicitaciones.some((l) => l.workspace_ids.includes(ws.id))),
-    [workspaces, filteredLicitaciones],
-  );
-
-  const wsWithTransfers = useMemo(() => {
-    const whByWs = new Map<string, string[]>();
-    for (const w of warehouses) {
-      if (!whByWs.has(w.workspace_id)) whByWs.set(w.workspace_id, []);
-      whByWs.get(w.workspace_id)!.push(w.id);
-    }
-    return workspaces.filter((ws) => {
-      const whIds = whByWs.get(ws.id) ?? [];
-      return transfers.some((t) => whIds.includes(t.from_warehouse_id) || whIds.includes(t.to_warehouse_id));
-    });
-  }, [workspaces, warehouses, transfers]);
-
   return (
     <div className="space-y-6 pb-12">
       <motion.div initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }}>
@@ -454,22 +437,6 @@ function LicitacionesPage() {
               />
             </div>
           </div>
-          {selectedWs === "__all__" && wsWithLicitaciones.length > 1 && (
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[11px] text-muted-foreground mr-1">PDF por hospital:</span>
-              {wsWithLicitaciones.map((ws) => (
-                <DownloadLicitacionesPdf
-                  key={ws.id}
-                  lowStock={filteredLowStock.filter((i) => i.workspaceId === ws.id)}
-                  overstock={filteredOverstock.filter((i) => i.workspaceId === ws.id)}
-                  licitaciones={filteredLicitaciones.filter((l) => l.workspace_ids.includes(ws.id))}
-                  proveedores={proveedores}
-                  medMap={medMap}
-                  wsName={ws.name}
-                />
-              ))}
-            </div>
-          )}
           <Card>
             <CardContent className="p-0">
               {filteredLicitaciones.length === 0 ? (
@@ -479,6 +446,10 @@ function LicitacionesPage() {
                   items={filteredLicitaciones}
                   onOpenDetail={openDetail}
                   onCambiarEstado={handleCambiarEstado}
+                  lowStock={filteredLowStock}
+                  overstock={filteredOverstock}
+                  proveedores={proveedores}
+                  medMap={medMap}
                 />
               )}
             </CardContent>
@@ -515,24 +486,6 @@ function LicitacionesPage() {
               />
             </div>
           </div>
-          {selectedWs === "__all__" && wsWithTransfers.length > 1 && (
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[11px] text-muted-foreground mr-1">PDF por hospital:</span>
-              {wsWithTransfers.map((ws) => {
-                const whIds = warehouses.filter((w) => w.workspace_id === ws.id).map((w) => w.id);
-                const wsTransfers = transfers.filter((t) => whIds.includes(t.from_warehouse_id) || whIds.includes(t.to_warehouse_id));
-                return (
-                  <DownloadTransferenciasPdf
-                    key={ws.id}
-                    transfers={wsTransfers}
-                    medMap={medMap}
-                    whMap={whMap}
-                    wsName={ws.name}
-                  />
-                );
-              })}
-            </div>
-          )}
           <Card>
             <CardContent className="p-0">
               {(() => {
@@ -561,6 +514,7 @@ function LicitacionesPage() {
                         <TableHead className="text-xs">Cant.</TableHead>
                         <TableHead className="text-xs">Estado</TableHead>
                         <TableHead className="text-xs">Fecha</TableHead>
+                        <TableHead className="text-xs text-right">Acciones</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -577,6 +531,14 @@ function LicitacionesPage() {
                             </Badge>
                           </TableCell>
                           <TableCell className="text-muted-foreground">{t.date ? new Date(t.date).toLocaleDateString("es-AR") : "-"}</TableCell>
+                          <TableCell className="text-right">
+                            <DownloadTransferenciasPdf
+                              transfers={[t]}
+                              medMap={medMap}
+                              whMap={whMap}
+                              wsName={t.transfer_code ?? t.id.slice(0, 8)}
+                            />
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -848,10 +810,14 @@ function OverstockTable({ items, medMap, onCreateLicitacion }: {
   );
 }
 
-function LicitacionesTable({ items, onOpenDetail, onCambiarEstado }: {
+function LicitacionesTable({ items, onOpenDetail, onCambiarEstado, lowStock, overstock, proveedores, medMap }: {
   items: LicitacionRow[];
   onOpenDetail: (lic: LicitacionRow) => void;
   onCambiarEstado: (id: string, estado: LicitacionEstado) => void;
+  lowStock: LowStockMedication[];
+  overstock: OverstockMedication[];
+  proveedores: ProveedorRow[];
+  medMap: Map<string, string>;
 }) {
   return (
     <Table>
@@ -879,6 +845,14 @@ function LicitacionesTable({ items, onOpenDetail, onCambiarEstado }: {
             </TableCell>
             <TableCell className="text-right">
               <div className="flex items-center justify-end gap-1">
+                <DownloadLicitacionesPdf
+                  lowStock={lowStock.filter((i) => lic.workspace_ids.includes(i.workspaceId))}
+                  overstock={overstock.filter((i) => lic.workspace_ids.includes(i.workspaceId))}
+                  licitaciones={[lic]}
+                  proveedores={proveedores}
+                  medMap={medMap}
+                  wsName={lic.codigo}
+                />
                 <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => onOpenDetail(lic)}>
                   <Eye size={14} />
                 </Button>
@@ -1409,7 +1383,7 @@ Reglas:
       const rpc = await import("@/lib/server-rpc");
       const res = await rpc.aiChatRpc({
         data: {
-          model: process.env.LLM_MODEL ?? "llama-3.3-70b-versatile",
+          model: "deepseek-v4-flash-free",
           messages: [
             { role: "system", content: systemPrompt },
             ...messages.filter((m) => m.role !== "system"),

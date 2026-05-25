@@ -664,7 +664,7 @@ export function DemoAssistantChat({ variant = "floating", ...props }: DemoAssist
       ];
 
       const aiProvider = useStore.getState().aiProvider;
-      const model = aiProvider === "zen" ? "deepseek-v4-flash-free" : "llama-3.3-70b-versatile";
+      const model = "deepseek-v4-flash-free";
 
       console.debug("[chat] prompt chars:", chatMessages.reduce((s, m) => s + m.content.length, 0));
       let fullText = "";

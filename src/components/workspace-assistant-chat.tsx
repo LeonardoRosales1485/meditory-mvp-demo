@@ -945,7 +945,7 @@ export function WorkspaceAssistantChat({
       const collectedToolCalls: OllamaToolCall[] = [];
 
       const aiProvider = useStore.getState().aiProvider;
-      const model = aiProvider === "zen" ? "deepseek-v4-flash-free" : "llama3.1:8b";
+      const model = "deepseek-v4-flash-free";
 
       for await (const event of streamAiChat({
         model,

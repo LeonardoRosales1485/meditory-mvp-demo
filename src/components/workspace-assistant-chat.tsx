@@ -869,7 +869,7 @@ export function WorkspaceAssistantChat({
       const collectedToolCalls: OllamaToolCall[] = [];
 
       for await (const event of streamAiChat({
-        model: aiProvider === "anthropic" ? "claude-sonnet-4-6" : "deepseek-v4-0324-fast",
+        model: aiProvider === "anthropic" ? "claude-sonnet-4-6" : "deepseek-v4-flash-free",
         messages: history,
         tools: assistantTools,
         signal: ac.signal,

@@ -20,7 +20,7 @@ const PROVIDERS = [
   {
     id: "zen" as const,
     label: "OpenCode Zen",
-    model: "deepseek-v4-0324-fast",
+    model: "deepseek-v4-flash-free",
     envKey: "ZEN_API_KEY",
     description: "DeepSeek vía OpenCode — alternativa gratuita con capacidad de herramientas.",
   },

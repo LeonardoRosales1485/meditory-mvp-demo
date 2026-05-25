@@ -229,14 +229,17 @@ export const aiChatRpc = createServerFn({ method: "POST" })
       const content = choice?.message?.content ?? "";
       const rawToolCalls = choice?.message?.tool_calls ?? [];
 
-      const tool_calls = rawToolCalls.map((tc: any) => ({
-        id: String(tc?.id ?? ""),
-        type: String(tc?.type ?? ""),
-        function: {
-          name: String(tc?.function?.name ?? ""),
-          arguments: String(tc?.function?.arguments ?? ""),
-        },
-      }));
+      const tool_calls = rawToolCalls.map((tc: any) => {
+        const rawArgs = tc?.function?.arguments;
+        return {
+          id: String(tc?.id ?? ""),
+          type: String(tc?.type ?? ""),
+          function: {
+            name: String(tc?.function?.name ?? ""),
+            arguments: typeof rawArgs === "object" ? JSON.stringify(rawArgs) : String(rawArgs ?? ""),
+          },
+        };
+      });
 
       if (!content && tool_calls.length === 0) {
         console.warn("[aiChatRpc] empty response — choices:", JSON.stringify(json.choices));

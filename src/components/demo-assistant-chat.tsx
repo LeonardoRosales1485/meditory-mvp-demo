@@ -891,6 +891,10 @@ export function DemoAssistantChat({ variant = "floating", ...props }: DemoAssist
           const label = `Transferir ${args.quantity} u. de ${args.medicationId.slice(0, 8)}: ${args.fromWarehouseId.slice(0, 8)} → ${args.toWarehouseId.slice(0, 8)}`;
           nextMessages.push({ role: "pending_confirm", label, toolName: "create_transfer", data: args });
         }
+      } else if (name === "navigate") {
+        const navArgs = parsedArgs as { path?: string };
+        inlineResults.push({ role: "action_result", success: true, content: `🔗 Navegación a "${navArgs.path ?? "desconocido"}" — podés ir desde el menú lateral.` });
+        hasInlineTool = true;
       } else if (name === "find_similar_licitaciones") {
         const args = parseFindSimilarLicitacionesArgs(parsedArgs);
         if (args) {
@@ -928,7 +932,7 @@ export function DemoAssistantChat({ variant = "floating", ...props }: DemoAssist
 
     const hasPendingConfirm = collectedToolCalls.some((tc) => {
       const name = tc.function?.name ?? "";
-      return !["render_chart", "list_users", "find_similar_licitaciones"].includes(name);
+      return !["render_chart", "list_users", "find_similar_licitaciones", "navigate"].includes(name);
     });
 
     if (hasInlineTool && !hasPendingConfirm) {

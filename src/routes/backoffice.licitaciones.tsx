@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/tabs";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { licitacionTools, parseCreateLicitacionArgs, parseFindSimilarLicitacionesArgs } from "@/lib/assistant-tools";
+import { assistantTools, parseCreateLicitacionArgs, parseFindSimilarLicitacionesArgs, parseCreateTransferArgs } from "@/lib/assistant-tools";
 import { useStore } from "@/lib/store";
 import DownloadLicitacionesPdf from "@/components/pdf-licitaciones-report";
 import DownloadTransferenciasPdf from "@/components/pdf-transferencias-report";
@@ -1367,7 +1367,7 @@ Reglas:
 2. ANTES de crear una licitación, usá la herramienta find_similar_licitaciones para verificar si ya existe una licitación activa que cubra los mismos medicamentos. Si existe, informale al usuario.
 3. Una vez que tengas todos los datos acordados y hayas verificado que no hay duplicados, usá la herramienta create_licitacion para crearla automáticamente.
 4. Siempre confirmá con el usuario antes de crear.
-5. También podés sugerir transferencias de stock entre hospitales cuando veas sobrestock en uno y déficit de ese mismo medicamento en otro. Informá la sugerencia al usuario para que un administrador la apruebe, sin usar herramientas de transferencia.
+5. También podés crear transferencias de stock entre depósitos (mismo hospital u hospitales distintos) usando la tool create_transfer cuando el usuario lo solicite y tengas los datos necesarios (medicationId, sourceBatchId, fromWarehouseId, toWarehouseId, quantity).
 6. Respondé de forma clara y concisa.`;
   }
 
@@ -1383,7 +1383,7 @@ Reglas:
           { role: "system", content: systemPrompt },
           ...history.filter((m) => m.role !== "system"),
         ],
-        tools: licitacionTools,
+        tools: assistantTools,
       },
     }) as Promise<{ content: string; tool_calls: { id: string; type: string; function: { name: string; arguments: string } }[] }>;
   }
@@ -1477,6 +1477,30 @@ Reglas:
           } catch {
             toolResults.push({ role: "assistant", content: "Error al buscar licitaciones similares." });
           }
+        } else if (tc.function.name === "create_transfer") {
+          const args = parseCreateTransferArgs(JSON.parse(tc.function.arguments));
+          if (!args) {
+            toolResults.push({ role: "assistant", content: "❌ Parámetros inválidos para crear transferencia." });
+            continue;
+          }
+          try {
+            const rpc = await import("@/lib/server-rpc");
+            await rpc.backofficeCreateTransferRpc({
+              data: {
+                medicationId: args.medicationId,
+                sourceBatchId: args.sourceBatchId,
+                fromWarehouseId: args.fromWarehouseId,
+                toWarehouseId: args.toWarehouseId,
+                quantity: args.quantity,
+              },
+            });
+            toolResults.push({ role: "assistant", content: `✅ Transferencia creada: ${args.quantity} u. al destino seleccionado.` });
+          } catch {
+            toolResults.push({ role: "assistant", content: "❌ Error al crear la transferencia." });
+          }
+        } else if (tc.function.name === "navigate") {
+          const args = JSON.parse(tc.function.arguments) as Record<string, unknown>;
+          toolResults.push({ role: "assistant", content: `🔗 Navegación a "${args.path ?? "desconocido"}" — podés ir manualmente desde el menú lateral.` });
         }
       }
 

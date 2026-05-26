@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { TrendingUp, AlertTriangle, DollarSign, Trophy, Info, Bot } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { CHAT_PRESET_EVENT } from "@/components/demo-assistant-chat";
 
 const PRESET_LOSS = "Analizá el sobrestock del Hospital Alemán. Identificá los 3 medicamentos con mayor excedente sobre el nivel óptimo, calculá su valor en $ y cuánto se podría recuperar transfiriendo a Francisco o Blanco. No crees registros en la base de datos. Decime exactamente qué transfers harías, con qué cantidades, y qué tengo que hacer yo para ejecutarlas.";
@@ -86,13 +87,18 @@ export function KpiCard({ value, label, sublabel, tooltip, color = "default", pr
               <div className="flex items-start gap-1">
                 <p className="text-sm text-muted-foreground leading-snug flex-1">{label}</p>
                 {tooltip && (
-                  <div className="group relative shrink-0 mt-0.5">
-                    <Info className="h-3.5 w-3.5 text-muted-foreground/40 hover:text-muted-foreground cursor-help transition-colors" />
-                    <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-2 z-50 hidden group-hover:block w-56 rounded-lg border bg-popover text-popover-foreground text-xs p-2.5 shadow-xl leading-relaxed">
-                      {tooltip}
-                      <div className="absolute left-1/2 -translate-x-1/2 top-full border-4 border-transparent border-t-popover" />
-                    </div>
-                  </div>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="shrink-0 mt-0.5 cursor-help">
+                          <Info className="h-3.5 w-3.5 text-muted-foreground/40 hover:text-muted-foreground transition-colors" />
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-56">
+                        {tooltip}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 )}
               </div>
               <p className={`text-2xl font-bold mt-0.5 ${c.text}`}>{formatted}</p>

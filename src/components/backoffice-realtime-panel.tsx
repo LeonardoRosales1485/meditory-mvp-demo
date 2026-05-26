@@ -146,7 +146,7 @@ export function BackofficeRealtimePanel({ workspaces }: { workspaces: { id: stri
   const [selectedWs, setSelectedWs] = useState<string>("__all__");
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const { data: simData, trends: simTrends, getDelta } = useSimulation(data, trends);
+  const { data: simData, trends: simTrends, getDelta, getVersion } = useSimulation(data, trends);
 
   async function loadData(wsId: string) {
     try {
@@ -223,7 +223,7 @@ export function BackofficeRealtimePanel({ workspaces }: { workspaces: { id: stri
         </div>
       )}
 
-      <DeltaCtx.Provider value={getDelta}>
+      <DeltaCtx.Provider value={{ getDelta, getVersion }}>
         <Tabs value={subTab} onValueChange={(v) => setSubTab(v as SubTab)}>
           <TabsList className="grid w-full max-w-3xl grid-cols-5">
             {SUB_TABS.map((t) => (
@@ -267,7 +267,7 @@ function StockTab({ batches, warehouses, crossStock, stockConfig, selectedWs, wo
     const status = expiryStatus(b.expiry);
     return status === "critico" || status === "vencido";
   });
-  const getDelta = useContext(DeltaCtx);
+  const { getDelta } = useContext(DeltaCtx);
   const [expandedMed, setExpandedMed] = useState<string | null>(null);
 
   const medicationList = useMemo(() => {
@@ -343,11 +343,11 @@ function StockTab({ batches, warehouses, crossStock, stockConfig, selectedWs, wo
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{s.label}</p>
                   <p className="mt-2 text-3xl font-semibold tracking-tight">
                     {idx === 0 ? (
-                      <SimValue value={totalUnits} delta={getDelta("total-units")} format={(n) => n.toLocaleString("es-AR")} />
+                      <SimValue value={totalUnits} delta={getDelta("total-units")} deltaKey="total-units" format={(n) => n.toLocaleString("es-AR")} />
                     ) : idx === 1 ? (
-                      <SimValue value={criticalBatches.length} delta={getDelta("critical-batches")} />
+                      <SimValue value={criticalBatches.length} delta={getDelta("critical-batches")} deltaKey="critical-batches" />
                     ) : (
-                      <SimValue value={expiringSoon.length} delta={getDelta("expiring-soon")} />
+                      <SimValue value={expiringSoon.length} delta={getDelta("expiring-soon")} deltaKey="expiring-soon" />
                     )}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">{s.hint}</p>
@@ -484,7 +484,7 @@ function StockBadge({ stock, min, opt }: { stock: number; min: number; opt: numb
 }
 
 function MovementsTab({ movements, medications, loading }: { movements: Movement[]; medications: Medication[]; loading: boolean }) {
-  const getDelta = useContext(DeltaCtx);
+  const { getDelta } = useContext(DeltaCtx);
   const { isMobile, viewMode, setViewMode } = useMobileListView("bo-panel-movements");
   const [startDate, setStartDate] = useState(toLocalDateInput(-13));
   const [endDate, setEndDate] = useState(toLocalDateInput(0));
@@ -496,9 +496,9 @@ function MovementsTab({ movements, medications, loading }: { movements: Movement
     return d >= start && d <= end;
   }).sort((a, b) => +new Date(b.date) - +new Date(a.date));
 
-  const ingressCount = filtered.filter((m) => m.type === "ingreso").length;
-  const egressCount = filtered.filter((m) =>
-    ["venta", "dispensacion", "transferencia", "ajuste"].includes(m.type)).length;
+  const ingressCount = movements.filter((m) => m.type === "ingreso").length;
+  const egressCount = movements.filter((m) =>
+    ["venta", "dispensacion", "transferencia", "ajuste", "egreso"].includes(m.type)).length;
 
   const dailyMovements = (() => {
     const start = new Date(startDate); const end = new Date(endDate);
@@ -546,30 +546,26 @@ function MovementsTab({ movements, medications, loading }: { movements: Movement
         {[
           { label: "Ingresos", icon: ArrowDownToLine, hint: `Recepciones ${dateRangeLabel}` },
           { label: "Salidas", icon: ArrowUpFromLine,
-            hint: `Ventas, dispensaciones, transferencias y ajustes ${dateRangeLabel}`,
-            tone: egressCount > 0 ? "destructive" as const : undefined },
+            hint: `Ventas, dispensaciones, transferencias y ajustes ${dateRangeLabel}` },
           { label: "Total movimientos", icon: TrendingUp, hint: `Todos los movimientos ${dateRangeLabel}` },
         ].map((s, idx) => (
-          <Card key={s.label} className={s.tone === "destructive" ? "border-destructive/30" : "border-border/60"}>
+          <Card key={s.label} className="border-border/60">
             <CardContent className="p-5">
               <div className="flex items-start justify-between">
                 <div>
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{s.label}</p>
-                  <p className={`mt-2 text-3xl font-semibold tracking-tight ${s.tone === "destructive" ? "text-destructive" : ""}`}>
+                  <p className="mt-2 text-3xl font-semibold tracking-tight">
                     {idx === 0 ? (
-                      <SimValue value={ingressCount} delta={getDelta("ingress-count")} />
+                      <SimValue value={ingressCount} delta={getDelta("ingress-count")} deltaKey="ingress-count" />
                     ) : idx === 1 ? (
-                      <SimValue value={egressCount} delta={getDelta("egress-count")} />
+                      <SimValue value={egressCount} delta={getDelta("egress-count")} deltaKey="egress-count" />
                     ) : (
-                      <SimValue value={filtered.length} delta={getDelta("total-movements")} />
+                      <SimValue value={movements.length} delta={getDelta("total-movements")} deltaKey="total-movements" />
                     )}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">{s.hint}</p>
                 </div>
-                <div className={`flex h-9 w-9 items-center justify-center rounded-md ${
-                  s.tone === "destructive" ? "bg-destructive/10 text-destructive" :
-                  s.tone === "warning" ? "bg-warning/15 text-warning" : "bg-primary-soft text-primary"
-                }`}>
+                <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary-soft text-primary">
                   <s.icon className="h-4 w-4" />
                 </div>
               </div>
@@ -609,11 +605,11 @@ function MovementsTab({ movements, medications, loading }: { movements: Movement
             {isMobile && <MobileViewToggle value={viewMode} onChange={setViewMode} />}
           </CardHeader>
           <CardContent className="px-0">
-            {filtered.length === 0 ? (
+            {movements.length === 0 ? (
               <p className="px-6 py-10 text-center text-sm text-muted-foreground">Sin movimientos.</p>
             ) : isMobile && viewMode === "cards" ? (
               <div className="space-y-3 px-4 pb-4">
-                {filtered.slice(0, 10).map((m) => (
+                {movements.slice(0, 10).map((m) => (
                   <Card key={m.id} className="shadow-sm">
                     <CardContent className="space-y-1.5 p-4 text-xs text-muted-foreground">
                       <div className="flex items-center justify-between">
@@ -641,7 +637,7 @@ function MovementsTab({ movements, medications, loading }: { movements: Movement
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.slice(0, 10).map((m) => (
+                  {movements.slice(0, 10).map((m) => (
                     <TableRow key={m.id}>
                       <TableCell><span className="text-xs font-medium capitalize text-muted-foreground">
                         {MOVEMENT_TYPE_LABEL[m.type] ?? m.type}</span></TableCell>
@@ -662,7 +658,7 @@ function MovementsTab({ movements, medications, loading }: { movements: Movement
 }
 
 function OrdersTab({ orders, medications, loading }: { orders: Order[]; medications: Medication[]; loading: boolean }) {
-  const getDelta = useContext(DeltaCtx);
+  const { getDelta } = useContext(DeltaCtx);
   const { isMobile, viewMode, setViewMode } = useMobileListView("bo-panel-orders");
   const pendingOrders = orders.filter((o) => o.status === "pendiente");
   const approvedOrders = orders.filter((o) => o.status === "aprobado");
@@ -705,11 +701,11 @@ function OrdersTab({ orders, medications, loading }: { orders: Order[]; medicati
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{s.label}</p>
                   <p className="mt-2 text-3xl font-semibold tracking-tight">
                     {idx === 0 ? (
-                      <SimValue value={pendingOrders.length} delta={getDelta("pending-orders")} />
+                      <SimValue value={pendingOrders.length} delta={getDelta("pending-orders")} deltaKey="pending-orders" />
                     ) : idx === 1 ? (
-                      <SimValue value={approvedOrders.length} delta={getDelta("approved-orders")} />
+                      <SimValue value={approvedOrders.length} delta={getDelta("approved-orders")} deltaKey="approved-orders" />
                     ) : (
-                      <SimValue value={rejectedOrders.length} delta={getDelta("rejected-orders")} />
+                      <SimValue value={rejectedOrders.length} delta={getDelta("rejected-orders")} deltaKey="rejected-orders" />
                     )}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">{s.hint}</p>
@@ -847,7 +843,7 @@ function OrdersTab({ orders, medications, loading }: { orders: Order[]; medicati
 }
 
 function TransfersTab({ transfers, medications, warehouses, workspaces, loading }: { transfers: Transfer[]; medications: Medication[]; warehouses: Warehouse[]; workspaces: { id: string; name: string }[]; loading: boolean }) {
-  const getDelta = useContext(DeltaCtx);
+  const { getDelta } = useContext(DeltaCtx);
   const { isMobile, viewMode, setViewMode } = useMobileListView("bo-panel-transfers");
   const activeTransfers = transfers.filter((t) => !["aceptado", "rechazado"].includes(t.status));
   const toReceiveTransfers = transfers.filter((t) => t.status === "recibir" || t.status === "despachado");
@@ -894,11 +890,11 @@ function TransfersTab({ transfers, medications, warehouses, workspaces, loading 
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{s.label}</p>
                   <p className="mt-2 text-3xl font-semibold tracking-tight">
                     {idx === 0 ? (
-                      <SimValue value={activeTransfers.length} delta={getDelta("active-transfers")} />
+                      <SimValue value={activeTransfers.length} delta={getDelta("active-transfers")} deltaKey="active-transfers" />
                     ) : idx === 1 ? (
-                      <SimValue value={toReceiveTransfers.length} delta={getDelta("to-receive-transfers")} />
+                      <SimValue value={toReceiveTransfers.length} delta={getDelta("to-receive-transfers")} deltaKey="to-receive-transfers" />
                     ) : (
-                      <SimValue value={completedToday} delta={getDelta("completed-today")} />
+                      <SimValue value={completedToday} delta={getDelta("completed-today")} deltaKey="completed-today" />
                     )}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">{s.hint}</p>
@@ -1059,7 +1055,7 @@ const RISK_COLOR: Record<string, string> = {
 };
 
 function TrendsTab({ trends, loading, periodDays }: { trends: TrendItem[]; loading: boolean; periodDays: number }) {
-  const getDelta = useContext(DeltaCtx);
+  const { getDelta } = useContext(DeltaCtx);
   const categories = ["critico", "bajo", "optimo", "superavit", "sin_stock", "sin_consumo"] as const;
   const counts = categories.reduce(
     (acc, cat) => {
@@ -1091,7 +1087,7 @@ function TrendsTab({ trends, loading, periodDays }: { trends: TrendItem[]; loadi
                 <div>
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{c.label}</p>
                   <p className="mt-2 text-3xl font-semibold tracking-tight">
-                    <SimValue value={c.value} delta={getDelta(`trend-${c.key}`)} />
+                    <SimValue value={c.value} delta={getDelta(`trend-${c.key}`)} deltaKey={`trend-${c.key}`} />
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">{c.hint}</p>
                 </div>
@@ -1136,13 +1132,13 @@ function TrendsTab({ trends, loading, periodDays }: { trends: TrendItem[]; loadi
                   <TableRow key={t.medication_id}>
                     <TableCell className="font-medium">{t.medication_name}</TableCell>
                     <TableCell className="text-right font-semibold">
-                      <SimValue value={t.stock_total} delta={getDelta(`trend-stock-${t.medication_id}`)} format={(n) => n.toLocaleString("es-AR")} />
+                      <SimValue value={t.stock_total} delta={getDelta(`trend-stock-${t.medication_id}`)} deltaKey={`trend-stock-${t.medication_id}`} format={(n) => n.toLocaleString("es-AR")} />
                     </TableCell>
                     <TableCell className="text-right text-muted-foreground">{t.consumed_per_day.toFixed(2)}</TableCell>
                     <TableCell className="text-right font-semibold">
                       {t.days_until_empty !== null ? (
                         t.days_until_empty < 365 ? (
-                          <SimValue value={Math.floor(t.days_until_empty)} delta={getDelta(`trend-days-${t.medication_id}`)} format={(n) => `${n} días`} />
+                          <SimValue value={Math.floor(t.days_until_empty)} delta={getDelta(`trend-days-${t.medication_id}`)} deltaKey={`trend-days-${t.medication_id}`} format={(n) => `${n} días`} />
                         ) : (
                           "> 1 año"
                         )

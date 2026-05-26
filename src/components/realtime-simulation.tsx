@@ -29,10 +29,13 @@ type TrendItem = {
 
 // ── Context ──
 
-type GetDeltaFn = (key: string) => number;
-export const DeltaCtx = createContext<GetDeltaFn>(() => 0);
+type DeltaCtxValue = {
+  getDelta: (key: string) => number;
+  getVersion: (key: string) => number;
+};
+export const DeltaCtx = createContext<DeltaCtxValue>({ getDelta: () => 0, getVersion: () => 0 });
 export function useDelta(key: string): number {
-  return useContext(DeltaCtx)(key);
+  return useContext(DeltaCtx).getDelta(key);
 }
 
 // ── SimValue component ──
@@ -40,14 +43,17 @@ export function useDelta(key: string): number {
 interface SimValueProps {
   value: number;
   delta: number;
+  deltaKey?: string;
   format?: (n: number) => string;
   className?: string;
 }
 
-export function SimValue({ value, delta, format = String, className = "" }: SimValueProps) {
+export function SimValue({ value, delta, deltaKey, format = String, className = "" }: SimValueProps) {
+  const { getVersion } = useContext(DeltaCtx);
+  const version = deltaKey ? getVersion(deltaKey) : 0;
   const [visible, setVisible] = useState(false);
   const [displayDelta, setDisplayDelta] = useState(0);
-  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
     if (delta === 0) return;
@@ -56,7 +62,7 @@ export function SimValue({ value, delta, format = String, className = "" }: SimV
     clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => setVisible(false), 1500);
     return () => clearTimeout(timerRef.current);
-  }, [delta]);
+  }, [delta, version]);
 
   const dir = delta > 0 ? "up" : delta < 0 ? "down" : null;
 
@@ -84,6 +90,19 @@ export function SimValue({ value, delta, format = String, className = "" }: SimV
 const ROOMS = ["101", "102", "201", "202", "301", "Quirófano 1", "Quirófano 2", "UTI", "Pediatría", "Maternidad"];
 const PATIENTS = ["Paciente A", "Paciente B", "Paciente C", "Paciente D", "Paciente E", "Paciente F"];
 
+const DUMMY_MEDICATIONS: Medication[] = [
+  { id: "dummy-med-001", name: "Paracetamol", concentration_value: 500, concentration_unit: "mg" },
+  { id: "dummy-med-002", name: "Ibuprofeno", concentration_value: 400, concentration_unit: "mg" },
+  { id: "dummy-med-003", name: "Amoxicilina", concentration_value: 500, concentration_unit: "mg" },
+  { id: "dummy-med-004", name: "Omeprazol", concentration_value: 20, concentration_unit: "mg" },
+  { id: "dummy-med-005", name: "Losartán", concentration_value: 50, concentration_unit: "mg" },
+  { id: "dummy-med-006", name: "Metformina", concentration_value: 850, concentration_unit: "mg" },
+  { id: "dummy-med-007", name: "Salbutamol", concentration_value: 100, concentration_unit: "mcg" },
+  { id: "dummy-med-008", name: "Atorvastatina", concentration_value: 10, concentration_unit: "mg" },
+  { id: "dummy-med-009", name: "Enalapril", concentration_value: 10, concentration_unit: "mg" },
+  { id: "dummy-med-010", name: "Dexametasona", concentration_value: 8, concentration_unit: "mg" },
+];
+
 interface MockPools {
   movements: Movement[];
   orders: Order[];
@@ -93,14 +112,19 @@ interface MockPools {
 
 function buildMockPools(data: RealtimeData): MockPools {
   const movTypes = ["ingreso", "venta", "dispensacion", "transferencia", "ajuste"];
+  const dummyWhId = data.warehouses[0]?.id ?? "";
+  const USERS = ["Dr. García", "Dr. López", "Dra. Martínez", "Dr. Rodríguez", "Enf. Pérez", "Simulación"];
   const movements: Movement[] = [];
   for (let i = 0; i < 10; i++) {
-    const src = data.movements[i % data.movements.length] ?? data.movements[0];
+    const med = DUMMY_MEDICATIONS[i % DUMMY_MEDICATIONS.length];
     movements.push({
-      ...src,
       id: `mock-mov-${i}`,
       type: movTypes[i % movTypes.length],
+      medication_id: med.id,
+      warehouse_id: dummyWhId,
       quantity: (Math.floor(Math.random() * 10) + 1) * 3,
+      user_name: USERS[i % USERS.length],
+      reason: "Simulación en tiempo real",
       date: "",
     });
   }
@@ -138,7 +162,7 @@ function buildMockPools(data: RealtimeData): MockPools {
 // ── Metric helpers ──
 
 function computeKeyMetrics(data: RealtimeData, mocks: MockPools): Record<string, number> {
-  const consumptionTypes = new Set(["venta", "dispensacion", "transferencia", "ajuste"]);
+  const consumptionTypes = new Set(["venta", "dispensacion", "transferencia", "ajuste", "egreso"]);
   const today = new Date().toDateString();
   return {
     "total-units": data.batches.reduce((s, b) => s + b.quantity, 0),
@@ -312,10 +336,12 @@ export function useSimulation(
   data: RealtimeData | null;
   trends: TrendItem[];
   getDelta: (key: string) => number;
+  getVersion: (key: string) => number;
 } {
   const [simData, setSimData] = useState<RealtimeData | null>(null);
   const [simTrends, setSimTrends] = useState<TrendItem[]>([]);
   const deltasRef = useRef<Map<string, { value: number; expiresAt: number }>>(new Map());
+  const deltaVersionsRef = useRef<Map<string, number>>(new Map());
   const [, forceTick] = useState(0);
   const initialized = useRef(false);
   const mockPoolsRef = useRef<MockPools>({ movements: [], orders: [], transfers: [], txDestWarehouseIds: [] });
@@ -328,11 +354,15 @@ export function useSimulation(
       return;
     }
     if (!initialized.current) {
-      setSimData(realData);
+      setSimData({
+        ...realData,
+        medications: [...realData.medications, ...DUMMY_MEDICATIONS],
+      });
       setSimTrends(realTrends.map((t) => ({ ...t })));
       mockPoolsRef.current = buildMockPools(realData);
       poolIdxRef.current = 0;
       deltasRef.current.clear();
+      deltaVersionsRef.current.clear();
       initialized.current = true;
       forceTick((n) => n + 1);
     }
@@ -381,7 +411,10 @@ export function useSimulation(
         const now = Date.now();
         for (const key of Object.keys(oldMetrics)) {
           const diff = newMetrics[key] - oldMetrics[key];
-          if (diff !== 0) deltasRef.current.set(key, { value: diff, expiresAt: now + 2000 });
+          if (diff !== 0) {
+            deltasRef.current.set(key, { value: diff, expiresAt: now + 2000 });
+            deltaVersionsRef.current.set(key, (deltaVersionsRef.current.get(key) ?? 0) + 1);
+          }
         }
         return newData;
       });
@@ -393,18 +426,27 @@ export function useSimulation(
         const now = Date.now();
         for (const key of Object.keys(oldMetrics)) {
           const diff = newMetrics[key] - oldMetrics[key];
-          if (diff !== 0) deltasRef.current.set(key, { value: diff, expiresAt: now + 2000 });
+          if (diff !== 0) {
+            deltasRef.current.set(key, { value: diff, expiresAt: now + 2000 });
+            deltaVersionsRef.current.set(key, (deltaVersionsRef.current.get(key) ?? 0) + 1);
+          }
         }
         for (let i = 0; i < newTrends.length; i++) {
           const o = prev[i];
           const n = newTrends[i];
           if (n.stock_total !== o.stock_total) {
-            deltasRef.current.set(`trend-stock-${o.medication_id}`, { value: n.stock_total - o.stock_total, expiresAt: now + 2000 });
+            const key = `trend-stock-${o.medication_id}`;
+            const diff = n.stock_total - o.stock_total;
+            deltasRef.current.set(key, { value: diff, expiresAt: now + 2000 });
+            deltaVersionsRef.current.set(key, (deltaVersionsRef.current.get(key) ?? 0) + 1);
           }
           const oldDays = o.days_until_empty ?? 0;
           const newDays = n.days_until_empty ?? 0;
           if (newDays !== oldDays) {
-            deltasRef.current.set(`trend-days-${o.medication_id}`, { value: +(newDays - oldDays).toFixed(1), expiresAt: now + 2000 });
+            const key = `trend-days-${o.medication_id}`;
+            const diff = +(newDays - oldDays).toFixed(1);
+            deltasRef.current.set(key, { value: diff, expiresAt: now + 2000 });
+            deltaVersionsRef.current.set(key, (deltaVersionsRef.current.get(key) ?? 0) + 1);
           }
         }
         return newTrends;
@@ -424,6 +466,7 @@ export function useSimulation(
       for (const [key, entry] of deltasRef.current) {
         if (entry.expiresAt < now) {
           deltasRef.current.delete(key);
+          deltaVersionsRef.current.delete(key);
           changed = true;
         }
       }
@@ -436,5 +479,9 @@ export function useSimulation(
     return deltasRef.current.get(key)?.value ?? 0;
   }, []);
 
-  return { data: simData, trends: simTrends, getDelta };
+  const getVersion = useCallback((key: string): number => {
+    return deltaVersionsRef.current.get(key) ?? 0;
+  }, []);
+
+  return { data: simData, trends: simTrends, getDelta, getVersion };
 }

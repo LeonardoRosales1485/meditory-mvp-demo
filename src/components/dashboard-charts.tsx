@@ -590,14 +590,14 @@ export function ProductosEstrellaChart({ crossStock, consumptionData }: { crossS
   const data = [...consumedMap.entries()]
     .map(([name, total]) => ({ name, total }))
     .sort((a, b) => b.total - a.total)
-    .slice(0, 100);
+    .slice(0, 10);
 
   const report: ChartReport = useMemo(() => {
     const wsFullNames = [...new Set(consumptionData.map((d) => d.workspaceName))];
     const grandTotal = data.reduce((s, d) => s + d.total, 0);
     const top1 = data[0];
 
-    const analysis = `El ranking de los 100 productos estrella muestra los medicamentos de mayor consumo en los últimos 30 días. ${top1?.name ?? 'El primer producto'} lidera con ${top1?.total.toLocaleString('es-AR') ?? 0} unidades consumidas, representando ${grandTotal > 0 ? ((top1?.total ?? 0) / grandTotal * 100).toFixed(1) : 0}% del total de ${grandTotal.toLocaleString('es-AR')} unidades consumidas en el top 100. Estos productos de alta rotación requieren una atención prioritaria en la gestión de inventario para evitar desabastecimientos.`;
+    const analysis = `El ranking de los 10 productos estrella muestra los medicamentos de mayor consumo en los últimos 30 días. ${top1?.name ?? 'El primer producto'} lidera con ${top1?.total.toLocaleString('es-AR') ?? 0} unidades consumidas, representando ${grandTotal > 0 ? ((top1?.total ?? 0) / grandTotal * 100).toFixed(1) : 0}% del total de ${grandTotal.toLocaleString('es-AR')} unidades consumidas en el top 10. Estos productos de alta rotación requieren una atención prioritaria en la gestión de inventario para evitar desabastecimientos.`;
 
     return {
       workspaceNames: wsFullNames,
@@ -612,8 +612,8 @@ export function ProductosEstrellaChart({ crossStock, consumptionData }: { crossS
   }, [data]);
 
   return (
-    <ChartCard title="Ranking 100 Productos Estrella" delay={0.4} report={report}>
-      <ResponsiveContainer width="100%" height={500}>
+    <ChartCard title="Top 10 Productos Estrella" delay={0.4} report={report}>
+      <ResponsiveContainer width="100%" height={280}>
         <BarChart layout="vertical" data={data} margin={{ left: 20, right: 20 }}>
           <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
           <XAxis type="number" tick={{ fontSize: 9 }} />
@@ -650,13 +650,13 @@ export function ProductosEstancadosChart({ crossStock, consumptionData }: { cros
     .map(([name, total]) => ({ name, total }))
     .sort((a, b) => a.total - b.total);
 
-  const data = [...zeroConsumption, ...withConsumption].slice(0, 100);
+  const data = [...zeroConsumption, ...withConsumption].slice(0, 10);
 
   const report: ChartReport = useMemo(() => {
     const wsFullNames = [...new Set(consumptionData.map((d) => d.workspaceName))];
     const stagnantCount = data.filter((d) => d.total === 0).length;
 
-    const analysis = `El ranking de los 100 productos estancados revela ${stagnantCount} medicamentos con consumo cero en los últimos 30 días, a pesar de tener stock disponible. El resto del ranking corresponde a medicamentos con muy baja rotación. Estos productos representan capital inmovilizado y riesgo de vencimiento, por lo que requieren una estrategia de liquidación, redistribución o devolución a proveedores.`;
+    const analysis = `El ranking de los 10 productos estancados revela ${stagnantCount} medicamentos con consumo cero en los últimos 30 días, a pesar de tener stock disponible. El resto del ranking corresponde a medicamentos con muy baja rotación. Estos productos representan capital inmovilizado y riesgo de vencimiento, por lo que requieren una estrategia de liquidación, redistribución o devolución a proveedores.`;
 
     return {
       workspaceNames: wsFullNames,
@@ -671,8 +671,8 @@ export function ProductosEstancadosChart({ crossStock, consumptionData }: { cros
   }, [data]);
 
   return (
-    <ChartCard title="Ranking 100 Productos Estancados" delay={0.45} report={report}>
-      <ResponsiveContainer width="100%" height={500}>
+    <ChartCard title="Top 10 Productos Estancados" delay={0.45} report={report}>
+      <ResponsiveContainer width="100%" height={280}>
         <BarChart layout="vertical" data={data} margin={{ left: 20, right: 20 }}>
           <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
           <XAxis type="number" tick={{ fontSize: 9 }} />

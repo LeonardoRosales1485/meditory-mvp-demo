@@ -652,7 +652,7 @@ function ControlStockPage() {
     if (!b.expiry) return false;
     return daysUntil(b.expiry) < 0;
   }).length;
-  const activeTransfers = transfers.filter(
+  const activeTransfers = filteredTransfers.filter(
     (t) => !["recibido", "rechazado", "aceptado"].includes(t.status)
   ).length;
 
@@ -725,7 +725,7 @@ function ControlStockPage() {
               <ArrowLeftRight size={16} />
               <span className="text-xs font-medium">Transferencias</span>
             </div>
-            <p className="text-2xl font-black">{activeTransfers} <span className="text-base font-normal text-muted-foreground">/ {transfers.length}</span></p>
+            <p className="text-2xl font-black">{activeTransfers} <span className="text-base font-normal text-muted-foreground">/ {filteredTransfers.length}</span></p>
             <p className="text-xs text-muted-foreground mt-0.5">activas / total</p>
           </CardContent>
         </Card>

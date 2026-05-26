@@ -2544,10 +2544,9 @@ export async function createOverstockTransfer(data: {
       .select("id, quantity")
       .eq("medication_id", data.medicationId)
       .eq("warehouse_id", data.fromWarehouseId)
-      .order("expiry", { ascending: true })
   );
-  const suitable = batches.find((b) => Number(b.quantity) >= data.quantity);
-  if (!suitable) throw new Error("No hay lote con stock suficiente en el depósito origen");
+  const totalStock = batches.reduce((sum, b) => sum + Number(b.quantity), 0);
+  if (totalStock < data.quantity) throw new Error("Stock insuficiente en el depósito origen");
 
   const transferId = randomUUID();
   const transferCode = `BO-${Date.now().toString(36).toUpperCase()}`;
@@ -2559,7 +2558,7 @@ export async function createOverstockTransfer(data: {
       workspace_id: workspaceId,
       transfer_code: transferCode,
       medication_id: data.medicationId,
-      source_batch_id: suitable.id,
+      source_batch_id: null,
       from_warehouse_id: data.fromWarehouseId,
       to_warehouse_id: data.toWarehouseId,
       quantity: data.quantity,

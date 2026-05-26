@@ -1817,44 +1817,66 @@ export interface SuggestedTenderItem {
 // ─────────────────────────────────────────────────────────────
 
 export async function getLowStockMedications(): Promise<LowStockMedication[]> {
-  const batches = await db<{ medication_id: string; warehouse_id: string; quantity: number }[]>(
-    supabaseAdmin.from("batches").select("medication_id, warehouse_id, quantity"),
-  );
-  const meds = await db<{ id: string; name: string; workspace_id: string }[]>(
-    supabaseAdmin.from("medications").select("id, name, workspace_id"),
-  );
-  const configs = await db<{ medication_id: string; warehouse_id: string; min_stock: number }[]>(
-    supabaseAdmin.from("medication_stock_config").select("medication_id, warehouse_id, min_stock"),
-  );
-  const workspaces = await db<{ id: string; name: string }[]>(
-    supabaseAdmin.from("workspaces").select("id, name"),
-  );
+  const [batches, meds, configs, workspaces, warehouses] = await Promise.all([
+    db<{ medication_id: string; warehouse_id: string; quantity: number }[]>(
+      supabaseAdmin.from("batches").select("medication_id, warehouse_id, quantity"),
+    ),
+    db<{ id: string; name: string; workspace_id: string }[]>(
+      supabaseAdmin.from("medications").select("id, name, workspace_id"),
+    ),
+    db<{ medication_id: string; warehouse_id: string; min_stock: number }[]>(
+      supabaseAdmin.from("medication_stock_config").select("medication_id, warehouse_id, min_stock"),
+    ),
+    db<{ id: string; name: string }[]>(
+      supabaseAdmin.from("workspaces").select("id, name"),
+    ),
+    db<{ id: string; workspace_id: string }[]>(
+      supabaseAdmin.from("warehouses").select("id, workspace_id"),
+    ),
+  ]);
 
   const wsMap = new Map(workspaces.map((w) => [w.id, w.name]));
   const medMap = new Map(meds.map((m) => [m.id, m]));
+  const warehouseMap = new Map(warehouses.map((w) => [w.id, w.workspace_id]));
 
-  const stockByMedWarehouse = new Map<string, number>();
+  // Agregar stock por (medication_id, workspace_id)
+  const stockByMedWorkspace = new Map<string, Map<string, number>>();
   for (const b of batches) {
-    const key = `${b.medication_id}::${b.warehouse_id}`;
-    stockByMedWarehouse.set(key, (stockByMedWarehouse.get(key) ?? 0) + b.quantity);
+    const wsId = warehouseMap.get(b.warehouse_id);
+    if (!wsId) continue;
+    if (!stockByMedWorkspace.has(b.medication_id)) stockByMedWorkspace.set(b.medication_id, new Map());
+    const inner = stockByMedWorkspace.get(b.medication_id)!;
+    inner.set(wsId, (inner.get(wsId) ?? 0) + b.quantity);
+  }
+
+  // Agregar config (min_stock) por (medication_id, workspace_id)
+  const cfgByMedWorkspace = new Map<string, Map<string, number>>();
+  for (const cfg of configs) {
+    const wsId = warehouseMap.get(cfg.warehouse_id);
+    if (!wsId) continue;
+    if (!cfgByMedWorkspace.has(cfg.medication_id)) cfgByMedWorkspace.set(cfg.medication_id, new Map());
+    const inner = cfgByMedWorkspace.get(cfg.medication_id)!;
+    inner.set(wsId, (inner.get(wsId) ?? 0) + cfg.min_stock);
   }
 
   const results: LowStockMedication[] = [];
-  for (const cfg of configs) {
-    const key = `${cfg.medication_id}::${cfg.warehouse_id}`;
-    const current = stockByMedWarehouse.get(key) ?? 0;
-    if (current < cfg.min_stock) {
-      const med = medMap.get(cfg.medication_id);
-      if (!med) continue;
-      results.push({
-        medicationId: cfg.medication_id,
-        medicationName: med.name,
-        workspaceId: med.workspace_id,
-        workspaceName: wsMap.get(med.workspace_id) ?? med.workspace_id,
-        currentStock: current,
-        minStock: cfg.min_stock,
-        deficit: cfg.min_stock - current,
-      });
+  for (const [medId, wsCfgMap] of cfgByMedWorkspace) {
+    const med = medMap.get(medId);
+    if (!med) continue;
+
+    for (const [wsId, totalMinStock] of wsCfgMap) {
+      const current = stockByMedWorkspace.get(medId)?.get(wsId) ?? 0;
+      if (current < totalMinStock) {
+        results.push({
+          medicationId: medId,
+          medicationName: med.name,
+          workspaceId: wsId,
+          workspaceName: wsMap.get(wsId) ?? wsId,
+          currentStock: current,
+          minStock: totalMinStock,
+          deficit: totalMinStock - current,
+        });
+      }
     }
   }
 

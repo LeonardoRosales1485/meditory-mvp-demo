@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -1087,56 +1088,80 @@ function ControlStockPage() {
                         : "Sin resultados para los filtros aplicados"}
                     </p>
                   ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="text-xs">Medicamento</TableHead>
-                          <TableHead className="text-xs">Hospital con Déficit</TableHead>
-                          <TableHead className="text-xs text-right">Faltante</TableHead>
-                          <TableHead className="text-xs">Hospital con Superávit</TableHead>
-                          <TableHead className="text-xs text-right">Excedente</TableHead>
-                          <TableHead className="text-xs text-right">Transferir</TableHead>
-                          <TableHead className="text-xs text-right">Ahorro potencial</TableHead>
-                          <TableHead className="w-8"></TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {displayedSuggestions.slice(suggestionPage * ITEMS_PER_PAGE, (suggestionPage + 1) * ITEMS_PER_PAGE).map((s, idx) => (
-                          <TableRow
-                            key={s.medicationId + "::" + s.deficitWorkspace + "::" + idx}
-                            className="cursor-pointer hover:bg-purple-50/60 dark:hover:bg-purple-950/20 group"
-                            onClick={() => {
-                              setTFormMed(s.medicationId);
-                              setTFormFrom(s.surplusWarehouse);
-                              setTFormTo(s.deficitWarehouse);
-                              setTFormQty(s.suggestedQty);
-                              setTransferOpen(true);
-                            }}
-                          >
-                            <TableCell className="text-sm font-medium">{s.medicationName}</TableCell>
-                            <TableCell className="text-xs text-muted-foreground">{s.deficitWorkspace}</TableCell>
-                            <TableCell className="text-right text-sm">
-                              <span className="text-red-600 font-medium tabular-nums">-{s.deficit.toLocaleString("es-AR")}</span>
-                            </TableCell>
-                            <TableCell className="text-xs text-muted-foreground">{s.surplusWorkspace}</TableCell>
-                            <TableCell className="text-right text-sm">
-                              <span className="text-blue-600 font-medium tabular-nums">+{s.surplus.toLocaleString("es-AR")}</span>
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <Badge className="bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300 border-0 text-[11px] font-semibold tabular-nums">
-                                {s.suggestedQty.toLocaleString("es-AR")} u
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-right text-xs font-medium text-green-700 dark:text-green-400 tabular-nums">
-                              ${s.potentialSaving.toLocaleString("es-AR")}
-                            </TableCell>
-                            <TableCell className="text-right pr-3">
-                              <ArrowLeftRight size={13} className="text-muted-foreground/40 group-hover:text-purple-500 transition-colors" />
-                            </TableCell>
+                    <TooltipProvider>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="text-xs">Medicamento</TableHead>
+                            <TableHead className="text-xs">Hospital con Déficit</TableHead>
+                            <TableHead className="text-xs text-right">Faltante</TableHead>
+                            <TableHead className="text-xs">Hospital con Superávit</TableHead>
+                            <TableHead className="text-xs text-right">Excedente</TableHead>
+                            <TableHead className="text-xs text-right">Transferir</TableHead>
+                            <TableHead className="text-xs text-right">Ahorro potencial</TableHead>
+                            <TableHead className="w-8"></TableHead>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                        </TableHeader>
+                        <TableBody>
+                          {displayedSuggestions.slice(suggestionPage * ITEMS_PER_PAGE, (suggestionPage + 1) * ITEMS_PER_PAGE).map((s, idx) => (
+                            <TableRow
+                              key={s.medicationId + "::" + s.deficitWorkspace + "::" + idx}
+                              className="cursor-pointer hover:bg-purple-50/60 dark:hover:bg-purple-950/20 group"
+                              onClick={() => {
+                                setTFormMed(s.medicationId);
+                                setTFormFrom(s.surplusWarehouse);
+                                setTFormTo(s.deficitWarehouse);
+                                setTFormQty(s.suggestedQty);
+                                setTransferOpen(true);
+                              }}
+                            >
+                              <TableCell className="text-sm font-medium">{s.medicationName}</TableCell>
+                              <TableCell className="text-xs text-muted-foreground">{s.deficitWorkspace}</TableCell>
+                              <TableCell className="text-right text-sm">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="text-red-600 font-medium tabular-nums cursor-help">-{s.deficit.toLocaleString("es-AR")}</span>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="left" className="max-w-56">
+                                    Cantidad necesaria para que <strong>{s.deficitWorkspace}</strong> alcance su stock mínimo
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TableCell>
+                              <TableCell className="text-xs text-muted-foreground">{s.surplusWorkspace}</TableCell>
+                              <TableCell className="text-right text-sm">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="text-blue-600 font-medium tabular-nums cursor-help">+{s.surplus.toLocaleString("es-AR")}</span>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="left" className="max-w-60">
+                                    Stock disponible de <strong>{s.surplusWorkspace}</strong> por encima de su óptimo (protegido)
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Badge className="bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300 border-0 text-[11px] font-semibold tabular-nums cursor-help">
+                                      {s.suggestedQty.toLocaleString("es-AR")} u
+                                    </Badge>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="left" className="max-w-64">
+                                    <p>Mínimo entre el faltante de <strong>{s.deficitWorkspace}</strong> ({s.deficit.toLocaleString("es-AR")} uds.) y el excedente de <strong>{s.surplusWorkspace}</strong> ({s.surplus.toLocaleString("es-AR")} uds.).</p>
+                                    <p className="mt-1 text-muted-foreground">Por eso puede ser menor al faltante total.</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TableCell>
+                              <TableCell className="text-right text-xs font-medium text-green-700 dark:text-green-400 tabular-nums">
+                                ${s.potentialSaving.toLocaleString("es-AR")}
+                              </TableCell>
+                              <TableCell className="text-right pr-3">
+                                <ArrowLeftRight size={13} className="text-muted-foreground/40 group-hover:text-purple-500 transition-colors" />
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </TooltipProvider>
                   )}
                   {displayedSuggestions.length > ITEMS_PER_PAGE && (
                     <div className="flex items-center justify-between px-4 py-2 border-t">
@@ -1431,6 +1456,7 @@ function ControlStockPage() {
             <DialogTitle>Nueva Transferencia</DialogTitle>
             <DialogDescription className="sr-only">Crear una nueva transferencia de stock entre depósitos</DialogDescription>
           </DialogHeader>
+          <TooltipProvider>
           <div className="space-y-3">
             <div>
               <Label className="text-xs">Medicamento</Label>
@@ -1480,18 +1506,32 @@ function ControlStockPage() {
                 <div className="flex items-start gap-2 mt-2 p-2.5 rounded-md bg-amber-50 border border-amber-200 dark:bg-amber-950/20 dark:border-amber-800">
                   <AlertCircle size={13} className="text-amber-600 mt-0.5 shrink-0" />
                   <div className="text-xs">
-                    <p className="font-semibold text-amber-700 dark:text-amber-400">
-                      Déficit de {transferInfo.to.deficit.toLocaleString("es-AR")} unidades
-                    </p>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <p className="font-semibold text-amber-700 dark:text-amber-400 cursor-help">
+                          Déficit de {transferInfo.to.deficit.toLocaleString("es-AR")} unidades
+                        </p>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-60">
+                        Déficit total del hospital destino para alcanzar su stock mínimo
+                      </TooltipContent>
+                    </Tooltip>
                     <p className="text-amber-600 dark:text-amber-500 mt-0.5">
                       Stock actual: {transferInfo.to.currentStock.toLocaleString("es-AR")} · Mínimo requerido: {transferInfo.to.minStock?.toLocaleString("es-AR")}.{" "}
-                      <button
-                        type="button"
-                        className="underline font-medium"
-                        onClick={() => setTFormQty(transferInfo.to!.deficit!)}
-                      >
-                        Usar {transferInfo.to.deficit.toLocaleString("es-AR")} u
-                      </button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            className="underline font-medium cursor-help"
+                            onClick={() => setTFormQty(transferInfo.to!.deficit!)}
+                          >
+                            Usar {transferInfo.to.deficit.toLocaleString("es-AR")} u
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-64">
+                          Completa el déficit total. Verifica que el origen tenga suficiente stock por encima de su óptimo.
+                        </TooltipContent>
+                      </Tooltip>
                     </p>
                   </div>
                 </div>
@@ -1499,13 +1539,25 @@ function ControlStockPage() {
             </div>
             <div>
               <Label className="text-xs">Cantidad</Label>
-              <Input
-                type="number"
-                value={tFormQty}
-                onChange={(e) => setTFormQty(Number(e.target.value))}
-                min={1}
-                className="text-sm h-8 mt-1"
-              />
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  value={tFormQty}
+                  onChange={(e) => setTFormQty(Number(e.target.value))}
+                  min={1}
+                  className="text-sm h-8 mt-1 flex-1"
+                />
+                {transferInfo?.to?.deficit != null && tFormQty < transferInfo.to.deficit && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <AlertCircle size={15} className="text-muted-foreground/60 mt-1 shrink-0 cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-64">
+                      <p>Si notás una diferencia entre el nivel óptimo y el que esta IA sugiere, es porque si le das más unidades al hospital destino, el hospital origen caerá por debajo de su nivel óptimo.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+              </div>
             </div>
             {transferInfo?.from && transferInfo?.to && tFormQty > 0 && (
               <div className="rounded-md border border-border bg-muted/30 p-3 space-y-2.5">
@@ -1557,6 +1609,7 @@ function ControlStockPage() {
               Transferir
             </Button>
           </DialogFooter>
+          </TooltipProvider>
         </DialogContent>
       </Dialog>
     </div>

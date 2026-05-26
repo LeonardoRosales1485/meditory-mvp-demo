@@ -87,6 +87,7 @@ function ControlStockPage() {
 
   // Tab 4 — Transferencias
   const [transfers, setTransfers] = useState<any[]>([]);
+  const [stockConfig, setStockConfig] = useState<any[]>([]);
   const [transferOpen, setTransferOpen] = useState(false);
   const [tFormMed, setTFormMed] = useState("");
   const [tFormFrom, setTFormFrom] = useState("");
@@ -133,10 +134,11 @@ function ControlStockPage() {
       const rtData = rt as {
         batches: any[]; transfers: any[];
         warehouses: { id: string; name: string; workspace_id: string }[];
-        medications: any[];
+        medications: any[]; stockConfig: any[];
       };
       setBatches(rtData.batches);
       setTransfers(rtData.transfers);
+      setStockConfig(rtData.stockConfig);
       setWarehouses(rtData.warehouses);
       setMedications(rtData.medications);
     } catch (e) {
@@ -520,10 +522,18 @@ function ControlStockPage() {
       return;
     }
     try {
+      // Each workspace has its own medication UUID — resolve the correct one for the origin warehouse.
+      const medName = medMap.get(tFormMed);
+      const crossEntry = medName
+        ? crossStock.find((m) => m.medicationName.toLowerCase() === medName.toLowerCase())
+        : null;
+      const originWsId = workspaceByWarehouse.get(tFormFrom);
+      const resolvedMedId = crossEntry?.stocks.find((s) => s.workspaceId === originWsId)?.medicationId ?? tFormMed;
+
       const rpc = await import("@/lib/server-rpc");
       await rpc.backofficeCreateOverstockTransferRpc({
         data: {
-          medicationId: tFormMed,
+          medicationId: resolvedMedId,
           fromWarehouseId: tFormFrom,
           toWarehouseId: tFormTo,
           quantity: tFormQty,
@@ -1108,10 +1118,34 @@ function ControlStockPage() {
                               key={s.medicationId + "::" + s.deficitWorkspace + "::" + idx}
                               className="cursor-pointer hover:bg-purple-50/60 dark:hover:bg-purple-950/20 group"
                               onClick={() => {
-                                setTFormMed(s.medicationId);
-                                setTFormFrom(s.surplusWarehouse);
-                                setTFormTo(s.deficitWarehouse);
-                                setTFormQty(s.suggestedQty);
+                                const surplusWsId = warehouses.find(w => w.id === s.surplusWarehouse)?.workspace_id;
+                                if (surplusWsId) {
+                                  const wsWarehouses = warehouses.filter(w => w.workspace_id === surplusWsId);
+                                  let bestWh = s.surplusWarehouse;
+                                  let bestSurplus = 0;
+                                  for (const wh of wsWarehouses) {
+                                    const whStock = batches
+                                      .filter(b => b.medication_id === s.medicationId && b.warehouse_id === wh.id)
+                                      .reduce((sum, b) => sum + (Number(b.quantity) || 0), 0);
+                                    const cfg = stockConfig.find(
+                                      (c: any) => c.medication_id === s.medicationId && c.warehouse_id === wh.id,
+                                    );
+                                    const whOptimal = cfg?.optimal_stock ?? 0;
+                                    const whSurplus = Math.max(0, whStock - whOptimal);
+                                    if (whSurplus >= s.suggestedQty) { bestWh = wh.id; bestSurplus = whSurplus; break; }
+                                    if (whSurplus > bestSurplus) { bestWh = wh.id; bestSurplus = whSurplus; }
+                                  }
+                                  const qty = bestSurplus >= s.suggestedQty ? s.suggestedQty : bestSurplus;
+                                  setTFormMed(s.medicationId);
+                                  setTFormFrom(bestWh);
+                                  setTFormTo(s.deficitWarehouse);
+                                  setTFormQty(qty);
+                                } else {
+                                  setTFormMed(s.medicationId);
+                                  setTFormFrom(s.surplusWarehouse);
+                                  setTFormTo(s.deficitWarehouse);
+                                  setTFormQty(s.suggestedQty);
+                                }
                                 setTransferOpen(true);
                               }}
                             >

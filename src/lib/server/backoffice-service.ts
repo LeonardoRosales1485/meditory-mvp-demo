@@ -2539,14 +2539,52 @@ export async function createOverstockTransfer(data: {
   if (toWh[0].deleted_at) throw new Error("El depósito destino está dado de baja");
   if (data.fromWarehouseId === data.toWarehouseId) throw new Error("Origen y destino deben ser distintos");
 
-  const batches = await db<{ id: string; quantity: number }[]>(
-    supabaseAdmin.from("batches")
-      .select("id, quantity")
-      .eq("medication_id", data.medicationId)
-      .eq("warehouse_id", data.fromWarehouseId)
+  // Buscar el depósito origen con suficiente excedente
+  const workspaceWhs = await db<{ id: string }[]>(
+    supabaseAdmin.from("warehouses").select("id").eq("workspace_id", fromWh[0].workspace_id)
   );
-  const totalStock = batches.reduce((sum, b) => sum + Number(b.quantity), 0);
-  if (totalStock < data.quantity) throw new Error("Stock insuficiente en el depósito origen");
+  const whIds = workspaceWhs.map(w => w.id);
+
+  const whBatches = await db<{ id: string; quantity: number; warehouse_id: string }[]>(
+    supabaseAdmin.from("batches")
+      .select("id, quantity, warehouse_id")
+      .eq("medication_id", data.medicationId)
+      .in("warehouse_id", whIds)
+  );
+
+  const whStockMap = new Map<string, number>();
+  for (const b of whBatches) {
+    whStockMap.set(b.warehouse_id, (whStockMap.get(b.warehouse_id) ?? 0) + Number(b.quantity));
+  }
+
+  if (whStockMap.size === 0) throw new Error("No se encontró stock de este medicamento en el hospital origen");
+
+  const stockCfg = await db<{ warehouse_id: string; optimal_stock: number }[]>(
+    supabaseAdmin.from("medication_stock_config")
+      .select("warehouse_id, optimal_stock")
+      .eq("medication_id", data.medicationId)
+      .in("warehouse_id", [...whStockMap.keys()])
+  );
+
+  const whOptimalMap = new Map(stockCfg.map(c => [c.warehouse_id, c.optimal_stock]));
+
+  // Buscar el depósito con mayor excedente (stock - óptimo) que cubra la cantidad
+  let bestWh = data.fromWarehouseId;
+  let bestSurplus = 0;
+  let fromWarehouseId = data.fromWarehouseId;
+  let qty = data.quantity;
+
+  for (const [whId, stock] of whStockMap) {
+    const optimal = whOptimalMap.get(whId) ?? 0;
+    const surplus = Math.max(0, stock - optimal);
+    if (surplus >= data.quantity) { bestWh = whId; bestSurplus = surplus; break; }
+    if (surplus > bestSurplus) { bestWh = whId; bestSurplus = surplus; }
+  }
+
+  if (bestSurplus < data.quantity) qty = bestSurplus;
+  if (qty <= 0) throw new Error("Stock insuficiente en el depósito origen");
+
+  fromWarehouseId = bestWh;
 
   const transferId = randomUUID();
   const transferCode = `BO-${Date.now().toString(36).toUpperCase()}`;
@@ -2559,7 +2597,7 @@ export async function createOverstockTransfer(data: {
       transfer_code: transferCode,
       medication_id: data.medicationId,
       source_batch_id: null,
-      from_warehouse_id: data.fromWarehouseId,
+      from_warehouse_id: fromWarehouseId,
       to_warehouse_id: data.toWarehouseId,
       quantity: data.quantity,
       status: "solicitado",

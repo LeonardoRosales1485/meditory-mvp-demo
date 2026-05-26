@@ -157,12 +157,10 @@ function computeKeyMetrics(data: RealtimeData, mocks: MockPools): Record<string,
 }
 
 function computeTrendMetrics(trends: TrendItem[]): Record<string, number> {
-  const counts: Record<string, number> = { critico: 0, bajo: 0, optimo: 0, superavit: 0 };
+  const counts: Record<string, number> = { critico: 0, bajo: 0, optimo: 0, superavit: 0, sin_stock: 0, sin_consumo: 0 };
   for (const t of trends) {
-    if (t.days_until_empty === null) { counts.superavit++; continue; }
-    if (t.days_until_empty < 30) counts.critico++;
-    else if (t.days_until_empty < 60) counts.bajo++;
-    else if (t.days_until_empty < 120) counts.optimo++;
+    const cat = t.risk_category;
+    if (cat in counts) counts[cat]++;
     else counts.superavit++;
   }
   return {
@@ -170,6 +168,8 @@ function computeTrendMetrics(trends: TrendItem[]): Record<string, number> {
     "trend-bajo": counts.bajo,
     "trend-optimo": counts.optimo,
     "trend-superavit": counts.superavit,
+    "trend-sin_stock": counts.sin_stock,
+    "trend-sin_consumo": counts.sin_consumo,
   };
 }
 
@@ -272,7 +272,7 @@ function computeCategory(days: number | null): string {
   if (days === null) return "superavit";
   if (days < 30) return "critico";
   if (days < 60) return "bajo";
-  if (days < 120) return "optimo";
+  if (days <= 120) return "optimo";
   return "superavit";
 }
 
@@ -282,11 +282,23 @@ function mutateTrendItems(arr: TrendItem[]): TrendItem[] {
   let result = arr;
   for (let i = 0; i < count; i++) {
     const idx = Math.floor(Math.random() * result.length);
-    if (result[idx].days_until_empty === null) continue;
-    const change = (Math.floor(Math.random() * 6) + 3) * (Math.random() > 0.5 ? 1 : -1);
-    const days = Math.max(0, result[idx].days_until_empty! + change);
-    const cat = computeCategory(days);
-    result = result.map((t, j) => j === idx ? { ...t, days_until_empty: days, risk_category: cat } : t);
+
+    const stockChange = (Math.floor(Math.random() * 11) + 5) * (Math.random() > 0.5 ? 1 : -1);
+    const newStock = Math.max(0, result[idx].stock_total + stockChange);
+
+    const consumptionChange = (Math.random() * 2) * (Math.random() > 0.5 ? 1 : -1);
+    const newConsumption = Math.max(0.01, +(result[idx].consumed_per_day + consumptionChange).toFixed(2));
+
+    const newDays = +(newStock / newConsumption).toFixed(1);
+    const cat = computeCategory(newDays);
+
+    result = result.map((t, j) => j === idx ? {
+      ...t,
+      stock_total: newStock,
+      consumed_per_day: newConsumption,
+      days_until_empty: newDays,
+      risk_category: cat,
+    } : t);
   }
   return result;
 }
@@ -382,6 +394,18 @@ export function useSimulation(
         for (const key of Object.keys(oldMetrics)) {
           const diff = newMetrics[key] - oldMetrics[key];
           if (diff !== 0) deltasRef.current.set(key, { value: diff, expiresAt: now + 2000 });
+        }
+        for (let i = 0; i < newTrends.length; i++) {
+          const o = prev[i];
+          const n = newTrends[i];
+          if (n.stock_total !== o.stock_total) {
+            deltasRef.current.set(`trend-stock-${o.medication_id}`, { value: n.stock_total - o.stock_total, expiresAt: now + 2000 });
+          }
+          const oldDays = o.days_until_empty ?? 0;
+          const newDays = n.days_until_empty ?? 0;
+          if (newDays !== oldDays) {
+            deltasRef.current.set(`trend-days-${o.medication_id}`, { value: +(newDays - oldDays).toFixed(1), expiresAt: now + 2000 });
+          }
         }
         return newTrends;
       });

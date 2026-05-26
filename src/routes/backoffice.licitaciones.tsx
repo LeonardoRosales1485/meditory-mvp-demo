@@ -101,6 +101,11 @@ function LicitacionesPage() {
   const [transfers, setTransfers] = useState<any[]>([]);
   const [warehouses, setWarehouses] = useState<{ id: string; name: string; workspace_id: string }[]>([]);
   const [searchTransfer, setSearchTransfer] = useState("");
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [tFormMed, setTFormMed] = useState("");
+  const [tFormFrom, setTFormFrom] = useState("");
+  const [tFormTo, setTFormTo] = useState("");
+  const [tFormQty, setTFormQty] = useState(1);
 
   async function loadAll() {
     setLoading(true);
@@ -141,6 +146,34 @@ function LicitacionesPage() {
   }
 
   useEffect(() => { loadAll(); }, []);
+
+  async function handleNewTransfer() {
+    if (!tFormMed || !tFormFrom || !tFormTo || tFormQty <= 0) {
+      toast.error("Completá todos los campos");
+      return;
+    }
+    try {
+      const rpc = await import("@/lib/server-rpc");
+      await rpc.backofficeCreateOverstockTransferRpc({
+        data: {
+          medicationId: tFormMed,
+          fromWarehouseId: tFormFrom,
+          toWarehouseId: tFormTo,
+          quantity: tFormQty,
+          requestedBy: "Admin",
+        },
+      });
+      toast.success("Transferencia creada");
+      setTransferOpen(false);
+      setTFormMed("");
+      setTFormFrom("");
+      setTFormTo("");
+      setTFormQty(1);
+      loadAll();
+    } catch {
+      toast.error("Error al crear transferencia");
+    }
+  }
 
   async function openDetail(lic: LicitacionRow) {
     setDetailId(lic.id);
@@ -597,12 +630,17 @@ function LicitacionesPage() {
         <TabsContent value="transferencias" className="space-y-4">
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">{transfers.length} transferencias registradas</p>
-            <DownloadTransferenciasPdf
-              transfers={transfers}
-              medMap={medMap}
-              whMap={whMap}
-              wsName={selectedWsName}
-            />
+            <div className="flex items-center gap-2">
+              <Button size="sm" onClick={() => setTransferOpen(true)} className="gap-1.5">
+                <ArrowLeftRight size={14} /> Nueva Transferencia
+              </Button>
+              <DownloadTransferenciasPdf
+                transfers={transfers}
+                medMap={medMap}
+                whMap={whMap}
+                wsName={selectedWsName}
+              />
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <div className="relative flex-1 max-w-sm">
@@ -741,6 +779,87 @@ function LicitacionesPage() {
               })()}
             </CardContent>
           </Card>
+
+          {/* Formulario de nueva transferencia */}
+          <Dialog open={transferOpen} onOpenChange={setTransferOpen}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Nueva Transferencia</DialogTitle>
+                <DialogDescription className="sr-only">Crear una nueva transferencia de stock entre depósitos</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3">
+                <div>
+                  <Label className="text-xs">Medicamento</Label>
+                  <select
+                    value={tFormMed}
+                    onChange={(e) => setTFormMed(e.target.value)}
+                    className="w-full h-8 rounded-md border border-input bg-background px-2 text-sm mt-1"
+                  >
+                    <option value="">Seleccionar...</option>
+                    {allMeds.map((m) => (
+                      <option key={m.id} value={m.id}>{m.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <Label className="text-xs">Origen (depósito)</Label>
+                  <select
+                    value={tFormFrom}
+                    onChange={(e) => setTFormFrom(e.target.value)}
+                    className="w-full h-8 rounded-md border border-input bg-background px-2 text-sm mt-1"
+                  >
+                    <option value="">Seleccionar...</option>
+                    {warehouses.map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {(() => {
+                          const ws = workspaces.find((x) => x.id === w.workspace_id);
+                          return ws ? `${ws.name} - ${w.name}` : w.name;
+                        })()}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <Label className="text-xs">Destino (depósito)</Label>
+                  <select
+                    value={tFormTo}
+                    onChange={(e) => setTFormTo(e.target.value)}
+                    className="w-full h-8 rounded-md border border-input bg-background px-2 text-sm mt-1"
+                  >
+                    <option value="">Seleccionar...</option>
+                    {warehouses
+                      .filter((w) => w.id !== tFormFrom)
+                      .map((w) => (
+                        <option key={w.id} value={w.id}>
+                          {(() => {
+                            const ws = workspaces.find((x) => x.id === w.workspace_id);
+                            return ws ? `${ws.name} - ${w.name}` : w.name;
+                          })()}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+                <div>
+                  <Label className="text-xs">Cantidad</Label>
+                  <Input
+                    type="number"
+                    value={tFormQty}
+                    onChange={(e) => setTFormQty(Number(e.target.value))}
+                    min={1}
+                    className="text-sm h-8 mt-1"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" size="sm" onClick={() => setTransferOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button size="sm" onClick={handleNewTransfer} disabled={!tFormMed || !tFormFrom || !tFormTo || tFormQty <= 0}>
+                  Transferir
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </TabsContent>
 
         {/* Tab: Asistente */}

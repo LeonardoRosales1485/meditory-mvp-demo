@@ -416,7 +416,7 @@ export function StockHeatmap({ crossStock, workspaceNames }: { crossStock: Cross
     if (ratio < 0.3) return "bg-red-300 dark:bg-red-800";
     if (ratio < 0.7) return "bg-orange-200 dark:bg-orange-900";
     if (ratio <= 1.1) return "bg-green-200 dark:bg-green-900";
-    return "bg-blue-200 dark:bg-blue-900";
+    return "bg-green-200 dark:bg-green-900";
   }
 
   const report: ChartReport = useMemo(() => {
@@ -483,7 +483,7 @@ export function StockHeatmap({ crossStock, workspaceNames }: { crossStock: Cross
           </tbody>
         </table>
         <div className="flex items-center gap-3 mt-2 flex-wrap">
-          {[["bg-red-300","Sin stock"], ["bg-orange-200","Crítico"], ["bg-green-200","Óptimo"], ["bg-blue-200","Superávit"]].map(([cls, label]) => (
+          {[["bg-red-300","Sin stock"], ["bg-orange-200","Crítico"], ["bg-green-200","Óptimo"]].map(([cls, label]) => (
             <div key={label} className="flex items-center gap-1">
               <div className={`w-3 h-3 rounded ${cls}`} />
               <span className="text-xs text-muted-foreground">{label}</span>
@@ -514,7 +514,7 @@ export function CapacityDonutChart({ warehouses }: { warehouses: WarehouseVolume
 
   const start = polar(startAngle);
   const end = polar(endAngle);
-  const largeArc = (avgPct / 100) * 180 > 90 ? 1 : 0;
+  const largeArc = avgPct >= 100 ? 1 : 0;
 
   function statusLabel(pct: number): string {
     if (pct < 60) return "Óptimo";

@@ -1,9 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, Fragment } from "react";
 import { motion } from "framer-motion";
 import {
   Package, Search, AlertCircle, ArrowLeftRight, Filter, TrendingDown, TrendingUp,
-  RefreshCw, CalendarDays, Building2,
+  RefreshCw, CalendarDays, Building2, ChevronDown, ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -83,6 +83,7 @@ function ControlStockPage() {
   // Tab 3 — Alertas
   const [lowStock, setLowStock] = useState<LowStockMedication[]>([]);
   const [overstock, setOverstock] = useState<OverstockMedication[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
 
   // Tab 4 — Transferencias
   const [transfers, setTransfers] = useState<any[]>([]);
@@ -91,7 +92,12 @@ function ControlStockPage() {
   const [tFormFrom, setTFormFrom] = useState("");
   const [tFormTo, setTFormTo] = useState("");
   const [tFormQty, setTFormQty] = useState(1);
+  const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [searchTransfer, setSearchTransfer] = useState("");
+  const [stockFilter, setStockFilter] = useState("all");
+  const [expiryFilter, setExpiryFilter] = useState("all");
+  const [alertFilter, setAlertFilter] = useState("all");
+  const [transferFilter, setTransferFilter] = useState("all");
 
   async function loadAll() {
     setLoading(true);
@@ -228,8 +234,9 @@ function ControlStockPage() {
 
     const filteredLs = selectedWs === "__all__" ? lowStock
       : lowStock.filter((l) => l.workspaceId === selectedWs);
-    const filteredOs = selectedWs === "__all__" ? overstock
-      : overstock.filter((o) => o.workspaceId !== selectedWs || selectedWs === "__all__");
+    const filteredOs = (selectedWs === "__all__" ? overstock
+      : overstock.filter((o) => o.workspaceId !== selectedWs || selectedWs === "__all__"))
+      .filter((o) => o.surplus >= 100);
 
     const suggestions: Suggestion[] = [];
 
@@ -288,6 +295,138 @@ function ControlStockPage() {
       (a, b) => new Date(b.date ?? 0).getTime() - new Date(a.date ?? 0).getTime()
     );
   }, [transfers, selectedWs, selectedWsName, warehouses, searchTransfer, medMap, whFullMap]);
+
+  // ── Status filter options ──
+  const STOCK_FILTERS = [
+    { value: "all", label: "Todos" },
+    { value: "deficit", label: "Con déficit" },
+    { value: "surplus", label: "Con superávit" },
+    { value: "normal", label: "Normal" },
+  ];
+
+  const EXPIRY_FILTERS = [
+    { value: "all", label: "Todos" },
+    { value: "vencido", label: "Vencido" },
+    { value: "critico", label: "Crítico (<30d)" },
+    { value: "proximo", label: "Próximo (<90d)" },
+  ];
+
+  const ALERT_FILTERS = [
+    { value: "all", label: "Todos los déficits" },
+    { value: "with_suggestion", label: "Con sugerencia" },
+    { value: "without_suggestion", label: "Sin sugerencia" },
+  ];
+
+  const TRANSFER_FILTERS = [
+    { value: "all", label: "Todos" },
+    { value: "solicitado", label: "Solicitado" },
+    { value: "autorizado", label: "Autorizado" },
+    { value: "despachado", label: "Despachado" },
+    { value: "recibir", label: "Pendiente Recepción" },
+    { value: "recibido", label: "Recibido" },
+    { value: "aceptado", label: "Aceptado" },
+    { value: "rechazado", label: "Rechazado" },
+  ];
+
+  // ── Tab 1: Status-filtered stock ──
+  const statusFilteredStock = useMemo(() => {
+    let list = filteredCrossStock;
+    if (stockFilter === "deficit") {
+      list = list.filter((m) => {
+        const totalMin = m.stocks.reduce((s, ws) => s + ws.minStock, 0);
+        const totalStock = m.stocks.reduce((s, ws) => s + ws.quantity, 0);
+        return totalMin > totalStock;
+      });
+    } else if (stockFilter === "surplus") {
+      list = list.filter((m) => {
+        const totalOpt = m.stocks.reduce((s, ws) => s + ws.optimalStock, 0);
+        const totalStock = m.stocks.reduce((s, ws) => s + ws.quantity, 0);
+        return totalStock > totalOpt;
+      });
+    } else if (stockFilter === "normal") {
+      list = list.filter((m) => {
+        const totalMin = m.stocks.reduce((s, ws) => s + ws.minStock, 0);
+        const totalOpt = m.stocks.reduce((s, ws) => s + ws.optimalStock, 0);
+        const totalStock = m.stocks.reduce((s, ws) => s + ws.quantity, 0);
+        return totalStock >= totalMin && totalStock <= totalOpt;
+      });
+    }
+    return list;
+  }, [filteredCrossStock, stockFilter]);
+
+  // ── Tab 2: Status-filtered batches ──
+  const statusFilteredBatches = useMemo(() => {
+    if (expiryFilter === "all") return filteredBatches;
+    return filteredBatches.filter((b) => expiryStatus(b.expiry) === expiryFilter);
+  }, [filteredBatches, expiryFilter]);
+
+  // ── Tab 3: Status-filtered alerts ──
+  const filteredAlerts = useMemo(() => {
+    if (alertFilter === "all") return { lowStock, suggestions };
+    if (alertFilter === "with_suggestion") {
+      const suggestionMedIds = new Set(suggestions.map((s) => s.medicationId));
+      return {
+        lowStock: lowStock.filter((l) => suggestionMedIds.has(l.medicationId)),
+        suggestions,
+      };
+    }
+    if (alertFilter === "without_suggestion") {
+      const suggestionMedIds = new Set(suggestions.map((s) => s.medicationId));
+      return {
+        lowStock: lowStock.filter((l) => !suggestionMedIds.has(l.medicationId)),
+        suggestions: [],
+      };
+    }
+    return { lowStock, suggestions };
+  }, [lowStock, suggestions, alertFilter]);
+
+  // ── Tab 4: Status-filtered transfers ──
+  const statusFilteredTransfers = useMemo(() => {
+    if (transferFilter === "all") return filteredTransfers;
+    return filteredTransfers.filter((t) => t.status === transferFilter);
+  }, [filteredTransfers, transferFilter]);
+
+  const deficitSuggestion = useMemo(() => {
+    if (!tFormMed || !tFormTo) return null;
+    const stockEntry = crossStock
+      .flatMap((m) => m.stocks)
+      .find((s) => s.warehouseId === tFormTo && s.medicationId === tFormMed);
+    if (!stockEntry) return null;
+    const deficit = Math.max(0, stockEntry.minStock - stockEntry.quantity);
+    const surplus = Math.max(0, stockEntry.quantity - stockEntry.optimalStock);
+    return { deficit, surplus, currentStock: stockEntry.quantity, minStock: stockEntry.minStock, optimalStock: stockEntry.optimalStock };
+  }, [tFormMed, tFormTo, crossStock]);
+
+  const lowStockBatchInfo = useMemo(() => {
+    const info = new Map<string, { expiry: Date | null; daysUntil: number | null }>();
+    const wsWhIds = new Map<string, string[]>();
+    for (const w of warehouses) {
+      const list = wsWhIds.get(w.workspace_id) ?? [];
+      list.push(w.id);
+      wsWhIds.set(w.workspace_id, list);
+    }
+    for (const item of lowStock) {
+      const key = `${item.medicationId}::${item.workspaceId}`;
+      const whIds = wsWhIds.get(item.workspaceId) ?? [];
+      const matchingBatches = batches.filter(
+        (b) => b.medication_id === item.medicationId && whIds.includes(b.warehouse_id) && b.expiry
+      );
+      if (matchingBatches.length === 0) {
+        info.set(key, { expiry: null, daysUntil: null });
+        continue;
+      }
+      let earliest: Date | null = null;
+      for (const b of matchingBatches) {
+        const d = new Date(b.expiry);
+        if (!earliest || d < earliest) earliest = d;
+      }
+      info.set(key, {
+        expiry: earliest,
+        daysUntil: earliest ? daysUntil(earliest.toISOString()) : null,
+      });
+    }
+    return info;
+  }, [lowStock, warehouses, batches]);
 
   const wsWarehouses = useMemo(() => {
     const map = new Map<string, { id: string; name: string }[]>();
@@ -374,6 +513,24 @@ function ControlStockPage() {
       toast.success("Transferencia rechazada");
     } catch {
       toast.error("Error al rechazar transferencia");
+    }
+  }
+
+  async function refreshSuggestions() {
+    setSuggestionsLoading(true);
+    try {
+      const rpc = await import("@/lib/server-rpc");
+      const [ls, os] = await Promise.all([
+        rpc.licitacionesGetLowStockRpc().catch(() => [] as LowStockMedication[]),
+        rpc.licitacionesGetOverstockRpc().catch(() => [] as OverstockMedication[]),
+      ]);
+      setLowStock(ls as LowStockMedication[]);
+      setOverstock(os as OverstockMedication[]);
+      toast.success("Sugerencias actualizadas");
+    } catch {
+      toast.error("Error al actualizar sugerencias");
+    } finally {
+      setSuggestionsLoading(false);
     }
   }
 
@@ -513,10 +670,20 @@ function ControlStockPage() {
                 className="pl-8 text-sm h-8"
               />
             </div>
+            <Select value={stockFilter} onValueChange={setStockFilter}>
+              <SelectTrigger className="h-8 w-[150px] text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {STOCK_FILTERS.map((f) => (
+                  <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <Card>
             <CardContent className="p-0">
-              {filteredCrossStock.length === 0 ? (
+              {statusFilteredStock.length === 0 ? (
                 <p className="text-sm text-muted-foreground py-8 text-center">
                   {searchMed ? "Sin resultados" : "No hay datos de stock"}
                 </p>
@@ -524,65 +691,128 @@ function ControlStockPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-6"></TableHead>
                       <TableHead className="text-xs">Medicamento</TableHead>
                       <TableHead className="text-xs">Precio</TableHead>
-                      <TableHead className="text-xs text-right">
-                        {workspaces.length > 0
-                          ? workspaces.map((ws) => ws.name.split(" ").slice(1).join(" ") || ws.name).join(" / ")
-                          : "Stock"}
-                      </TableHead>
                       <TableHead className="text-xs text-right">Total</TableHead>
                       <TableHead className="text-xs text-right">Déficit</TableHead>
                       <TableHead className="text-xs text-right">Superávit</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredCrossStock.slice(0, 100).map((item, idx) => {
+                    {statusFilteredStock.slice(0, 100).map((item, idx) => {
                       const totalStock = item.stocks.reduce((s, ws) => s + ws.quantity, 0);
                       const totalMin = item.stocks.reduce((s, ws) => s + ws.minStock, 0);
                       const totalOpt = item.stocks.reduce((s, ws) => s + ws.optimalStock, 0);
                       const deficit = Math.max(0, totalMin - totalStock);
                       const surplus = Math.max(0, totalStock - totalOpt);
+                      const isExpanded = expandedRow === item.medicationName;
                       return (
-                        <TableRow key={item.medicationName + "::" + idx}>
-                          <TableCell className="text-sm font-medium">{item.medicationName}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            ${item.salePrice.toLocaleString("es-AR")}
-                          </TableCell>
-                          <TableCell className="text-xs text-right">
-                            <div className="flex justify-end gap-3">
-                              {workspaces.map((ws) => {
-                                const wsStock = item.stocks.find((s) => s.workspaceName === ws.name);
-                                return (
-                                  <span key={ws.id} className="tabular-nums w-16 text-right">
-                                    {wsStock ? wsStock.quantity.toLocaleString("es-AR") : "—"}
-                                  </span>
-                                );
-                              })}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right text-sm font-semibold">
-                            {totalStock.toLocaleString("es-AR")}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {deficit > 0 ? (
-                              <Badge variant="destructive" className="text-[10px]">
-                                -{deficit.toLocaleString("es-AR")}
-                              </Badge>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">—</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {surplus > 0 ? (
-                              <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 text-[10px] border-0">
-                                +{surplus.toLocaleString("es-AR")}
-                              </Badge>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">—</span>
-                            )}
-                          </TableCell>
-                        </TableRow>
+                        <Fragment key={item.medicationName + "::" + idx}>
+                          <TableRow
+                            className="cursor-pointer hover:bg-muted/50"
+                            onClick={() => setExpandedRow(isExpanded ? null : item.medicationName)}
+                          >
+                            <TableCell className="text-xs text-muted-foreground">
+                              {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                            </TableCell>
+                            <TableCell className="text-sm font-medium">{item.medicationName}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              ${item.salePrice.toLocaleString("es-AR")}
+                            </TableCell>
+                            <TableCell className="text-right text-sm font-semibold">
+                              {totalStock.toLocaleString("es-AR")}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {deficit > 0 ? (
+                                <Badge variant="destructive" className="text-[10px]">
+                                  -{deficit.toLocaleString("es-AR")}
+                                </Badge>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">—</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {surplus > 0 ? (
+                                <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 text-[10px] border-0">
+                                  +{surplus.toLocaleString("es-AR")}
+                                </Badge>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">—</span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                          {isExpanded && (
+                            <TableRow key={item.medicationName + "::detail::" + idx}>
+                              <TableCell colSpan={6} className="p-0 bg-muted/20">
+                                <div className="mx-6 my-2 rounded-md border border-border/50 overflow-hidden">
+                                  <div className="grid grid-cols-[1fr_72px_72px_72px_120px_72px] gap-x-3 px-4 py-1.5 bg-muted/60 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                    <span>Hospital</span>
+                                    <span className="text-right">Stock</span>
+                                    <span className="text-right">Mínimo</span>
+                                    <span className="text-right">Óptimo</span>
+                                    <span className="pl-1">Nivel</span>
+                                    <span className="text-right">Estado</span>
+                                  </div>
+                                  {item.stocks.length === 0 ? (
+                                    <p className="text-xs text-muted-foreground px-4 py-3">Sin stock en ningún depósito</p>
+                                  ) : (
+                                    item.stocks.map((s, si) => {
+                                      const isDeficit = s.quantity < s.minStock;
+                                      const isSurplus = s.quantity > s.optimalStock;
+                                      const pct = s.optimalStock > 0
+                                        ? Math.min(100, Math.round((s.quantity / s.optimalStock) * 100))
+                                        : 0;
+                                      return (
+                                        <div
+                                          key={s.warehouseId}
+                                          className={[
+                                            "grid grid-cols-[1fr_72px_72px_72px_120px_72px] gap-x-3 px-4 py-2 text-xs items-center",
+                                            si < item.stocks.length - 1 ? "border-b border-border/30" : "",
+                                            isDeficit ? "bg-red-50/60 dark:bg-red-950/20" : isSurplus ? "bg-blue-50/40 dark:bg-blue-950/10" : "",
+                                          ].join(" ")}
+                                        >
+                                          <span className="font-medium truncate">{s.workspaceName}</span>
+                                          <span className={`text-right font-semibold tabular-nums ${isDeficit ? "text-red-600 dark:text-red-400" : "text-foreground"}`}>
+                                            {s.quantity.toLocaleString("es-AR")}
+                                          </span>
+                                          <span className="text-right text-muted-foreground tabular-nums">
+                                            {s.minStock.toLocaleString("es-AR")}
+                                          </span>
+                                          <span className="text-right text-muted-foreground tabular-nums">
+                                            {s.optimalStock.toLocaleString("es-AR")}
+                                          </span>
+                                          <div className="flex items-center gap-2 pl-1">
+                                            <div className="flex-1 h-1.5 rounded-full bg-border overflow-hidden">
+                                              <div
+                                                className={`h-full rounded-full ${isDeficit ? "bg-red-500" : isSurplus ? "bg-blue-500" : "bg-green-500"}`}
+                                                style={{ width: `${pct}%` }}
+                                              />
+                                            </div>
+                                            <span className="text-[10px] text-muted-foreground w-7 text-right tabular-nums">{pct}%</span>
+                                          </div>
+                                          <div className="flex justify-end">
+                                            {isDeficit ? (
+                                              <Badge variant="destructive" className="text-[10px] px-1.5 h-5 font-medium">
+                                                -{(s.minStock - s.quantity).toLocaleString("es-AR")}
+                                              </Badge>
+                                            ) : isSurplus ? (
+                                              <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 text-[10px] px-1.5 h-5 border-0 font-medium">
+                                                +{(s.quantity - s.optimalStock).toLocaleString("es-AR")}
+                                              </Badge>
+                                            ) : (
+                                              <span className="text-[10px] font-semibold text-green-600 dark:text-green-400">OK</span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      );
+                                    })
+                                  )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </Fragment>
                       );
                     })}
                   </TableBody>
@@ -604,13 +834,23 @@ function ControlStockPage() {
                 className="pl-8 text-sm h-8"
               />
             </div>
+            <Select value={expiryFilter} onValueChange={setExpiryFilter}>
+              <SelectTrigger className="h-8 w-[150px] text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {EXPIRY_FILTERS.map((f) => (
+                  <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <span className="text-xs text-muted-foreground">
-              Mostrando lotes con vencimiento &lt; 90 días
+              Lotes con vencimiento &lt; 90 días
             </span>
           </div>
           <Card>
             <CardContent className="p-0">
-              {filteredBatches.length === 0 ? (
+              {statusFilteredBatches.length === 0 ? (
                 <p className="text-sm text-muted-foreground py-8 text-center">
                   {searchBatch ? "Sin resultados" : "No hay lotes próximos a vencer"}
                 </p>
@@ -628,7 +868,7 @@ function ControlStockPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredBatches.map((b, idx) => {
+                    {statusFilteredBatches.map((b, idx) => {
                       const days = daysUntil(b.expiry);
                       const status = expiryStatus(b.expiry);
                       const whFull = whFullMap.get(b.warehouse_id) ?? whMap.get(b.warehouse_id) ?? b.warehouse_id?.slice(0, 8);
@@ -682,7 +922,19 @@ function ControlStockPage() {
 
         {/* ─── Tab 3: Alertas ─── */}
         <TabsContent value="alertas" className="space-y-4">
-          {lowStock.length === 0 ? (
+          <div className="flex items-center gap-2">
+            <Select value={alertFilter} onValueChange={setAlertFilter}>
+              <SelectTrigger className="h-8 w-[180px] text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ALERT_FILTERS.map((f) => (
+                  <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {filteredAlerts.lowStock.length === 0 ? (
             <Card>
               <CardContent className="p-6 text-center">
                 <p className="text-sm text-muted-foreground">No hay alertas de stock activas</p>
@@ -690,63 +942,28 @@ function ControlStockPage() {
             </Card>
           ) : (
             <>
-              {/* Resumen de déficits */}
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <TrendingDown size={14} className="text-red-500" />
-                    Medicamentos con Déficit
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="pt-0">
-                  {lowStock.length === 0 ? (
-                    <p className="text-xs text-muted-foreground py-4 text-center">Sin déficits</p>
-                  ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="text-xs">Medicamento</TableHead>
-                          <TableHead className="text-xs">Hospital</TableHead>
-                          <TableHead className="text-xs text-right">Stock Actual</TableHead>
-                          <TableHead className="text-xs text-right">Stock Mínimo</TableHead>
-                          <TableHead className="text-xs text-right">Déficit</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {lowStock.slice(0, 50).map((item, idx) => (
-                          <TableRow key={item.medicationId + "::" + item.workspaceId + "::" + idx}>
-                            <TableCell className="text-sm font-medium">{item.medicationName}</TableCell>
-                            <TableCell className="text-xs text-muted-foreground">{item.workspaceName}</TableCell>
-                            <TableCell className="text-right text-sm">{item.currentStock.toLocaleString("es-AR")}</TableCell>
-                            <TableCell className="text-right text-sm text-muted-foreground">{item.minStock.toLocaleString("es-AR")}</TableCell>
-                            <TableCell className="text-right">
-                              <Badge variant="destructive" className="text-xs">
-                                -{item.deficit.toLocaleString("es-AR")}
-                              </Badge>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  )}
-                </CardContent>
-              </Card>
-
               {/* Sugerencias generadas por el sistema */}
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm flex items-center gap-2">
                     <ArrowLeftRight size={14} className="text-purple-500" />
                     Sugerencias de Transferencias
-                    <span className="text-xs font-normal text-muted-foreground">
-                      (generadas automáticamente por el sistema)
-                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="ml-auto h-7 text-xs gap-1"
+                      onClick={refreshSuggestions}
+                      disabled={suggestionsLoading}
+                    >
+                      <RefreshCw size={12} className={suggestionsLoading ? "animate-spin" : ""} />
+                      Actualizar sugerencias
+                    </Button>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="pt-0">
                   {suggestions.length === 0 ? (
                     <p className="text-xs text-muted-foreground py-4 text-center">
-                      No hay sugerencias disponibles — ningún superávit coincide con los déficits actuales
+                      No hay sugerencias disponibles — ningún superávit ≥100 coincide con los déficits actuales
                     </p>
                   ) : (
                     <Table>
@@ -784,6 +1001,66 @@ function ControlStockPage() {
                   )}
                 </CardContent>
               </Card>
+
+              {/* Resumen de déficits */}
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <TrendingDown size={14} className="text-red-500" />
+                    Medicamentos con Déficit
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  {lowStock.length === 0 ? (
+                    <p className="text-xs text-muted-foreground py-4 text-center">Sin déficits</p>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-xs">Medicamento</TableHead>
+                          <TableHead className="text-xs">Hospital</TableHead>
+                          <TableHead className="text-xs text-right">Stock Actual</TableHead>
+                          <TableHead className="text-xs text-right">Stock Mínimo</TableHead>
+                          <TableHead className="text-xs text-right">Déficit</TableHead>
+                          <TableHead className="text-xs">Vence</TableHead>
+                          <TableHead className="text-xs">Faltan</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {lowStock.slice(0, 50).map((item, idx) => {
+                          const batchKey = item.medicationId + "::" + item.workspaceId;
+                          const batchInfo = lowStockBatchInfo.get(batchKey);
+                          return (
+                            <TableRow key={item.medicationId + "::" + item.workspaceId + "::" + idx}>
+                              <TableCell className="text-sm font-medium">{item.medicationName}</TableCell>
+                              <TableCell className="text-xs text-muted-foreground">{item.workspaceName}</TableCell>
+                              <TableCell className="text-right text-sm">{item.currentStock.toLocaleString("es-AR")}</TableCell>
+                              <TableCell className="text-right text-sm text-muted-foreground">{item.minStock.toLocaleString("es-AR")}</TableCell>
+                              <TableCell className="text-right">
+                                <Badge variant="destructive" className="text-xs">
+                                  -{item.deficit.toLocaleString("es-AR")}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-xs text-muted-foreground">
+                                {batchInfo?.expiry
+                                  ? batchInfo.expiry.toLocaleDateString("es-AR")
+                                  : "—"}
+                              </TableCell>
+                              <TableCell className="text-xs">
+                                {batchInfo?.daysUntil != null
+                                  ? batchInfo.daysUntil < 0
+                                    ? <span className="text-red-600 font-medium">venció hace {Math.abs(batchInfo.daysUntil)}d</span>
+                                    : <span className="text-muted-foreground">en {batchInfo.daysUntil}d</span>
+                                  : "—"}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
             </>
           )}
         </TabsContent>
@@ -801,6 +1078,16 @@ function ControlStockPage() {
                   className="pl-8 text-sm h-8"
                 />
               </div>
+              <Select value={transferFilter} onValueChange={setTransferFilter}>
+                <SelectTrigger className="h-8 w-[170px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TRANSFER_FILTERS.map((f) => (
+                    <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <Button size="sm" onClick={() => setTransferOpen(true)} className="gap-1.5">
               <ArrowLeftRight size={14} /> Nueva Transferencia
@@ -862,13 +1149,36 @@ function ControlStockPage() {
                 </div>
                 <div>
                   <Label className="text-xs">Cantidad</Label>
-                  <Input
-                    type="number"
-                    value={tFormQty}
-                    onChange={(e) => setTFormQty(Number(e.target.value))}
-                    min={1}
-                    className="text-sm h-8 mt-1"
-                  />
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      value={tFormQty}
+                      onChange={(e) => setTFormQty(Number(e.target.value))}
+                      min={1}
+                      className="text-sm h-8 mt-1 flex-1"
+                    />
+                    {deficitSuggestion && deficitSuggestion.deficit > 0 && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="mt-1 h-8 text-xs gap-1 shrink-0"
+                        onClick={() => setTFormQty(deficitSuggestion.deficit)}
+                      >
+                        Sugerir {deficitSuggestion.deficit}
+                      </Button>
+                    )}
+                  </div>
+                  {deficitSuggestion && (
+                    <p className={`mt-1.5 text-xs ${deficitSuggestion.deficit > 0 ? "text-amber-600" : "text-muted-foreground"}`}>
+                      {deficitSuggestion.deficit > 0
+                        ? `Déficit en destino: ${deficitSuggestion.deficit.toLocaleString("es-AR")} uds (mín: ${deficitSuggestion.minStock.toLocaleString("es-AR")}, actual: ${deficitSuggestion.currentStock.toLocaleString("es-AR")})`
+                        : deficitSuggestion.surplus > 0
+                          ? `El destino tiene excedente (${deficitSuggestion.surplus.toLocaleString("es-AR")} uds sobre el óptimo), no necesita transferencia.`
+                          : "Stock en nivel óptimo."
+                      }
+                    </p>
+                  )}
                 </div>
               </div>
               <DialogFooter>
@@ -885,7 +1195,7 @@ function ControlStockPage() {
           {/* Lista de transferencias */}
           <Card>
             <CardContent className="p-0">
-              {filteredTransfers.length === 0 ? (
+              {statusFilteredTransfers.length === 0 ? (
                 <p className="text-sm text-muted-foreground py-8 text-center">
                   {searchTransfer ? "Sin resultados" : "No hay transferencias aún"}
                 </p>
@@ -904,7 +1214,7 @@ function ControlStockPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredTransfers.map((t) => (
+                    {statusFilteredTransfers.map((t) => (
                       <TableRow key={t.id} className="text-xs">
                         <TableCell className="font-mono">{t.transfer_code ?? t.id.slice(0, 8)}</TableCell>
                         <TableCell>{medMap.get(t.medication_id) ?? t.medication_id?.slice(0, 8)}</TableCell>

@@ -1135,12 +1135,14 @@ function TrendsTab({ trends, loading, periodDays }: { trends: TrendItem[]; loadi
                 {trends.map((t) => (
                   <TableRow key={t.medication_id}>
                     <TableCell className="font-medium">{t.medication_name}</TableCell>
-                    <TableCell className="text-right font-semibold">{t.stock_total.toLocaleString("es-AR")}</TableCell>
+                    <TableCell className="text-right font-semibold">
+                      <SimValue value={t.stock_total} delta={getDelta(`trend-stock-${t.medication_id}`)} format={(n) => n.toLocaleString("es-AR")} />
+                    </TableCell>
                     <TableCell className="text-right text-muted-foreground">{t.consumed_per_day.toFixed(2)}</TableCell>
                     <TableCell className="text-right font-semibold">
                       {t.days_until_empty !== null ? (
                         t.days_until_empty < 365 ? (
-                          `${Math.floor(t.days_until_empty)} días`
+                          <SimValue value={Math.floor(t.days_until_empty)} delta={getDelta(`trend-days-${t.medication_id}`)} format={(n) => `${n} días`} />
                         ) : (
                           "> 1 año"
                         )

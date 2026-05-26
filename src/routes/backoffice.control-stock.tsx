@@ -22,7 +22,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
 import { daysUntil, expiryStatus } from "@/lib/domain-types";
-import type { CrossHospitalMedStock, LowStockMedication, OverstockMedication } from "@/lib/server/backoffice-service";
+import type { CrossHospitalMedStock, LowStockMedication } from "@/lib/server/backoffice-service";
 
 export const Route = createFileRoute("/backoffice/control-stock")({
   component: ControlStockPage,
@@ -82,7 +82,6 @@ function ControlStockPage() {
 
   // Tab 3 — Alertas
   const [lowStock, setLowStock] = useState<LowStockMedication[]>([]);
-  const [overstock, setOverstock] = useState<OverstockMedication[]>([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
 
   // Tab 4 — Transferencias
@@ -97,6 +96,15 @@ function ControlStockPage() {
   const [stockFilter, setStockFilter] = useState("all");
   const [expiryFilter, setExpiryFilter] = useState("all");
   const [alertFilter, setAlertFilter] = useState("all");
+  const [searchDeficit, setSearchDeficit] = useState("");
+  const [deficitHospital, setDeficitHospital] = useState("all");
+  const [deficitSeverity, setDeficitSeverity] = useState("all");
+  const [searchSuggestion, setSearchSuggestion] = useState("");
+  const [suggestionDeficitHospital, setSuggestionDeficitHospital] = useState("all");
+  const [suggestionSurplusHospital, setSuggestionSurplusHospital] = useState("all");
+  const [deficitPage, setDeficitPage] = useState(0);
+  const [suggestionPage, setSuggestionPage] = useState(0);
+  const ITEMS_PER_PAGE = 8;
   const [transferFilter, setTransferFilter] = useState("all");
 
   async function loadAll() {
@@ -105,7 +113,7 @@ function ControlStockPage() {
     try {
       const rpc = await import("@/lib/server-rpc");
 
-      const [cs, meds, rt, ls, os, wss] = await Promise.all([
+      const [cs, meds, rt, ls, wss] = await Promise.all([
         rpc.backofficeGetCrossHospitalStockRpc().catch(() => []),
         rpc.backofficeGetAllMedicationsRpc().catch(() => []),
         rpc.backofficeGetRealtimeDataRpc({ data: {} }).catch(() => ({
@@ -113,14 +121,12 @@ function ControlStockPage() {
           warehouses: [], medications: [], stockConfig: [],
         })),
         rpc.licitacionesGetLowStockRpc().catch(() => []),
-        rpc.licitacionesGetOverstockRpc().catch(() => []),
         rpc.licitacionesGetWorkspacesRpc().catch(() => []),
       ]);
 
       setCrossStock(cs as CrossHospitalMedStock[]);
       setAllMeds(meds as { id: string; name: string; form: string }[]);
       setLowStock(ls as LowStockMedication[]);
-      setOverstock(os as OverstockMedication[]);
       setWorkspaces(wss as { id: string; name: string }[]);
 
       const rtData = rt as {
@@ -220,7 +226,7 @@ function ControlStockPage() {
 
   // ── Tab 3: Alert suggestions (system-generated) ──
   const suggestions = useMemo(() => {
-    type Suggestion = {
+    const result: {
       medicationName: string;
       medicationId: string;
       deficitWorkspace: string;
@@ -230,47 +236,38 @@ function ControlStockPage() {
       surplusWarehouse: string;
       surplus: number;
       suggestedQty: number;
-    };
+      potentialSaving: number;
+    }[] = [];
 
-    const filteredLs = selectedWs === "__all__" ? lowStock
-      : lowStock.filter((l) => l.workspaceId === selectedWs);
-    const filteredOs = (selectedWs === "__all__" ? overstock
-      : overstock.filter((o) => o.workspaceId !== selectedWs || selectedWs === "__all__"))
-      .filter((o) => o.surplus >= 100);
+    for (const med of filteredCrossStock) {
+      const deficitStocks = med.stocks.filter((s) => s.minStock > 0 && s.quantity < s.minStock);
+      const surplusStocks = med.stocks.filter((s) => s.optimalStock > 0 && s.quantity > s.optimalStock);
 
-    const suggestions: Suggestion[] = [];
+      for (const deficit of deficitStocks) {
+        for (const surplus of surplusStocks) {
+          const deficitQty = deficit.minStock - deficit.quantity;
+          const surplusQty = surplus.quantity - surplus.optimalStock;
+          const suggestedQty = Math.min(deficitQty, surplusQty);
+          if (suggestedQty <= 0) continue;
 
-    for (const deficit of filteredLs) {
-      const matchingSurpluses = filteredOs.filter(
-        (o) => o.medicationId === deficit.medicationId && o.workspaceId !== deficit.workspaceId
-      );
-      for (const surplus of matchingSurpluses) {
-        const suggestedQty = Math.min(deficit.deficit, surplus.surplus);
-        if (suggestedQty <= 0) continue;
-
-        const defWh = warehouses.find(
-          (w) => w.workspace_id === deficit.workspaceId
-        );
-        const surWh = warehouses.find(
-          (w) => w.workspace_id === surplus.workspaceId
-        );
-
-        suggestions.push({
-          medicationName: deficit.medicationName,
-          medicationId: deficit.medicationId,
-          deficitWorkspace: deficit.workspaceName,
-          deficitWarehouse: defWh?.id ?? "",
-          deficit: deficit.deficit,
-          surplusWorkspace: surplus.workspaceName,
-          surplusWarehouse: surWh?.id ?? "",
-          surplus: surplus.surplus,
-          suggestedQty,
-        });
+          result.push({
+            medicationName: med.medicationName,
+            medicationId: surplus.medicationId,
+            deficitWorkspace: deficit.workspaceName,
+            deficitWarehouse: deficit.warehouseId,
+            deficit: deficitQty,
+            surplusWorkspace: surplus.workspaceName,
+            surplusWarehouse: surplus.warehouseId,
+            surplus: surplusQty,
+            suggestedQty,
+            potentialSaving: suggestedQty * med.salePrice,
+          });
+        }
       }
     }
 
-    return suggestions;
-  }, [lowStock, overstock, selectedWs, warehouses]);
+    return result.sort((a, b) => b.suggestedQty - a.suggestedQty);
+  }, [filteredCrossStock]);
 
   // ── Tab 4: Filtered transfers ──
   const filteredTransfers = useMemo(() => {
@@ -380,22 +377,91 @@ function ControlStockPage() {
     return { lowStock, suggestions };
   }, [lowStock, suggestions, alertFilter]);
 
+  const deficitHospitals = useMemo(() =>
+    [...new Set(filteredAlerts.lowStock.map((l) => l.workspaceName))].sort(),
+    [filteredAlerts.lowStock],
+  );
+
+  const displayedDeficit = useMemo(() => {
+    let list = filteredAlerts.lowStock;
+    if (searchDeficit) {
+      const q = searchDeficit.toLowerCase();
+      list = list.filter((l) =>
+        l.medicationName.toLowerCase().includes(q) || l.workspaceName.toLowerCase().includes(q),
+      );
+    }
+    if (deficitHospital !== "all") list = list.filter((l) => l.workspaceName === deficitHospital);
+    if (deficitSeverity === "critical") list = list.filter((l) => l.currentStock === 0);
+    else if (deficitSeverity === "high") list = list.filter((l) => l.currentStock > 0 && l.deficit / l.minStock > 0.5);
+    else if (deficitSeverity === "moderate") list = list.filter((l) => l.currentStock > 0 && l.deficit / l.minStock <= 0.5);
+    return list;
+  }, [filteredAlerts.lowStock, searchDeficit, deficitHospital, deficitSeverity]);
+
+  const suggestionDeficitHospitals = useMemo(() =>
+    [...new Set(filteredAlerts.suggestions.map((s) => s.deficitWorkspace))].sort(),
+    [filteredAlerts.suggestions],
+  );
+
+  const suggestionSurplusHospitals = useMemo(() =>
+    [...new Set(filteredAlerts.suggestions.map((s) => s.surplusWorkspace))].sort(),
+    [filteredAlerts.suggestions],
+  );
+
+  const displayedSuggestions = useMemo(() => {
+    let list = filteredAlerts.suggestions;
+    if (searchSuggestion) {
+      const q = searchSuggestion.toLowerCase();
+      list = list.filter((s) => s.medicationName.toLowerCase().includes(q));
+    }
+    if (suggestionDeficitHospital !== "all") list = list.filter((s) => s.deficitWorkspace === suggestionDeficitHospital);
+    if (suggestionSurplusHospital !== "all") list = list.filter((s) => s.surplusWorkspace === suggestionSurplusHospital);
+    return list;
+  }, [filteredAlerts.suggestions, searchSuggestion, suggestionDeficitHospital, suggestionSurplusHospital]);
+
   // ── Tab 4: Status-filtered transfers ──
   const statusFilteredTransfers = useMemo(() => {
     if (transferFilter === "all") return filteredTransfers;
     return filteredTransfers.filter((t) => t.status === transferFilter);
   }, [filteredTransfers, transferFilter]);
 
-  const deficitSuggestion = useMemo(() => {
-    if (!tFormMed || !tFormTo) return null;
-    const stockEntry = crossStock
-      .flatMap((m) => m.stocks)
-      .find((s) => s.warehouseId === tFormTo && s.medicationId === tFormMed);
-    if (!stockEntry) return null;
-    const deficit = Math.max(0, stockEntry.minStock - stockEntry.quantity);
-    const surplus = Math.max(0, stockEntry.quantity - stockEntry.optimalStock);
-    return { deficit, surplus, currentStock: stockEntry.quantity, minStock: stockEntry.minStock, optimalStock: stockEntry.optimalStock };
-  }, [tFormMed, tFormTo, crossStock]);
+  const transferInfo = useMemo(() => {
+    if (!tFormMed) return null;
+
+    const stockAt = (warehouseId: string) =>
+      batches
+        .filter((b) => b.medication_id === tFormMed && b.warehouse_id === warehouseId)
+        .reduce((sum, b) => sum + b.quantity, 0);
+
+    const wsStockEntry = (warehouseId: string) => {
+      const wsId = workspaceByWarehouse.get(warehouseId);
+      if (!wsId) return null;
+      for (const med of crossStock) {
+        const entry = med.stocks.find((s) => s.medicationId === tFormMed && s.workspaceId === wsId);
+        if (entry) return entry;
+      }
+      return null;
+    };
+
+    const fromStock = tFormFrom ? stockAt(tFormFrom) : null;
+    const from = tFormFrom ? {
+      hospitalName: whFullMap.get(tFormFrom) ?? whMap.get(tFormFrom) ?? tFormFrom,
+      currentStock: fromStock!,
+      afterTransfer: fromStock! - tFormQty,
+    } : null;
+
+    const toCurrentStock = tFormTo ? stockAt(tFormTo) : null;
+    const toCrossEntry = tFormTo ? wsStockEntry(tFormTo) : null;
+    const to = tFormTo ? {
+      hospitalName: whFullMap.get(tFormTo) ?? whMap.get(tFormTo) ?? tFormTo,
+      currentStock: toCurrentStock!,
+      afterTransfer: toCurrentStock! + tFormQty,
+      minStock: toCrossEntry?.minStock ?? null,
+      optimalStock: toCrossEntry?.optimalStock ?? null,
+      deficit: toCrossEntry ? Math.max(0, toCrossEntry.minStock - toCurrentStock!) : null,
+    } : null;
+
+    return { from, to };
+  }, [tFormMed, tFormFrom, tFormTo, tFormQty, batches, crossStock, workspaceByWarehouse, whFullMap, whMap]);
 
   const lowStockBatchInfo = useMemo(() => {
     const info = new Map<string, { expiry: Date | null; daysUntil: number | null }>();
@@ -520,12 +586,8 @@ function ControlStockPage() {
     setSuggestionsLoading(true);
     try {
       const rpc = await import("@/lib/server-rpc");
-      const [ls, os] = await Promise.all([
-        rpc.licitacionesGetLowStockRpc().catch(() => [] as LowStockMedication[]),
-        rpc.licitacionesGetOverstockRpc().catch(() => [] as OverstockMedication[]),
-      ]);
-      setLowStock(ls as LowStockMedication[]);
-      setOverstock(os as OverstockMedication[]);
+      const cs = await rpc.backofficeGetCrossHospitalStockRpc().catch(() => []);
+      setCrossStock(cs as CrossHospitalMedStock[]);
       toast.success("Sugerencias actualizadas");
     } catch {
       toast.error("Error al actualizar sugerencias");
@@ -944,26 +1006,76 @@ function ControlStockPage() {
             <>
               {/* Sugerencias generadas por el sistema */}
               <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <ArrowLeftRight size={14} className="text-purple-500" />
-                    Sugerencias de Transferencias
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <ArrowLeftRight size={14} className="text-purple-500" />
+                      Sugerencias de Transferencias
+                      {displayedSuggestions.length > 0 && (
+                        <span className="text-xs font-normal text-muted-foreground">({displayedSuggestions.length})</span>
+                      )}
+                    </CardTitle>
                     <Button
                       variant="outline"
                       size="sm"
-                      className="ml-auto h-7 text-xs gap-1"
+                      className="h-7 text-xs gap-1"
                       onClick={refreshSuggestions}
                       disabled={suggestionsLoading}
                     >
                       <RefreshCw size={12} className={suggestionsLoading ? "animate-spin" : ""} />
-                      Actualizar sugerencias
+                      Actualizar
                     </Button>
-                  </CardTitle>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 mt-2">
+                    <div className="relative">
+                      <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        placeholder="Buscar medicamento..."
+                        value={searchSuggestion}
+                        onChange={(e) => { setSearchSuggestion(e.target.value); setSuggestionPage(0); }}
+                        className="pl-6 h-7 text-xs w-44"
+                      />
+                    </div>
+                    <Select value={suggestionDeficitHospital} onValueChange={(v) => { setSuggestionDeficitHospital(v); setSuggestionPage(0); }}>
+                      <SelectTrigger className="h-7 w-[170px] text-xs">
+                        <SelectValue placeholder="Hospital déficit" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos (déficit)</SelectItem>
+                        {suggestionDeficitHospitals.map((h) => (
+                          <SelectItem key={h} value={h}>{h}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Select value={suggestionSurplusHospital} onValueChange={(v) => { setSuggestionSurplusHospital(v); setSuggestionPage(0); }}>
+                      <SelectTrigger className="h-7 w-[170px] text-xs">
+                        <SelectValue placeholder="Hospital superávit" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos (superávit)</SelectItem>
+                        {suggestionSurplusHospitals.map((h) => (
+                          <SelectItem key={h} value={h}>{h}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {(searchSuggestion || suggestionDeficitHospital !== "all" || suggestionSurplusHospital !== "all") && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs text-muted-foreground px-2"
+                        onClick={() => { setSearchSuggestion(""); setSuggestionDeficitHospital("all"); setSuggestionSurplusHospital("all"); setSuggestionPage(0); }}
+                      >
+                        Limpiar
+                      </Button>
+                    )}
+                  </div>
                 </CardHeader>
                 <CardContent className="pt-0">
-                  {suggestions.length === 0 ? (
+                  {displayedSuggestions.length === 0 ? (
                     <p className="text-xs text-muted-foreground py-4 text-center">
-                      No hay sugerencias disponibles — ningún superávit ≥100 coincide con los déficits actuales
+                      {filteredAlerts.suggestions.length === 0
+                        ? "No hay sugerencias disponibles — no se detectaron pares déficit / superávit entre hospitales"
+                        : "Sin resultados para los filtros aplicados"}
                     </p>
                   ) : (
                     <Table>
@@ -971,48 +1083,143 @@ function ControlStockPage() {
                         <TableRow>
                           <TableHead className="text-xs">Medicamento</TableHead>
                           <TableHead className="text-xs">Hospital con Déficit</TableHead>
-                          <TableHead className="text-xs text-right">Cant. Faltante</TableHead>
+                          <TableHead className="text-xs text-right">Faltante</TableHead>
                           <TableHead className="text-xs">Hospital con Superávit</TableHead>
-                          <TableHead className="text-xs text-right">Cant. Excedente</TableHead>
-                          <TableHead className="text-xs text-right">Sugerencia</TableHead>
+                          <TableHead className="text-xs text-right">Excedente</TableHead>
+                          <TableHead className="text-xs text-right">Transferir</TableHead>
+                          <TableHead className="text-xs text-right">Ahorro potencial</TableHead>
+                          <TableHead className="w-8"></TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {suggestions.slice(0, 50).map((s, idx) => (
-                          <TableRow key={s.medicationId + "::" + s.deficitWorkspace + "::" + idx}>
+                        {displayedSuggestions.slice(suggestionPage * ITEMS_PER_PAGE, (suggestionPage + 1) * ITEMS_PER_PAGE).map((s, idx) => (
+                          <TableRow
+                            key={s.medicationId + "::" + s.deficitWorkspace + "::" + idx}
+                            className="cursor-pointer hover:bg-purple-50/60 dark:hover:bg-purple-950/20 group"
+                            onClick={() => {
+                              setTFormMed(s.medicationId);
+                              setTFormFrom(s.surplusWarehouse);
+                              setTFormTo(s.deficitWarehouse);
+                              setTFormQty(s.suggestedQty);
+                              setTransferOpen(true);
+                            }}
+                          >
                             <TableCell className="text-sm font-medium">{s.medicationName}</TableCell>
                             <TableCell className="text-xs text-muted-foreground">{s.deficitWorkspace}</TableCell>
                             <TableCell className="text-right text-sm">
-                              <span className="text-red-600 font-medium">{s.deficit.toLocaleString("es-AR")}</span>
+                              <span className="text-red-600 font-medium tabular-nums">-{s.deficit.toLocaleString("es-AR")}</span>
                             </TableCell>
                             <TableCell className="text-xs text-muted-foreground">{s.surplusWorkspace}</TableCell>
                             <TableCell className="text-right text-sm">
-                              <span className="text-blue-600 font-medium">+{s.surplus.toLocaleString("es-AR")}</span>
+                              <span className="text-blue-600 font-medium tabular-nums">+{s.surplus.toLocaleString("es-AR")}</span>
                             </TableCell>
                             <TableCell className="text-right">
-                              <span className="text-xs font-medium text-purple-700 dark:text-purple-300">
-                                Transferir {s.suggestedQty.toLocaleString("es-AR")} desde {s.surplusWorkspace}
-                              </span>
+                              <Badge className="bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300 border-0 text-[11px] font-semibold tabular-nums">
+                                {s.suggestedQty.toLocaleString("es-AR")} u
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right text-xs font-medium text-green-700 dark:text-green-400 tabular-nums">
+                              ${s.potentialSaving.toLocaleString("es-AR")}
+                            </TableCell>
+                            <TableCell className="text-right pr-3">
+                              <ArrowLeftRight size={13} className="text-muted-foreground/40 group-hover:text-purple-500 transition-colors" />
                             </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
                     </Table>
                   )}
+                  {displayedSuggestions.length > ITEMS_PER_PAGE && (
+                    <div className="flex items-center justify-between px-4 py-2 border-t">
+                      <span className="text-xs text-muted-foreground">
+                        {suggestionPage * ITEMS_PER_PAGE + 1}–{Math.min((suggestionPage + 1) * ITEMS_PER_PAGE, displayedSuggestions.length)} de {displayedSuggestions.length}
+                      </span>
+                      <div className="flex gap-1">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs"
+                          disabled={suggestionPage === 0}
+                          onClick={() => setSuggestionPage((p) => p - 1)}
+                        >
+                          Anterior
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs"
+                          disabled={(suggestionPage + 1) * ITEMS_PER_PAGE >= displayedSuggestions.length}
+                          onClick={() => setSuggestionPage((p) => p + 1)}
+                        >
+                          Siguiente
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 
               {/* Resumen de déficits */}
               <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <TrendingDown size={14} className="text-red-500" />
-                    Medicamentos con Déficit
-                  </CardTitle>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <TrendingDown size={14} className="text-red-500" />
+                      Medicamentos con Déficit
+                      {displayedDeficit.length > 0 && (
+                        <span className="text-xs font-normal text-muted-foreground">({displayedDeficit.length})</span>
+                      )}
+                    </CardTitle>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 mt-2">
+                    <div className="relative">
+                      <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        placeholder="Buscar medicamento..."
+                        value={searchDeficit}
+                        onChange={(e) => { setSearchDeficit(e.target.value); setDeficitPage(0); }}
+                        className="pl-6 h-7 text-xs w-44"
+                      />
+                    </div>
+                    <Select value={deficitHospital} onValueChange={(v) => { setDeficitHospital(v); setDeficitPage(0); }}>
+                      <SelectTrigger className="h-7 w-[170px] text-xs">
+                        <SelectValue placeholder="Hospital" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos los hospitales</SelectItem>
+                        {deficitHospitals.map((h) => (
+                          <SelectItem key={h} value={h}>{h}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Select value={deficitSeverity} onValueChange={(v) => { setDeficitSeverity(v); setDeficitPage(0); }}>
+                      <SelectTrigger className="h-7 w-[150px] text-xs">
+                        <SelectValue placeholder="Severidad" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Toda severidad</SelectItem>
+                        <SelectItem value="critical">Sin stock (0 u)</SelectItem>
+                        <SelectItem value="high">Alto (&gt;50% faltante)</SelectItem>
+                        <SelectItem value="moderate">Moderado (≤50%)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {(searchDeficit || deficitHospital !== "all" || deficitSeverity !== "all") && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs text-muted-foreground px-2"
+                        onClick={() => { setSearchDeficit(""); setDeficitHospital("all"); setDeficitSeverity("all"); setDeficitPage(0); }}
+                      >
+                        Limpiar
+                      </Button>
+                    )}
+                  </div>
                 </CardHeader>
                 <CardContent className="pt-0">
-                  {lowStock.length === 0 ? (
-                    <p className="text-xs text-muted-foreground py-4 text-center">Sin déficits</p>
+                  {displayedDeficit.length === 0 ? (
+                    <p className="text-xs text-muted-foreground py-4 text-center">
+                      {lowStock.length === 0 ? "Sin déficits" : "Sin resultados para los filtros aplicados"}
+                    </p>
                   ) : (
                     <Table>
                       <TableHeader>
@@ -1027,7 +1234,7 @@ function ControlStockPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {lowStock.slice(0, 50).map((item, idx) => {
+                        {displayedDeficit.slice(deficitPage * ITEMS_PER_PAGE, (deficitPage + 1) * ITEMS_PER_PAGE).map((item, idx) => {
                           const batchKey = item.medicationId + "::" + item.workspaceId;
                           const batchInfo = lowStockBatchInfo.get(batchKey);
                           return (
@@ -1058,6 +1265,33 @@ function ControlStockPage() {
                         })}
                       </TableBody>
                     </Table>
+                  )}
+                  {displayedDeficit.length > ITEMS_PER_PAGE && (
+                    <div className="flex items-center justify-between px-4 py-2 border-t">
+                      <span className="text-xs text-muted-foreground">
+                        {deficitPage * ITEMS_PER_PAGE + 1}–{Math.min((deficitPage + 1) * ITEMS_PER_PAGE, displayedDeficit.length)} de {displayedDeficit.length}
+                      </span>
+                      <div className="flex gap-1">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs"
+                          disabled={deficitPage === 0}
+                          onClick={() => setDeficitPage((p) => p - 1)}
+                        >
+                          Anterior
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs"
+                          disabled={(deficitPage + 1) * ITEMS_PER_PAGE >= displayedDeficit.length}
+                          onClick={() => setDeficitPage((p) => p + 1)}
+                        >
+                          Siguiente
+                        </Button>
+                      </div>
+                    </div>
                   )}
                 </CardContent>
               </Card>
@@ -1093,104 +1327,6 @@ function ControlStockPage() {
               <ArrowLeftRight size={14} /> Nueva Transferencia
             </Button>
           </div>
-
-          {/* Formulario de nueva transferencia */}
-          <Dialog open={transferOpen} onOpenChange={setTransferOpen}>
-            <DialogContent className="max-w-md">
-              <DialogHeader>
-                <DialogTitle>Nueva Transferencia</DialogTitle>
-                <DialogDescription className="sr-only">Crear una nueva transferencia de stock entre depósitos</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-3">
-                <div>
-                  <Label className="text-xs">Medicamento</Label>
-                  <select
-                    value={tFormMed}
-                    onChange={(e) => setTFormMed(e.target.value)}
-                    className="w-full h-8 rounded-md border border-input bg-background px-2 text-sm mt-1"
-                  >
-                    <option value="">Seleccionar...</option>
-                    {allMeds.map((m) => (
-                      <option key={m.id} value={m.id}>{m.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <Label className="text-xs">Origen (depósito)</Label>
-                  <select
-                    value={tFormFrom}
-                    onChange={(e) => setTFormFrom(e.target.value)}
-                    className="w-full h-8 rounded-md border border-input bg-background px-2 text-sm mt-1"
-                  >
-                    <option value="">Seleccionar...</option>
-                    {warehouses.map((w) => (
-                      <option key={w.id} value={w.id}>
-                        {whFullMap.get(w.id)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <Label className="text-xs">Destino (depósito)</Label>
-                  <select
-                    value={tFormTo}
-                    onChange={(e) => setTFormTo(e.target.value)}
-                    className="w-full h-8 rounded-md border border-input bg-background px-2 text-sm mt-1"
-                  >
-                    <option value="">Seleccionar...</option>
-                    {warehouses
-                      .filter((w) => w.id !== tFormFrom)
-                      .map((w) => (
-                        <option key={w.id} value={w.id}>
-                          {whFullMap.get(w.id)}
-                        </option>
-                      ))}
-                  </select>
-                </div>
-                <div>
-                  <Label className="text-xs">Cantidad</Label>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      type="number"
-                      value={tFormQty}
-                      onChange={(e) => setTFormQty(Number(e.target.value))}
-                      min={1}
-                      className="text-sm h-8 mt-1 flex-1"
-                    />
-                    {deficitSuggestion && deficitSuggestion.deficit > 0 && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="mt-1 h-8 text-xs gap-1 shrink-0"
-                        onClick={() => setTFormQty(deficitSuggestion.deficit)}
-                      >
-                        Sugerir {deficitSuggestion.deficit}
-                      </Button>
-                    )}
-                  </div>
-                  {deficitSuggestion && (
-                    <p className={`mt-1.5 text-xs ${deficitSuggestion.deficit > 0 ? "text-amber-600" : "text-muted-foreground"}`}>
-                      {deficitSuggestion.deficit > 0
-                        ? `Déficit en destino: ${deficitSuggestion.deficit.toLocaleString("es-AR")} uds (mín: ${deficitSuggestion.minStock.toLocaleString("es-AR")}, actual: ${deficitSuggestion.currentStock.toLocaleString("es-AR")})`
-                        : deficitSuggestion.surplus > 0
-                          ? `El destino tiene excedente (${deficitSuggestion.surplus.toLocaleString("es-AR")} uds sobre el óptimo), no necesita transferencia.`
-                          : "Stock en nivel óptimo."
-                      }
-                    </p>
-                  )}
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" size="sm" onClick={() => setTransferOpen(false)}>
-                  Cancelar
-                </Button>
-                <Button size="sm" onClick={handleCreateTransfer} disabled={!tFormMed || !tFormFrom || !tFormTo || tFormQty <= 0}>
-                  Transferir
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
 
           {/* Lista de transferencias */}
           <Card>
@@ -1278,6 +1414,142 @@ function ControlStockPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Modal de nueva transferencia — fuera de los tabs para que sea accesible desde cualquiera */}
+      <Dialog open={transferOpen} onOpenChange={setTransferOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nueva Transferencia</DialogTitle>
+            <DialogDescription className="sr-only">Crear una nueva transferencia de stock entre depósitos</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs">Medicamento</Label>
+              <select
+                value={tFormMed}
+                onChange={(e) => setTFormMed(e.target.value)}
+                className="w-full h-8 rounded-md border border-input bg-background px-2 text-sm mt-1"
+              >
+                <option value="">Seleccionar...</option>
+                {allMeds.map((m) => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <Label className="text-xs">Origen (depósito)</Label>
+              <select
+                value={tFormFrom}
+                onChange={(e) => setTFormFrom(e.target.value)}
+                className="w-full h-8 rounded-md border border-input bg-background px-2 text-sm mt-1"
+              >
+                <option value="">Seleccionar...</option>
+                {warehouses.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {whFullMap.get(w.id)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <Label className="text-xs">Destino (depósito)</Label>
+              <select
+                value={tFormTo}
+                onChange={(e) => setTFormTo(e.target.value)}
+                className="w-full h-8 rounded-md border border-input bg-background px-2 text-sm mt-1"
+              >
+                <option value="">Seleccionar...</option>
+                {warehouses
+                  .filter((w) => w.id !== tFormFrom)
+                  .map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {whFullMap.get(w.id)}
+                    </option>
+                  ))}
+              </select>
+              {transferInfo?.to?.deficit != null && transferInfo.to.deficit > 0 && (
+                <div className="flex items-start gap-2 mt-2 p-2.5 rounded-md bg-amber-50 border border-amber-200 dark:bg-amber-950/20 dark:border-amber-800">
+                  <AlertCircle size={13} className="text-amber-600 mt-0.5 shrink-0" />
+                  <div className="text-xs">
+                    <p className="font-semibold text-amber-700 dark:text-amber-400">
+                      Déficit de {transferInfo.to.deficit.toLocaleString("es-AR")} unidades
+                    </p>
+                    <p className="text-amber-600 dark:text-amber-500 mt-0.5">
+                      Stock actual: {transferInfo.to.currentStock.toLocaleString("es-AR")} · Mínimo requerido: {transferInfo.to.minStock?.toLocaleString("es-AR")}.{" "}
+                      <button
+                        type="button"
+                        className="underline font-medium"
+                        onClick={() => setTFormQty(transferInfo.to!.deficit!)}
+                      >
+                        Usar {transferInfo.to.deficit.toLocaleString("es-AR")} u
+                      </button>
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div>
+              <Label className="text-xs">Cantidad</Label>
+              <Input
+                type="number"
+                value={tFormQty}
+                onChange={(e) => setTFormQty(Number(e.target.value))}
+                min={1}
+                className="text-sm h-8 mt-1"
+              />
+            </div>
+            {transferInfo?.from && transferInfo?.to && tFormQty > 0 && (
+              <div className="rounded-md border border-border bg-muted/30 p-3 space-y-2.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Impacto del movimiento</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Origen</p>
+                    <p className="text-xs font-medium truncate" title={transferInfo.from.hospitalName}>{transferInfo.from.hospitalName}</p>
+                    <div className="flex items-center gap-1.5 text-xs tabular-nums">
+                      <span>{transferInfo.from.currentStock.toLocaleString("es-AR")}</span>
+                      <span className="text-muted-foreground">→</span>
+                      <span className={`font-semibold ${transferInfo.from.afterTransfer < 0 ? "text-red-600" : "text-foreground"}`}>
+                        {transferInfo.from.afterTransfer.toLocaleString("es-AR")}
+                      </span>
+                    </div>
+                    {transferInfo.from.afterTransfer < 0 && (
+                      <p className="text-[10px] text-red-600 font-medium">Stock insuficiente</p>
+                    )}
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Destino</p>
+                    <p className="text-xs font-medium truncate" title={transferInfo.to.hospitalName}>{transferInfo.to.hospitalName}</p>
+                    <div className="flex items-center gap-1.5 text-xs tabular-nums">
+                      <span>{transferInfo.to.currentStock.toLocaleString("es-AR")}</span>
+                      <span className="text-muted-foreground">→</span>
+                      <span className={`font-semibold ${
+                        transferInfo.to.minStock != null && transferInfo.to.afterTransfer >= transferInfo.to.minStock
+                          ? "text-green-600"
+                          : "text-amber-600"
+                      }`}>
+                        {transferInfo.to.afterTransfer.toLocaleString("es-AR")}
+                      </span>
+                    </div>
+                    {transferInfo.to.minStock != null && (
+                      <p className="text-[10px] text-muted-foreground">
+                        Mín: {transferInfo.to.minStock.toLocaleString("es-AR")} · Ópt: {transferInfo.to.optimalStock?.toLocaleString("es-AR")}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setTransferOpen(false)}>
+              Cancelar
+            </Button>
+            <Button size="sm" onClick={handleCreateTransfer} disabled={!tFormMed || !tFormFrom || !tFormTo || tFormQty <= 0}>
+              Transferir
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -427,19 +427,28 @@ function ControlStockPage() {
   const transferInfo = useMemo(() => {
     if (!tFormMed) return null;
 
+    // Each hospital has its own UUID per medication — resolve by name across workspaces.
+    const medName = medMap.get(tFormMed);
+    const crossEntry = medName
+      ? crossStock.find((m) => m.medicationName.toLowerCase() === medName.toLowerCase())
+      : null;
+
+    // Get the workspace-specific medication ID for a given warehouse (fallback to tFormMed for same-workspace).
+    const medIdFor = (warehouseId: string): string => {
+      const wsId = workspaceByWarehouse.get(warehouseId);
+      if (!wsId || !crossEntry) return tFormMed;
+      return crossEntry.stocks.find((s) => s.workspaceId === wsId)?.medicationId ?? tFormMed;
+    };
+
     const stockAt = (warehouseId: string) =>
       batches
-        .filter((b) => b.medication_id === tFormMed && b.warehouse_id === warehouseId)
+        .filter((b) => b.medication_id === medIdFor(warehouseId) && b.warehouse_id === warehouseId)
         .reduce((sum, b) => sum + b.quantity, 0);
 
     const wsStockEntry = (warehouseId: string) => {
       const wsId = workspaceByWarehouse.get(warehouseId);
-      if (!wsId) return null;
-      for (const med of crossStock) {
-        const entry = med.stocks.find((s) => s.medicationId === tFormMed && s.workspaceId === wsId);
-        if (entry) return entry;
-      }
-      return null;
+      if (!wsId || !crossEntry) return null;
+      return crossEntry.stocks.find((s) => s.workspaceId === wsId) ?? null;
     };
 
     const fromStock = tFormFrom ? stockAt(tFormFrom) : null;
@@ -461,7 +470,7 @@ function ControlStockPage() {
     } : null;
 
     return { from, to };
-  }, [tFormMed, tFormFrom, tFormTo, tFormQty, batches, crossStock, workspaceByWarehouse, whFullMap, whMap]);
+  }, [tFormMed, tFormFrom, tFormTo, tFormQty, batches, crossStock, workspaceByWarehouse, whFullMap, whMap, medMap]);
 
   const lowStockBatchInfo = useMemo(() => {
     const info = new Map<string, { expiry: Date | null; daysUntil: number | null }>();

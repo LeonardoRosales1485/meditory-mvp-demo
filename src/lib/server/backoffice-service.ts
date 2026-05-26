@@ -231,15 +231,29 @@ export async function getRealtimeData(workspaceId?: string) {
     }
   }
 
-  const [batches, movements, orders, transfers, warehouses] = await Promise.all([
+  const [batches, movements, orders, transfers, warehouses, medications, stockConfig] = await Promise.all([
     db<object[]>(batchesQuery.order("expiry")),
     db<object[]>(movementsQuery.order("date", { ascending: false }).limit(200)),
     db<object[]>(ordersQuery.order("requested_at", { ascending: false }).limit(100)),
     db<object[]>(transfersQuery.order("date", { ascending: false }).limit(100)),
     db<object[]>(warehousesQuery.order("name")),
+    db<object[]>(supabaseAdmin.from("medications").select("id, name, concentration_value, concentration_unit")),
+    db<object[]>(supabaseAdmin.from("medication_stock_config").select("*")),
   ]);
 
-  return { batches, movements, orders, transfers, warehouses };
+  const referencedWhIds = new Set<string>();
+  for (const t of transfers as { from_warehouse_id?: string; to_warehouse_id?: string }[]) {
+    if (t.from_warehouse_id) referencedWhIds.add(t.from_warehouse_id);
+    if (t.to_warehouse_id) referencedWhIds.add(t.to_warehouse_id);
+  }
+  const existingWhIds = new Set((warehouses as { id: string }[]).map((w) => w.id));
+  const missingIds = [...referencedWhIds].filter((id) => !existingWhIds.has(id));
+  if (missingIds.length > 0) {
+    const { data: extra } = await supabaseAdmin.from("warehouses").select("*").in("id", missingIds);
+    if (extra) (warehouses as object[]).push(...extra);
+  }
+
+  return { batches, movements, orders, transfers, warehouses, medications, stockConfig };
 }
 
 export async function seedTransfers(): Promise<number> {
@@ -1590,15 +1604,32 @@ export interface AssistantFullSnapshot {
   warehouses: { id: string; name: string; workspaceId: string; workspaceName: string; type: string }[];
   users: { id: string; name: string; email: string; role: string; workspaceId: string; workspaceName: string }[];
   totalUnits: number;
+  transfers: {
+    id: string;
+    transferCode: string | null;
+    medicationId: string;
+    medicationName: string;
+    fromWarehouseId: string;
+    fromWarehouseName: string;
+    fromWorkspaceName: string;
+    toWarehouseId: string;
+    toWarehouseName: string;
+    toWorkspaceName: string;
+    quantity: number;
+    status: string;
+    requestedBy: string;
+    date: string;
+  }[];
 }
 
 export async function getAssistantFullSnapshot(): Promise<AssistantFullSnapshot> {
-  const [workspacesRes, medsRes, warehousesRes, usersRes, batchesRes] = await Promise.all([
+  const [workspacesRes, medsRes, warehousesRes, usersRes, batchesRes, transfersRes] = await Promise.all([
     supabaseAdmin.from("workspaces").select("id, name, slug").order("name"),
     supabaseAdmin.from("medications").select("id, name, workspace_id").order("name"),
     supabaseAdmin.from("warehouses").select("id, name, workspace_id, type").order("name"),
     supabaseAdmin.from("workspace_users").select("id, name, email, role, workspace_id").order("name"),
     supabaseAdmin.from("batches").select("quantity"),
+    supabaseAdmin.from("transfer_requests").select("*").order("date", { ascending: false }).limit(100),
   ]);
 
   const workspaces = (workspacesRes.data ?? []) as { id: string; name: string; slug: string }[];
@@ -1606,8 +1637,16 @@ export async function getAssistantFullSnapshot(): Promise<AssistantFullSnapshot>
   const warehouses = (warehousesRes.data ?? []) as { id: string; name: string; workspace_id: string; type: string }[];
   const users = (usersRes.data ?? []) as { id: string; name: string; email: string; role: string; workspace_id: string }[];
   const batches = (batchesRes.data ?? []) as { quantity: number }[];
+  const rawTransfers = (transfersRes.data ?? []) as {
+    id: string; workspace_id: string; transfer_code: string | null;
+    medication_id: string; from_warehouse_id: string; to_warehouse_id: string;
+    quantity: number; status: string; requested_by: string; date: string;
+  }[];
 
   const wsMap = new Map(workspaces.map((w) => [w.id, w.name]));
+  const medMap = new Map(meds.map((m) => [m.id, m.name]));
+  const whMap = new Map(warehouses.map((w) => [w.id, w]));
+  const whWsMap = new Map(warehouses.map((w) => [w.id, wsMap.get(w.workspace_id) ?? w.workspace_id]));
 
   return {
     workspaces,
@@ -1633,6 +1672,22 @@ export async function getAssistantFullSnapshot(): Promise<AssistantFullSnapshot>
       workspaceName: wsMap.get(u.workspace_id) ?? u.workspace_id,
     })),
     totalUnits: batches.reduce((s, b) => s + (b.quantity ?? 0), 0),
+    transfers: rawTransfers.map((t) => ({
+      id: t.id,
+      transferCode: t.transfer_code,
+      medicationId: t.medication_id,
+      medicationName: medMap.get(t.medication_id) ?? t.medication_id,
+      fromWarehouseId: t.from_warehouse_id,
+      fromWarehouseName: whMap.get(t.from_warehouse_id)?.name ?? t.from_warehouse_id,
+      fromWorkspaceName: whWsMap.get(t.from_warehouse_id) ?? "",
+      toWarehouseId: t.to_warehouse_id,
+      toWarehouseName: whMap.get(t.to_warehouse_id)?.name ?? t.to_warehouse_id,
+      toWorkspaceName: whWsMap.get(t.to_warehouse_id) ?? "",
+      quantity: t.quantity,
+      status: t.status,
+      requestedBy: t.requested_by,
+      date: t.date,
+    })),
   };
 }
 

@@ -107,37 +107,26 @@ export function KpiCard({ value, label, sublabel, tooltip, color = "default", pr
 }
 
 interface KpiRowProps {
-  totalUnits: number;
   lossWithoutTransfers: number;
   savingWithTransfers: number;
   criticalMeds: number;
-  topWsUnits: number;
-  topWsName: string;
+  rotationIndex: number;
   selectedWorkspaceName?: string | null;
 }
 
-export function KpiRow({ totalUnits, lossWithoutTransfers, savingWithTransfers, criticalMeds, topWsUnits, topWsName, selectedWorkspaceName }: KpiRowProps) {
+export function KpiRow({ lossWithoutTransfers, savingWithTransfers, criticalMeds, rotationIndex, selectedWorkspaceName }: KpiRowProps) {
   const isFiltered = !!selectedWorkspaceName;
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-      <KpiCard
-        value={totalUnits}
-        label={isFiltered ? `Unidades — ${selectedWorkspaceName}` : "Total Unidades (global)"}
-        sublabel={isFiltered ? undefined : "3 hospitales"}
-        tooltip={isFiltered ? `Suma de todas las unidades en stock en ${selectedWorkspaceName}.` : "Suma de todas las unidades en stock en los 3 hospitales y sus depósitos (Central, Interna y Ventas). Incluye todos los medicamentos activos."}
-        color="blue"
-        icon={<TrendingUp size={18} />}
-        delay={0}
-      />
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
       <KpiCard
         value={lossWithoutTransfers}
-        label="Pérdida sin transfers"
-        sublabel="Stock ocioso sin redistribuir"
+        label="Perdidas sin transferencias"
+        sublabel="Stock potencialmente sin uso"
         tooltip="Valor en $ del sobrestock que el Hospital Alemán tiene por encima de su nivel óptimo. Este stock 'duerme' mientras otros hospitales licitan esas mismas drogas sin saber que hay unidades disponibles cerca."
         color="red"
         prefix="$"
         icon={<DollarSign size={18} />}
-        delay={0.1}
+        delay={0}
         action={
           <button onClick={() => dispatchPreset(PRESET_LOSS)} className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary transition-all hover:bg-primary/10 hover:border-primary/30 active:scale-95">
             <Bot size={14} />
@@ -153,7 +142,7 @@ export function KpiRow({ totalUnits, lossWithoutTransfers, savingWithTransfers, 
         color="green"
         prefix="$"
         icon={<TrendingUp size={18} />}
-        delay={0.2}
+        delay={0.1}
         action={
           <button onClick={() => dispatchPreset(PRESET_SAVING)} className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary transition-all hover:bg-primary/10 hover:border-primary/30 active:scale-95">
             <Bot size={14} />
@@ -168,7 +157,7 @@ export function KpiRow({ totalUnits, lossWithoutTransfers, savingWithTransfers, 
         tooltip={isFiltered ? `Medicamentos con stock por debajo del mínimo en ${selectedWorkspaceName}.` : "Cantidad de medicamentos con stock actual por debajo del mínimo configurado en al menos uno de los 3 hospitales. Requieren atención inmediata o licitación urgente."}
         color="yellow"
         icon={<AlertTriangle size={18} />}
-        delay={0.3}
+        delay={0.2}
         action={
           <button onClick={() => dispatchPreset(PRESET_CRITICAL)} className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary transition-all hover:bg-primary/10 hover:border-primary/30 active:scale-95">
             <Bot size={14} />
@@ -177,14 +166,14 @@ export function KpiRow({ totalUnits, lossWithoutTransfers, savingWithTransfers, 
         }
       />
       <KpiCard
-        value={topWsUnits}
-        label={isFiltered ? selectedWorkspaceName : topWsName}
-        sublabel={isFiltered ? undefined : "#1 en stock del sistema"}
-        tooltip={isFiltered ? `Unidades totales en ${selectedWorkspaceName}.` : `Unidades totales en los depósitos de ${topWsName}. Concentra la mayor parte del stock del sistema y es la fuente principal de sobrestock transferible.`}
-        color="green"
-        icon={<Trophy size={18} />}
-        highlight={!isFiltered}
-        delay={0.4}
+        value={Math.round(rotationIndex * 100)}
+        label="Índice de rotación"
+        sublabel={isFiltered ? `En ${selectedWorkspaceName}` : "Rotación mensual de stock"}
+        tooltip="Indica cuántas veces rota el inventario por mes. Calculado como el cociente entre el consumo total de los últimos 30 días y el stock total actual. Un valor mayor a 1 indica alta rotación; menor a 0.3 indica stock estancado."
+        color={rotationIndex >= 0.5 ? "green" : rotationIndex >= 0.2 ? "yellow" : "red"}
+        suffix="%"
+        icon={<TrendingUp size={18} />}
+        delay={0.3}
       />
     </div>
   );

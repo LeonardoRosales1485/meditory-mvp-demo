@@ -9,15 +9,13 @@ import { KpiRow } from "@/components/dashboard-kpi-cards";
 import {
   StackedBarChart,
   StockDonutChart,
-  HospitalRadarChart,
-  ConsumptionAreaChart,
   TopMedsHorizontalChart,
   StockVsDemandChart,
   StockTreemap,
   StockHeatmap,
-  LossSankeyChart,
   CapacityDonutChart,
-  type WorkspaceStat,
+  ProductosEstrellaChart,
+  ProductosEstancadosChart,
 } from "@/components/dashboard-charts";
 import { StockCrossTable } from "@/components/stock-cross-table";
 import { LossCalculator } from "@/components/loss-calculator";
@@ -122,11 +120,18 @@ function EstadoHospitalPage() {
   }, [data, selectedWs, workspaces]);
 
   const filteredWorkspaceNames = filteredWorkspaces.map((ws) => ws.name);
-  const filteredWarehouseSummary = filteredVolumeData.slice(0, 9).map((wh) => ({ name: wh.name, pct: wh.occupancyPct }));
-  const filteredTotalUnits = filteredWorkspaces.reduce((s, ws) => s + ws.totalUnits, 0);
+  const filteredWarehouseSummary = filteredVolumeData.slice(0, 9).map((wh) => ({ name: wh.name, pct: wh.occupancyPct, workspaceName: wh.workspaceName }));
   const filteredCriticalMeds = filteredCrossStock.filter((m) =>
     m.stocks.some((s) => s.minStock > 0 && s.quantity < s.minStock)
   ).length;
+
+  const rotationIndex = useMemo(() => {
+    if (!data) return 0;
+    const totalConsumed = data.consumptionData.reduce((s, d) => s + d.totalConsumed, 0);
+    const totalStock = data.crossStock.reduce((s, m) => s + m.stocks.reduce((ss, ws) => ss + ws.quantity, 0), 0);
+    if (totalStock === 0) return 0;
+    return Math.round((totalConsumed / totalStock) * 100) / 100;
+  }, [data]);
 
   // ── Early returns (no new hooks below this line) ──
   if (loading) {
@@ -157,9 +162,6 @@ function EstadoHospitalPage() {
   if (!data) return null;
 
   const { crossStock, lossData, volumeData, consumptionData, dashboardData } = data;
-  const topWs = [...workspaces].sort((a, b) => b.totalUnits - a.totalUnits)[0];
-  const topWsUnits = topWs?.totalUnits ?? 0;
-  const topWsName = topWs?.name ?? "Hospital";
 
   const handleExportPdf = async () => {
     try {
@@ -223,12 +225,10 @@ function EstadoHospitalPage() {
       {/* KPIs */}
       <div id="section-kpis">
         <KpiRow
-        totalUnits={filteredTotalUnits}
         lossWithoutTransfers={lossData.totalLossWithoutTransfers}
         savingWithTransfers={lossData.totalSavingWithTransfers}
         criticalMeds={filteredCriticalMeds}
-        topWsUnits={selectedWs === "__all__" ? topWsUnits : filteredTotalUnits}
-        topWsName={topWsName}
+        rotationIndex={rotationIndex}
         selectedWorkspaceName={selectedWsName}
       />
       </div>
@@ -239,18 +239,13 @@ function EstadoHospitalPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <StackedBarChart crossStock={filteredCrossStock} workspaces={filteredWorkspaces} />
           <StockDonutChart workspaces={filteredWorkspaces} />
-          <HospitalRadarChart workspaces={filteredWorkspaces} />
-          <ConsumptionAreaChart data={filteredConsumptionData} />
           <TopMedsHorizontalChart crossStock={filteredCrossStock} />
           <StockVsDemandChart crossStock={filteredCrossStock} />
           <StockTreemap crossStock={filteredCrossStock} />
           <StockHeatmap crossStock={filteredCrossStock} workspaceNames={filteredWorkspaceNames} />
-          <LossSankeyChart
-            totalStock={filteredTotalUnits}
-            lossAmount={lossData.totalLossWithoutTransfers}
-            savingAmount={lossData.totalSavingWithTransfers}
-          />
           <CapacityDonutChart warehouses={filteredWarehouseSummary} />
+          <ProductosEstrellaChart crossStock={filteredCrossStock} consumptionData={filteredConsumptionData} />
+          <ProductosEstancadosChart crossStock={filteredCrossStock} consumptionData={filteredConsumptionData} />
         </div>
       </div>
 

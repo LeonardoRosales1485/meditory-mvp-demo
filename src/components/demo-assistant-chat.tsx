@@ -50,7 +50,12 @@ import {
   type CreateTransferToolArgs,
   type FindSimilarLicitacionesArgs,
 } from "@/lib/assistant-tools";
+import { isExplicitTransferCreationIntent } from "@/lib/assistant-chat-intent";
 import type { LossCalculationResult, CrossHospitalMedStock, WarehouseVolumeItem, AssistantFullSnapshot } from "@/lib/server/backoffice-service";
+
+function resolveName(list: { id: string; name: string }[] | undefined, id: string): string | null {
+  return list?.find((x) => x.id === id)?.name ?? null;
+}
 
 interface DemoAssistantChatProps {
   lossData?: LossCalculationResult | null;
@@ -277,6 +282,16 @@ ${snapshot.warehouses.map((w) => `- ${w.name} [${w.type}] en ${w.workspaceName} 
 ${snapshot.users.map((u) => `- ${u.name} <${u.email}> rol:${u.role} en ${u.workspaceName} (id: ${u.id})`).join("\n")}
 
 Total unidades en sistema: ${snapshot.totalUnits.toLocaleString("es-AR")}
+
+### Transferencias (últimas 50)
+${snapshot.transfers.slice(0, 50).map((t) => {
+  const statusLabel: Record<string, string> = {
+    solicitado: "Solicitado", autorizado: "Autorizado", despachado: "Despachado",
+    recibir: "A recibir", recibido: "Recibido", aceptado: "Aceptado", rechazado: "Rechazado",
+  };
+  const fecha = t.date ? new Date(t.date).toLocaleDateString("es-AR") : "-";
+  return `- ${t.medicationName}: ${t.fromWorkspaceName} → ${t.toWorkspaceName} (${t.quantity} u., ${statusLabel[t.status] ?? t.status}, ${fecha})`;
+}).join("\n")}
 `
     : "";
 
@@ -292,14 +307,16 @@ ${snapshotText}
 
 ### Reglas
 - Usar tools SOLO cuando el usuario pida explícitamente la acción (navegar, agregar stock, crear usuario, crear transferencia).
-- Para preguntas informativas, responder en texto usando los datos del snapshot.
+- Para preguntas informativas, responder en texto usando los datos del sistema.
 - Para acciones destructivas (eliminar usuario), mostrar los datos y pedir confirmación antes de ejecutar.
 - Si el usuario cambia de tema, RESPONDÉ al nuevo tema. Ignorá el historial anterior si no está relacionado.
 - Si no tenés los IDs necesarios, preguntar primero.
 - Responder siempre en español, tono profesional pero amigable.
-- No inventar datos. Si no están en el snapshot, decirlo.
-- Para agregar stock: usar SIEMPRE la tool add_stock con los IDs reales del snapshot. Si el usuario menciona un medicamento por nombre, buscar su ID en la lista de medicamentos. Si hay múltiples hospitales, preguntar cuál corresponde y luego llamar la tool. No responder en texto sobre acciones que deberías ejecutar — ejecutalas con la tool.
-- Para transferencias de stock: si ves sobrestock en un depósito y déficit en otro, llamá create_transfer INMEDIATAMENTE con los IDs reales del snapshot (medicationId, fromWarehouseId, toWarehouseId, quantity). NO expliques ni resumas — ejecutala directo. sourceBatchId es opcional (se selecciona automáticamente). Funciona intra-hospital y cross-hospital.`;
+- No inventar datos. Si no están en los datos del sistema, decirlo.
+- Para agregar stock: usar SIEMPRE la tool add_stock con los IDs reales de los datos del sistema. Si el usuario menciona un medicamento por nombre, buscar su ID en la lista de medicamentos. Si hay múltiples hospitales, preguntar cuál corresponde y luego llamar la tool. No responder en texto sobre acciones que deberías ejecutar — ejecutalas con la tool.
+- Para transferencias de stock (create_transfer): llamá esta tool cuando el usuario pida explícitamente "transferir", "transfiere", "mover", "trasladar" stock entre depósitos u hospitales. Usá los IDs reales de los datos del sistema (medicationId, fromWarehouseId, toWarehouseId, quantity). sourceBatchId es opcional. Funciona intra-hospital y cross-hospital. Mostrá un resumen y esperá confirmación. NO reutilices datos de transferencias anteriores — usá SIEMPRE los datos actuales del sistema. NUNCA uses herramientas de licitación (find_similar_licitaciones, create_licitacion) para responder a pedidos de transferencia.
+- Para mostrar gráficos de transferencias entre hospitales: usá el tool render_chart con chartType "stacked_bar". Los datos deben incluir destination como "name", origin como "category", y cantidad como "value". Ej: { name: "Hospital Alemán", category: "Hospital Blanco", value: 150 }. Cada par origen→destino es una entrada separada con el mismo destination en "name" y distinto origin en "category".`;
+
 }
 
 function PendingConfirmBubble({
@@ -338,6 +355,7 @@ async function executeConfirmedAction(
   data: unknown,
   addMsg: (m: Message) => void,
   setFullSnapshot: (s: AssistantFullSnapshot | null) => void,
+  snapshot: AssistantFullSnapshot | null,
 ) {
   try {
     const rpc = await import("@/lib/server-rpc");
@@ -366,7 +384,9 @@ async function executeConfirmedAction(
             }
           });
         }
-        addMsg({ role: "action_result", success: true, message: `Stock actualizado: +${args.quantity} unidades agregadas correctamente.` });
+        const medName = snapshot?.medications.find((m) => m.id === args.medicationId)?.name ?? args.medicationId;
+        const whName = snapshot?.warehouses.find((w) => w.id === args.warehouseId)?.name ?? args.warehouseId;
+        addMsg({ role: "action_result", success: true, message: `Stock actualizado: +${args.quantity} u. de "${medName}" en "${whName}".` });
         rpc.backofficeGetAssistantFullSnapshotRpc().then(setFullSnapshot).catch(console.error);
         break;
       }
@@ -447,14 +467,18 @@ async function executeConfirmedAction(
         const args = data as AdvanceTransferArgs;
         const store = await import("@/lib/store");
         await store.useStore.getState().advanceTransfer(args.transferId);
-        addMsg({ role: "action_result", success: true, message: `Transferencia avanzada: ${args.transferId}.` });
+        const advTransfer = snapshot?.transfers.find((t) => t.id === args.transferId);
+        const advLabel = advTransfer ? `${advTransfer.medicationName}: ${advTransfer.fromWorkspaceName} → ${advTransfer.toWorkspaceName}` : args.transferId;
+        addMsg({ role: "action_result", success: true, message: `Transferencia avanzada: ${advLabel}.` });
         break;
       }
       case "reject_transfer": {
         const args = data as RejectTransferArgs;
         const store = await import("@/lib/store");
         await store.useStore.getState().rejectTransfer(args.transferId, args.reason, args.outcome);
-        addMsg({ role: "action_result", success: true, message: `Transferencia ${args.outcome === "devolver" ? "devuelta" : "descartada"}: ${args.transferId}.` });
+        const rejTransfer = snapshot?.transfers.find((t) => t.id === args.transferId);
+        const rejLabel = rejTransfer ? `${rejTransfer.medicationName}: ${rejTransfer.fromWorkspaceName} → ${rejTransfer.toWorkspaceName}` : args.transferId;
+        addMsg({ role: "action_result", success: true, message: `Transferencia ${args.outcome === "devolver" ? "devuelta" : "descartada"}: ${rejLabel}.` });
         break;
       }
       case "manage_medication": {
@@ -582,7 +606,10 @@ async function executeConfirmedAction(
               quantity: args.quantity,
             },
           });
-          addMsg({ role: "action_result", success: true, message: `Transferencia creada: ${args.quantity} u. → destino.` });
+          const medName = resolveName(snapshot?.medications, args.medicationId) ?? args.medicationId;
+          const fromName = resolveName(snapshot?.warehouses, args.fromWarehouseId) ?? args.fromWarehouseId;
+          const toName = resolveName(snapshot?.warehouses, args.toWarehouseId) ?? args.toWarehouseId;
+          addMsg({ role: "action_result", success: true, message: `Transferencia creada: ${args.quantity} u. de ${medName}: ${fromName} → ${toName}.` });
           rpc.backofficeGetAssistantFullSnapshotRpc().then(setFullSnapshot).catch(console.error);
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
@@ -644,10 +671,6 @@ export function DemoAssistantChat({ variant = "floating", ...props }: DemoAssist
     setMessages(updatedMessages);
 
     // === Presets: responder desde datos locales sin llamar al LLM ===
-    const PRESET_LOSS_TEXT = "Analizá el sobrestock del Hospital Alemán. Identificá los 3 medicamentos con mayor excedente sobre el nivel óptimo, calculá su valor en $ y cuánto se podría recuperar transfiriendo a Francisco o Blanco. No crees registros en la base de datos. Decime exactamente qué transfers harías, con qué cantidades, y qué tengo que hacer yo para ejecutarlas.";
-    const PRESET_SAVING_TEXT = "Priorizá las transferencias del análisis anterior por impacto económico. Mostrame el top 5 y el ahorro acumulado. Indicame qué acciones tomar desde cada institución.";
-    const PRESET_CRITICAL_TEXT = "Analizá qué medicamentos están por debajo del mínimo en cada hospital. Sugerí cuáles cubrir con transfers desde Alemán y cuáles requieren orden de compra urgente.";
-
     const localResponse = generateLocalResponse(text, ctx);
 
     if (localResponse) {
@@ -659,12 +682,21 @@ export function DemoAssistantChat({ variant = "floating", ...props }: DemoAssist
       return;
     }
 
+    // Detectar si el usuario pidió una transferencia — filtrar tools de licitación
+    const isTransferIntent = isExplicitTransferCreationIntent(text);
+    const options = isTransferIntent
+      ? {
+          excludeToolNames: ["find_similar_licitaciones", "create_licitacion"],
+          systemInstruction: "IMPORTANTE: El usuario solicitó una transferencia de stock. Usá SOLO la herramienta create_transfer. NO uses find_similar_licitaciones ni create_licitacion — las licitaciones y transferencias son módulos completamente independientes."
+        }
+      : undefined;
+
     // Fallback a LLM
     setStreaming(true);
     setStreamingText("");
 
     try {
-      await streamWithLoop(updatedMessages, 0);
+      await streamWithLoop(updatedMessages, 0, options);
     } catch {
       setMessages([...updatedMessages, { role: "assistant", content: "No pude conectarme ahora. ¡Intentá de nuevo!" }]);
     } finally {
@@ -676,6 +708,7 @@ export function DemoAssistantChat({ variant = "floating", ...props }: DemoAssist
   async function streamWithLoop(
     history: Message[],
     depth: number,
+    options?: { excludeToolNames?: string[]; systemInstruction?: string },
   ) {
     if (depth > 3) {
       if (!history.some((m) => m.role === "assistant" && m.content.startsWith("No pude completar"))) {
@@ -684,8 +717,12 @@ export function DemoAssistantChat({ variant = "floating", ...props }: DemoAssist
       return;
     }
 
+    let systemContent = buildSystemPrompt(fullSnapshot, ctx);
+    if (options?.systemInstruction) {
+      systemContent += "\n\n" + options.systemInstruction;
+    }
     const chatMessages = [
-      { role: "system" as const, content: buildSystemPrompt(fullSnapshot, ctx) },
+      { role: "system" as const, content: systemContent },
       ...history.slice(-8).flatMap((m): { role: "user" | "assistant"; content: string }[] =>
         m.role === "chart" || m.role === "pending_confirm" || m.role === "action_result"
           ? []
@@ -693,9 +730,17 @@ export function DemoAssistantChat({ variant = "floating", ...props }: DemoAssist
       ),
     ];
 
+    const tools = options?.excludeToolNames?.length
+      ? assistantTools.filter((t) => !options.excludeToolNames!.includes(t.function.name))
+      : assistantTools;
+
     abortRef.current = new AbortController();
     const aiProvider = useStore.getState().aiProvider;
-    const model = "deepseek-v4-flash-free";
+    const model = aiProvider === "anthropic"
+      ? "claude-sonnet-4-6"
+      : aiProvider === "groq"
+        ? "llama-3.3-70b-versatile"
+        : "deepseek-v4-flash-free";
 
     console.debug("[chat] prompt chars:", chatMessages.reduce((s, m) => s + m.content.length, 0));
     let fullText = "";
@@ -705,7 +750,7 @@ export function DemoAssistantChat({ variant = "floating", ...props }: DemoAssist
       for await (const event of streamAiChat({
         model,
         messages: chatMessages,
-        tools: assistantTools,
+        tools,
         signal: abortRef.current.signal,
         provider: aiProvider,
       })) {
@@ -830,7 +875,11 @@ export function DemoAssistantChat({ variant = "floating", ...props }: DemoAssist
         if (!args) {
           inlineResults.push({ role: "action_result", success: false, content: "ID de transferencia inválido." });
         } else {
-          const label = `Avanzar transferencia ${args.transferId}`;
+          const transferMatch = fullSnapshot?.transfers.find((t) => t.id === args.transferId);
+          const transferLabel = transferMatch
+            ? `${transferMatch.medicationName}: ${transferMatch.fromWorkspaceName} → ${transferMatch.toWorkspaceName} (${transferMatch.quantity} u.)`
+            : args.transferId;
+          const label = `Avanzar transferencia ${transferLabel}`;
           nextMessages.push({ role: "pending_confirm", label, toolName: "advance_transfer", data: args });
         }
       } else if (name === "reject_transfer") {
@@ -838,7 +887,9 @@ export function DemoAssistantChat({ variant = "floating", ...props }: DemoAssist
         if (!args) {
           inlineResults.push({ role: "action_result", success: false, content: "Parámetros inválidos para rechazar transferencia." });
         } else {
-          const label = `Rechazar transferencia ${args.transferId}: ${args.reason}`;
+          const rejTransfer = fullSnapshot?.transfers.find((t) => t.id === args.transferId);
+          const rejLabel = rejTransfer ? `${rejTransfer.medicationName}: ${rejTransfer.fromWorkspaceName} → ${rejTransfer.toWorkspaceName}` : args.transferId;
+          const label = `Rechazar transferencia ${rejLabel}: ${args.reason}`;
           nextMessages.push({ role: "pending_confirm", label, toolName: "reject_transfer", data: args });
         }
       } else if (name === "manage_medication") {
@@ -894,7 +945,10 @@ export function DemoAssistantChat({ variant = "floating", ...props }: DemoAssist
         if (!args) {
           inlineResults.push({ role: "action_result", success: false, content: "Parámetros inválidos para crear transferencia." });
         } else {
-          const label = `Transferir ${args.quantity} u. de ${args.medicationId.slice(0, 8)}: ${args.fromWarehouseId.slice(0, 8)} → ${args.toWarehouseId.slice(0, 8)}`;
+          const medName = resolveName(fullSnapshot?.medications, args.medicationId) ?? args.medicationId.slice(0, 8);
+          const fromName = resolveName(fullSnapshot?.warehouses, args.fromWarehouseId) ?? args.fromWarehouseId.slice(0, 8);
+          const toName = resolveName(fullSnapshot?.warehouses, args.toWarehouseId) ?? args.toWarehouseId.slice(0, 8);
+          const label = `Transferir ${args.quantity} u. de ${medName}: ${fromName} → ${toName}`;
           nextMessages.push({ role: "pending_confirm", label, toolName: "create_transfer", data: args });
         }
       } else if (name === "navigate") {
@@ -961,7 +1015,7 @@ export function DemoAssistantChat({ variant = "floating", ...props }: DemoAssist
         }
       }
       setMessages(nextMessages);
-      await streamWithLoop(nextMessages, depth + 1);
+      await streamWithLoop(nextMessages, depth + 1, options);
     } else if (hasPendingConfirm) {
       // Pending confirm: show LLM text + confirm buttons
       if (fullText.trim()) {
@@ -1073,7 +1127,10 @@ export function DemoAssistantChat({ variant = "floating", ...props }: DemoAssist
         </div>
         <div className="flex-1">
           <p className="text-sm font-semibold">Medi</p>
-          <p className="text-[10px] opacity-70">Asistente Meditory</p>
+          {(!fullSnapshot || !internalData)
+            ? <p className="text-[10px] opacity-50 animate-pulse">Cargando datos...</p>
+            : <p className="text-[10px] opacity-70">Asistente Meditory</p>
+          }
         </div>
         {variant === "floating" && (
           <button onClick={() => setOpen(false)} className="opacity-70 hover:opacity-100">
@@ -1107,7 +1164,7 @@ export function DemoAssistantChat({ variant = "floating", ...props }: DemoAssist
                 onConfirm={() => {
                   executeConfirmedAction(msg.toolName, msg.data, (m) => {
                     setMessages((prev) => [...prev, m]);
-                  }, setFullSnapshot);
+                  }, setFullSnapshot, fullSnapshot);
                   setMessages((prev) => prev.filter((_, idx) => idx !== i));
                 }}
                 onCancel={() => {
@@ -1144,7 +1201,7 @@ export function DemoAssistantChat({ variant = "floating", ...props }: DemoAssist
               <Bot size={12} className="text-primary" />
             </div>
             <div className="max-w-[80%] rounded-2xl rounded-bl-sm px-3 py-2 text-sm bg-muted leading-relaxed">
-              {streamingText}
+              <div className="prose prose-sm dark:prose-invert max-w-none [&_table]:border-collapse [&_td]:border [&_th]:border [&_td]:px-2 [&_th]:px-2 [&_td]:py-1 [&_th]:py-1 [&_tr]:border [&_hr]:my-2 [&_blockquote]:border-l-2 [&_blockquote]:pl-2 [&_blockquote]:opacity-80 [&_pre]:bg-black/5 [&_pre]:dark:bg-white/5 [&_pre]:rounded [&_pre]:p-2 [&_code]:text-xs"><ReactMarkdown remarkPlugins={[remarkGfm]}>{streamingText}</ReactMarkdown></div>
               <span className="inline-block w-1 h-3 ml-0.5 bg-primary animate-pulse rounded" />
             </div>
           </div>
@@ -1166,11 +1223,11 @@ export function DemoAssistantChat({ variant = "floating", ...props }: DemoAssist
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (() => { const t = input.trim(); if (t) { setInput(""); sendMessage(t); } })()}
-          placeholder="Preguntame algo..."
+          placeholder={(!fullSnapshot || !internalData) ? "Cargando datos del sistema..." : "Preguntame algo..."}
           className="text-sm h-9"
-          disabled={streaming}
+          disabled={streaming || (!fullSnapshot && !internalData)}
         />
-        <Button size="sm" onClick={() => { const t = input.trim(); if (t) { setInput(""); sendMessage(t); } }} disabled={!input.trim() || streaming} className="h-9 w-9 p-0 shrink-0">
+        <Button size="sm" onClick={() => { const t = input.trim(); if (t) { setInput(""); sendMessage(t); } }} disabled={!input.trim() || streaming || (!fullSnapshot && !internalData)} className="h-9 w-9 p-0 shrink-0">
           <Send size={14} />
         </Button>
       </div>

@@ -185,3 +185,12 @@
 .count-pulse {
   animation: count-pulse 1s ease-in-out;
 }
+
+@keyframes fade-out {
+  0%   { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-6px); }
+}
+
+.animate-fade-out {
+  animation: fade-out 1.5s ease-out forwards;
+}

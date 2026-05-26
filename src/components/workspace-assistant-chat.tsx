@@ -22,6 +22,7 @@ import {
   isSaleIntent,
   isDispensationIntent,
   isOrderIntent,
+  isExplicitTransferCreationIntent,
 } from "@/lib/assistant-chat-intent";
 import {
   assistantTools,
@@ -124,11 +125,11 @@ const SYSTEM_INSTRUCTIONS = `Sos **Medi**, el asistente virtual de Meditory — 
 
 TONO: hablá siempre en **español** claro, cordial y profesional, como un/a colega de farmacia hospitalaria: empático, respetuoso y tranquilo. No des diagnósticos ni indicaciones clínicas al paciente; orientás sobre **operaciones y datos del sistema** (stock, transferencias, pedidos, etc.).
 
-FORMATO: respondé en **prosa** (oraciones). **Nunca** devuelvas solo JSON, bloques de herramienta sueltos ni cadenas tipo \`{"name":"navigate"…};{"name":"create_transfer"…}\`. Si usás datos numéricos, copiá cifras coherentes con el snapshot.
+FORMATO: respondé en **prosa** (oraciones). **Nunca** devuelvas solo JSON, bloques de herramienta sueltos ni cadenas tipo \`{"name":"navigate"…};{"name":"create_transfer"…}\`. Si usás datos numéricos, copiá cifras coherentes con los datos del sistema.
 
 HERRAMIENTAS disponibles:
 1) **navigate** — SOLO si el usuario pidió explícitamente ir, abrir, mostrar o entrar a una pantalla.
-2) **create_transfer** — SOLO si el usuario pidió explícitamente "transferir", "mover", "crear transferencia" o "solicitar traslado" entre depósitos.
+2) **create_transfer** — SOLO si el usuario pidió explícitamente "transferir", "transfiere", "mover", "crear transferencia" o "solicitar traslado" entre depósitos.
 3) **render_chart** — SOLO si el usuario pidió explícitamente "mostrar gráfico", "graficar", "chart", "pastel", "barras", "torta".
 4) **add_stock** — SOLO si el usuario pidió explícitamente agregar, cargar o aumentar stock.
 5) **list_users** — Cuando el usuario pregunte por usuarios, empleados o personal del hospital.
@@ -146,7 +147,7 @@ HERRAMIENTAS disponibles:
 17) **update_stock_config** — SOLO si el usuario pidió explícitamente configurar stock mínimo/óptimo.
 18) **generate_report** — SOLO si el usuario pidió explícitamente generar, descargar o exportar un reporte PDF.
 
-Consultas **solo informativas** (cantidades, listados, estados): respondé con texto desde el snapshot; **no** llames herramientas.
+Consultas **solo informativas** (cantidades, listados, estados): respondé con texto desde los datos del sistema; **no** llames herramientas.
 
 Para acciones con varios pasos (venta, dispensación, pedido): SIEMPRE guiá al usuario paso a paso. Preguntá cada dato de a uno, confirmá antes de ejecutar.
 
@@ -182,7 +183,7 @@ function buildWorkspaceSystemPrompt(snapshotJson: string, users: { id: string; n
     ).join("\n");
   }
 
-  return `${SYSTEM_INSTRUCTIONS}\n\n${MODULE_KNOWLEDGE}\n\n### Datos de la institución (IDs para acciones)\n\ninstitucion_snapshot:\n${snapshotJson}${usersText}${extra}`;
+  return `${SYSTEM_INSTRUCTIONS}\n\n${MODULE_KNOWLEDGE}\n\n### Datos de la institución (IDs para acciones)\n\ninstitucion_datos_del_sistema:\n${snapshotJson}${usersText}${extra}`;
 }
 
 const WELCOME_MSG: UiMessage = { role: "assistant", content: "Hola, soy **Medi**, el asistente del sistema Meditory. Preguntame sobre stock, usuarios, o lo que necesites de la institución actual." };
@@ -860,9 +861,18 @@ export function WorkspaceAssistantChat({
     abortRef.current = ac;
 
     try {
+      const isTransferIntent = isExplicitTransferCreationIntent(text);
+      let systemContent = buildWorkspaceSystemPrompt(snapshotJson, workspaceUsers, snapshotInput);
+      if (isTransferIntent) {
+        systemContent += "\n\n### IMPORTANTE\nEl usuario solicitó una transferencia de stock. Usá SOLO la herramienta `create_transfer`. No uses herramientas de licitación (`find_similar_licitaciones`, `create_licitacion`) — las licitaciones y transferencias son módulos completamente independientes.";
+      }
+      const tools = isTransferIntent
+        ? assistantTools.filter((t) => !["find_similar_licitaciones", "create_licitacion"].includes(t.function.name))
+        : assistantTools;
+
       const recentMessages = messages.slice(-12);
       const history: ChatMessage[] = [
-        { role: "system", content: buildWorkspaceSystemPrompt(snapshotJson, workspaceUsers, snapshotInput) },
+        { role: "system", content: systemContent },
         ...recentMessages.flatMap((msg): ChatMessage[] =>
           msg.role === "user"
             ? [{ role: "user", content: msg.content }]
@@ -879,7 +889,7 @@ export function WorkspaceAssistantChat({
       for await (const event of streamAiChat({
         model: aiProvider === "anthropic" ? "claude-sonnet-4-6" : "deepseek-v4-flash-free",
         messages: history,
-        tools: assistantTools,
+        tools,
         signal: ac.signal,
         provider: aiProvider,
       })) {

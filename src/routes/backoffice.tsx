@@ -2,7 +2,7 @@ import { createFileRoute, Outlet, useNavigate, Link, useLocation, redirect } fro
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Building2, Users, Database, LogOut, ShieldCheck, Menu, X, Activity,
-  ShoppingCart, Settings, ArrowUp, FlaskConical,
+  ShoppingCart, Settings, ArrowUp, FlaskConical, Package,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,13 +28,18 @@ export const Route = createFileRoute("/backoffice")({
 
 const NAV_ITEMS = [
   { to: "/backoffice/estado-hospital", label: "Estado general", icon: Activity },
-  { to: "/backoffice/licitaciones", label: "Licitaciones", icon: ShoppingCart },
-  { to: "/backoffice/panel-en-vivo", label: "Panel en vivo", icon: Activity },
+  { to: "/backoffice/licitaciones", label: "Pedidos automatizados", icon: ShoppingCart },
+  { to: "/backoffice/control-stock", label: "Control de stock", icon: Package },
+  { to: "/backoffice/panel-en-vivo", label: "Panel en tiempo real", icon: Activity },
   { to: "/backoffice/workspaces", label: "Instituciones", icon: Building2 },
   { to: "/backoffice/usuarios", label: "Usuarios", icon: Users },
-  { to: "/backoffice/demo-tools", label: "Demo tools", icon: FlaskConical },
-  { to: "/backoffice/config-asistente", label: "Config. Asistente", icon: Settings },
-  { to: "/backoffice/esquema", label: "Esquema DB", icon: Database },
+  ...(import.meta.env.DEV
+    ? [
+        { to: "/backoffice/demo-tools", label: "Demo tools", icon: FlaskConical },
+        { to: "/backoffice/config-asistente", label: "Config. Asistente", icon: Settings },
+        { to: "/backoffice/esquema", label: "Esquema DB", icon: Database },
+      ]
+    : []),
 ];
 
 function BackofficeLayout() {
@@ -98,7 +103,7 @@ function BackofficeLayout() {
           </div>
           <div className="flex flex-col">
             <span className="text-sm font-semibold tracking-tight">Meditory</span>
-            <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Backoffice</span>
+            <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Gestión administrativa</span>
           </div>
           <button className="ml-auto md:hidden" onClick={() => setSidebarOpen(false)}>
             <X className="h-4 w-4" />

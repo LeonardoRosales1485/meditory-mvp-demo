@@ -38,6 +38,30 @@ export function ChartRenderer({ spec, height = 260 }: { spec: ChartSpec; height?
     );
   }
 
+  const categories = chartType === "stacked_bar"
+    ? [...new Set(data.filter((d) => d.category).map((d) => d.category!))]
+    : [];
+
+  const stackedData = chartType === "stacked_bar"
+    ? data.reduce((acc, d) => {
+        const existing = acc.find((a) => a.name === d.name);
+        const cat = d.category ?? "Otros";
+        if (existing) {
+          existing[cat] = ((existing[cat] as number) ?? 0) + d.value;
+        } else {
+          const entry: Record<string, string | number> = { name: d.name };
+          entry[cat] = d.value;
+          acc.push(entry);
+        }
+        return acc;
+      }, [] as Record<string, string | number>[])
+    : [];
+
+  const catColors: Record<string, string> = {};
+  categories.forEach((c, i) => {
+    catColors[c] = data.find((d) => d.category === c)?.fill ?? COLORS[i % COLORS.length];
+  });
+
   return (
     <div ref={chartRef} className="group relative my-2 w-full rounded-lg border bg-card p-3">
       {title && (
@@ -96,6 +120,16 @@ export function ChartRenderer({ spec, height = 260 }: { spec: ChartSpec; height?
               dot={{ fill: "#6366f1" }}
             />
           </LineChart>
+        ) : chartType === "stacked_bar" ? (
+          <BarChart data={stackedData}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+            <YAxis tick={{ fontSize: 12 }} />
+            <Tooltip />
+            {categories.map((cat) => (
+              <Bar key={cat} dataKey={cat} stackId="a" fill={catColors[cat]} radius={[2, 2, 0, 0]} />
+            ))}
+          </BarChart>
         ) : (
           <BarChart data={data}>
             <CartesianGrid strokeDasharray="3 3" />

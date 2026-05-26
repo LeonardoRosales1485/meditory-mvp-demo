@@ -1,7 +1,7 @@
 export type ChartSpec = {
-  chartType: "bar" | "pie" | "area" | "line";
+  chartType: "bar" | "pie" | "area" | "line" | "stacked_bar";
   title: string;
-  data: { name: string; value: number; fill?: string }[];
+  data: { name: string; value: number; category?: string; fill?: string }[];
 };
 
 /** Definición de tools para el asistente (OpenAI-compatible function schema). */
@@ -11,7 +11,7 @@ export const assistantTools = [
     "function": {
       name: "navigate",
       description:
-        "Abre una pantalla interna SOLO si el usuario pidió ir/abrir/mostrar. Rutas válidas empiezan con /app/ (ej. /app/transferencias). NUNCA para preguntas solo informativas (cantidades, listados, transferencias en tránsito): respondé en texto con institucion_snapshot. search: solo strings planos (IDs del snapshot), nunca objetos anidados.",
+        "Abre una pantalla interna SOLO si el usuario pidió ir/abrir/mostrar. Rutas válidas empiezan con /app/ (ej. /app/transferencias). NUNCA para preguntas solo informativas (cantidades, listados, transferencias en tránsito): respondé en texto con institucion_datos_del_sistema. search: solo strings planos (IDs de los datos del sistema), nunca objetos anidados.",
       parameters: {
         type: "object",
         properties: {
@@ -34,7 +34,7 @@ export const assistantTools = [
     "function": {
       name: "create_transfer",
       description:
-        "Crea una transferencia de stock entre depósitos. Usar cuando el usuario pida ejecutar una transferencia y tengas los datos (medicationId, sourceBatchId, depósitos, cantidad). Requiere confirmación en pantalla.",
+        "Crea una transferencia de stock entre depósitos u hospitales. Usar cuando el usuario pida: transferir, transfiere, mover, trasladar, enviar stock. Requiere medicationId, fromWarehouseId, toWarehouseId, quantity. Requiere confirmación en pantalla.",
       parameters: {
         type: "object",
         properties: {
@@ -53,7 +53,7 @@ export const assistantTools = [
     "function": {
       name: "render_chart",
       description:
-        "Genera un gráfico visual (barra, torta, área o línea) con datos del snapshot. Usar cuando el usuario pida explícitamente «mostrar gráfico», «graficar», «chart», «pastel», «barras», «distribución visual», «comparar visualmente». Los datos deben extraerse del snapshot del sistema. Podés agrupar medicamentos por hospital (workspaceName), depósitos por tipo, o usar los campos numéricos disponibles (stock, cantidad de unidades, etc.) para construir los puntos {name, value} del gráfico.",
+        "Genera un gráfico visual (barra, torta, área o línea) con datos del sistema. Usar cuando el usuario pida explícitamente «mostrar gráfico», «graficar», «chart», «pastel», «barras», «distribución visual», «comparar visualmente». Los datos deben extraerse de los datos del sistema del sistema. Podés agrupar medicamentos por hospital (workspaceName), depósitos por tipo, o usar los campos numéricos disponibles (stock, cantidad de unidades, etc.) para construir los puntos {name, value} del gráfico.",
       parameters: {
         type: "object",
         properties: {
@@ -88,12 +88,12 @@ export const assistantTools = [
     "function": {
       name: "add_stock",
       description:
-        "Agrega unidades a un medicamento en un depósito específico. Usar SOLO cuando el usuario pida explícitamente agregar, cargar o aumentar stock. Requiere medicationId y warehouseId del snapshot. El campo registerAsPurchase=true registra además un movimiento de compra.",
+        "Agrega unidades a un medicamento en un depósito específico. Usar SOLO cuando el usuario pida explícitamente agregar, cargar o aumentar stock. Requiere medicationId y warehouseId de los datos del sistema. El campo registerAsPurchase=true registra además un movimiento de compra.",
       parameters: {
         type: "object",
         properties: {
-          medicationId: { type: "string", description: "ID del medicamento (del snapshot)" },
-          warehouseId: { type: "string", description: "ID del depósito destino (del snapshot)" },
+          medicationId: { type: "string", description: "ID del medicamento (de los datos del sistema)" },
+          warehouseId: { type: "string", description: "ID del depósito destino (de los datos del sistema)" },
           quantity: { type: "number", description: "Cantidad de unidades a agregar (entero positivo)" },
           lot: { type: "string", description: "Número de lote (opcional)" },
           expiry: { type: "string", description: "Fecha de vencimiento ISO 8601 (opcional)" },
@@ -113,7 +113,7 @@ export const assistantTools = [
       parameters: {
         type: "object",
         properties: {
-          workspaceId: { type: "string", description: "ID del workspace (opcional, del snapshot)" },
+          workspaceId: { type: "string", description: "ID del workspace (opcional, de los datos del sistema)" },
         },
         required: [],
       },
@@ -128,7 +128,7 @@ export const assistantTools = [
       parameters: {
         type: "object",
         properties: {
-          workspaceId: { type: "string", description: "ID del workspace destino (del snapshot)" },
+          workspaceId: { type: "string", description: "ID del workspace destino (de los datos del sistema)" },
           name: { type: "string", description: "Nombre completo del usuario" },
           email: { type: "string", description: "Email del usuario" },
           role: { type: "string", enum: ["admin", "tecnico", "operador"], description: "Rol del usuario" },
@@ -146,7 +146,7 @@ export const assistantTools = [
       parameters: {
         type: "object",
         properties: {
-          userId: { type: "string", description: "ID del usuario a eliminar (del snapshot)" },
+          userId: { type: "string", description: "ID del usuario a eliminar (de los datos del sistema)" },
         },
         required: ["userId"],
       },
@@ -157,12 +157,12 @@ export const assistantTools = [
     "function": {
       name: "create_sale",
       description:
-        "Registra una venta al público de un medicamento. Usar SOLO cuando el usuario pida explícitamente vender, cobrar o facturar un medicamento. Requiere medicationId, warehouseId, quantity, price (precio unitario) del snapshot. Prescription y doctor son opcionales para venta con receta. Requiere confirmación.",
+        "Registra una venta al público de un medicamento. Usar SOLO cuando el usuario pida explícitamente vender, cobrar o facturar un medicamento. Requiere medicationId, warehouseId, quantity, price (precio unitario) de los datos del sistema. Prescription y doctor son opcionales para venta con receta. Requiere confirmación.",
       parameters: {
         type: "object",
         properties: {
-          medicationId: { type: "string", description: "ID del medicamento a vender (del snapshot)" },
-          warehouseId: { type: "string", description: "ID del depósito de ventas (del snapshot)" },
+          medicationId: { type: "string", description: "ID del medicamento a vender (de los datos del sistema)" },
+          warehouseId: { type: "string", description: "ID del depósito de ventas (de los datos del sistema)" },
           quantity: { type: "number", description: "Cantidad a vender (entero positivo)" },
           price: { type: "number", description: "Precio unitario de venta" },
           prescription: { type: "string", description: "Número de receta (opcional)" },
@@ -177,16 +177,16 @@ export const assistantTools = [
     "function": {
       name: "create_dispensation",
       description:
-        "Registra una dispensación de medicamento a un paciente internado. Usar SOLO cuando el usuario pida explícitamente dispensar, entregar o administrar medicación a un paciente. Requiere medicationId, warehouseId, quantity, doctor, patient, room, treatment del snapshot. Requiere confirmación.",
+        "Registra una dispensación de medicamento a un paciente internado. Usar SOLO cuando el usuario pida explícitamente dispensar, entregar o administrar medicación a un paciente. Requiere medicationId, warehouseId, quantity, doctor, patient, room, treatment de los datos del sistema. Requiere confirmación.",
       parameters: {
         type: "object",
         properties: {
-          medicationId: { type: "string", description: "ID del medicamento a dispensar (del snapshot)" },
-          warehouseId: { type: "string", description: "ID del depósito desde donde se dispensa (del snapshot)" },
+          medicationId: { type: "string", description: "ID del medicamento a dispensar (de los datos del sistema)" },
+          warehouseId: { type: "string", description: "ID del depósito desde donde se dispensa (de los datos del sistema)" },
           quantity: { type: "number", description: "Cantidad a dispensar (entero positivo)" },
           doctor: { type: "string", description: "Nombre del médico que prescribe" },
-          patient: { type: "string", description: "Nombre o ID del paciente (del snapshot)" },
-          room: { type: "string", description: "Sala/habitación del paciente (del snapshot)" },
+          patient: { type: "string", description: "Nombre o ID del paciente (de los datos del sistema)" },
+          room: { type: "string", description: "Sala/habitación del paciente (de los datos del sistema)" },
           treatment: { type: "string", description: "Indicación o tratamiento" },
         },
         required: ["medicationId", "warehouseId", "quantity", "doctor", "patient", "room", "treatment"],
@@ -198,15 +198,15 @@ export const assistantTools = [
     "function": {
       name: "create_order",
       description:
-        "Crea un pedido de medicación desde una sala/paciente. Usar SOLO cuando el usuario pida explícitamente pedir, solicitar o crear un pedido de medicación. Requiere medicationId, warehouseId, quantity, patient, room, reason del snapshot. doctorName es opcional. Requiere confirmación.",
+        "Crea un pedido de medicación desde una sala/paciente. Usar SOLO cuando el usuario pida explícitamente pedir, solicitar o crear un pedido de medicación. Requiere medicationId, warehouseId, quantity, patient, room, reason de los datos del sistema. doctorName es opcional. Requiere confirmación.",
       parameters: {
         type: "object",
         properties: {
-          medicationId: { type: "string", description: "ID del medicamento solicitado (del snapshot)" },
-          warehouseId: { type: "string", description: "ID del depósito destino (del snapshot)" },
+          medicationId: { type: "string", description: "ID del medicamento solicitado (de los datos del sistema)" },
+          warehouseId: { type: "string", description: "ID del depósito destino (de los datos del sistema)" },
           quantity: { type: "number", description: "Cantidad solicitada (entero positivo)" },
           patient: { type: "string", description: "Nombre o ID del paciente" },
-          room: { type: "string", description: "Sala/habitación (del snapshot)" },
+          room: { type: "string", description: "Sala/habitación (de los datos del sistema)" },
           reason: { type: "string", description: "Motivo del pedido" },
           doctorName: { type: "string", description: "Nombre del médico solicitante (opcional)" },
         },
@@ -219,11 +219,11 @@ export const assistantTools = [
     "function": {
       name: "process_order",
       description:
-        "Avanza un pedido de medicación al siguiente estado. Usar SOLO cuando el usuario pida explícitamente aprobar, despachar, confirmar recepción, administrar o procesar un pedido. Action puede ser: aprobar, despachar, confirmar_recepcion, administrar. Requiere orderId del snapshot. Requiere confirmación.",
+        "Avanza un pedido de medicación al siguiente estado. Usar SOLO cuando el usuario pida explícitamente aprobar, despachar, confirmar recepción, administrar o procesar un pedido. Action puede ser: aprobar, despachar, confirmar_recepcion, administrar. Requiere orderId de los datos del sistema. Requiere confirmación.",
       parameters: {
         type: "object",
         properties: {
-          orderId: { type: "string", description: "ID del pedido a procesar (del snapshot)" },
+          orderId: { type: "string", description: "ID del pedido a procesar (de los datos del sistema)" },
           action: {
             type: "string",
             enum: ["aprobar", "despachar", "confirmar_recepcion", "administrar", "rechazar"],
@@ -240,11 +240,11 @@ export const assistantTools = [
     "function": {
       name: "advance_transfer",
       description:
-        "Avanza una transferencia al siguiente estado del flujo. Usar SOLO cuando el usuario pida explícitamente autorizar, despachar, recibir o aceptar una transferencia existente. Requiere transferId del snapshot. Requiere confirmación.",
+        "Avanza una transferencia al siguiente estado del flujo. Usar SOLO cuando el usuario pida explícitamente autorizar, despachar, recibir o aceptar una transferencia existente. Requiere transferId de los datos del sistema. Requiere confirmación.",
       parameters: {
         type: "object",
         properties: {
-          transferId: { type: "string", description: "ID de la transferencia a avanzar (del snapshot)" },
+          transferId: { type: "string", description: "ID de la transferencia a avanzar (de los datos del sistema)" },
         },
         required: ["transferId"],
       },
@@ -259,7 +259,7 @@ export const assistantTools = [
       parameters: {
         type: "object",
         properties: {
-          transferId: { type: "string", description: "ID de la transferencia a rechazar (del snapshot)" },
+          transferId: { type: "string", description: "ID de la transferencia a rechazar (de los datos del sistema)" },
           reason: { type: "string", description: "Motivo del rechazo" },
           outcome: { type: "string", enum: ["devolver", "descartar"], description: "Qué hacer con el stock: devolver al origen o descartar" },
         },
@@ -332,12 +332,12 @@ export const assistantTools = [
     "function": {
       name: "update_stock_config",
       description:
-        "Configura los niveles de stock mínimo y óptimo para un medicamento en un depósito específico. Usar SOLO cuando el usuario pida explícitamente configurar, ajustar o cambiar niveles de stock mínimo/óptimo. Requiere medicationId, warehouseId, minStock y optimalStock del snapshot. Requiere confirmación.",
+        "Configura los niveles de stock mínimo y óptimo para un medicamento en un depósito específico. Usar SOLO cuando el usuario pida explícitamente configurar, ajustar o cambiar niveles de stock mínimo/óptimo. Requiere medicationId, warehouseId, minStock y optimalStock de los datos del sistema. Requiere confirmación.",
       parameters: {
         type: "object",
         properties: {
-          medicationId: { type: "string", description: "ID del medicamento (del snapshot)" },
-          warehouseId: { type: "string", description: "ID del depósito (del snapshot)" },
+          medicationId: { type: "string", description: "ID del medicamento (de los datos del sistema)" },
+          warehouseId: { type: "string", description: "ID del depósito (de los datos del sistema)" },
           minStock: { type: "number", description: "Stock mínimo (entero no negativo)" },
           optimalStock: { type: "number", description: "Stock óptimo (entero, debe ser >= minStock)" },
         },
@@ -372,7 +372,7 @@ export const assistantTools = [
     "function": {
       name: "create_licitacion",
       description:
-        "Crea una nueva licitación con sus items. Usar cuando el usuario pida crear una licitación y hayas acordado los detalles (título, descripción, medicamentos, cantidades).",
+        "Crea una nueva licitación con sus items. SOLO usar cuando el usuario pida explícitamente crear una licitación y hayas acordado los detalles (título, descripción, medicamentos, cantidades). NUNCA usar como respuesta a un pedido de transferencia de stock — son módulos independientes.",
       parameters: {
         type: "object",
         properties: {
@@ -402,7 +402,7 @@ export const assistantTools = [
     "function": {
       name: "find_similar_licitaciones",
       description:
-        "Busca licitaciones activas existentes que ya incluyan los medicamentos especificados. Usar ANTES de crear una licitación nueva para evitar duplicados.",
+        "SOLO usar cuando el usuario esté creando o consultando una licitación. Busca licitaciones activas existentes que ya incluyan los medicamentos especificados. Usar ANTES de crear una licitación nueva para evitar duplicados. NUNCA usar para responder a pedidos de transferencia de stock — las licitaciones y transferencias son módulos independientes.",
       parameters: {
         type: "object",
         properties: {

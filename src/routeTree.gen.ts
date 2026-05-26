@@ -25,6 +25,7 @@ import { Route as BackofficeGestionPedidosRouteImport } from './routes/backoffic
 import { Route as BackofficeEstadoHospitalRouteImport } from './routes/backoffice.estado-hospital'
 import { Route as BackofficeEsquemaRouteImport } from './routes/backoffice.esquema'
 import { Route as BackofficeDemoToolsRouteImport } from './routes/backoffice.demo-tools'
+import { Route as BackofficeControlStockRouteImport } from './routes/backoffice.control-stock'
 import { Route as BackofficeConfigAsistenteRouteImport } from './routes/backoffice.config-asistente'
 import { Route as BackofficeComprasRouteImport } from './routes/backoffice.compras'
 import { Route as AppVentasRouteImport } from './routes/app.ventas'
@@ -127,6 +128,11 @@ const BackofficeEsquemaRoute = BackofficeEsquemaRouteImport.update({
 const BackofficeDemoToolsRoute = BackofficeDemoToolsRouteImport.update({
   id: '/demo-tools',
   path: '/demo-tools',
+  getParentRoute: () => BackofficeRoute,
+} as any)
+const BackofficeControlStockRoute = BackofficeControlStockRouteImport.update({
+  id: '/control-stock',
+  path: '/control-stock',
   getParentRoute: () => BackofficeRoute,
 } as any)
 const BackofficeConfigAsistenteRoute =
@@ -263,6 +269,7 @@ export interface FileRoutesByFullPath {
   '/app/ventas': typeof AppVentasRoute
   '/backoffice/compras': typeof BackofficeComprasRoute
   '/backoffice/config-asistente': typeof BackofficeConfigAsistenteRoute
+  '/backoffice/control-stock': typeof BackofficeControlStockRoute
   '/backoffice/demo-tools': typeof BackofficeDemoToolsRoute
   '/backoffice/esquema': typeof BackofficeEsquemaRoute
   '/backoffice/estado-hospital': typeof BackofficeEstadoHospitalRoute
@@ -300,6 +307,7 @@ export interface FileRoutesByTo {
   '/app/ventas': typeof AppVentasRoute
   '/backoffice/compras': typeof BackofficeComprasRoute
   '/backoffice/config-asistente': typeof BackofficeConfigAsistenteRoute
+  '/backoffice/control-stock': typeof BackofficeControlStockRoute
   '/backoffice/demo-tools': typeof BackofficeDemoToolsRoute
   '/backoffice/esquema': typeof BackofficeEsquemaRoute
   '/backoffice/estado-hospital': typeof BackofficeEstadoHospitalRoute
@@ -340,6 +348,7 @@ export interface FileRoutesById {
   '/app/ventas': typeof AppVentasRoute
   '/backoffice/compras': typeof BackofficeComprasRoute
   '/backoffice/config-asistente': typeof BackofficeConfigAsistenteRoute
+  '/backoffice/control-stock': typeof BackofficeControlStockRoute
   '/backoffice/demo-tools': typeof BackofficeDemoToolsRoute
   '/backoffice/esquema': typeof BackofficeEsquemaRoute
   '/backoffice/estado-hospital': typeof BackofficeEstadoHospitalRoute
@@ -381,6 +390,7 @@ export interface FileRouteTypes {
     | '/app/ventas'
     | '/backoffice/compras'
     | '/backoffice/config-asistente'
+    | '/backoffice/control-stock'
     | '/backoffice/demo-tools'
     | '/backoffice/esquema'
     | '/backoffice/estado-hospital'
@@ -418,6 +428,7 @@ export interface FileRouteTypes {
     | '/app/ventas'
     | '/backoffice/compras'
     | '/backoffice/config-asistente'
+    | '/backoffice/control-stock'
     | '/backoffice/demo-tools'
     | '/backoffice/esquema'
     | '/backoffice/estado-hospital'
@@ -457,6 +468,7 @@ export interface FileRouteTypes {
     | '/app/ventas'
     | '/backoffice/compras'
     | '/backoffice/config-asistente'
+    | '/backoffice/control-stock'
     | '/backoffice/demo-tools'
     | '/backoffice/esquema'
     | '/backoffice/estado-hospital'
@@ -590,6 +602,13 @@ declare module '@tanstack/react-router' {
       path: '/demo-tools'
       fullPath: '/backoffice/demo-tools'
       preLoaderRoute: typeof BackofficeDemoToolsRouteImport
+      parentRoute: typeof BackofficeRoute
+    }
+    '/backoffice/control-stock': {
+      id: '/backoffice/control-stock'
+      path: '/control-stock'
+      fullPath: '/backoffice/control-stock'
+      preLoaderRoute: typeof BackofficeControlStockRouteImport
       parentRoute: typeof BackofficeRoute
     }
     '/backoffice/config-asistente': {
@@ -793,6 +812,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 interface BackofficeRouteChildren {
   BackofficeComprasRoute: typeof BackofficeComprasRoute
   BackofficeConfigAsistenteRoute: typeof BackofficeConfigAsistenteRoute
+  BackofficeControlStockRoute: typeof BackofficeControlStockRoute
   BackofficeDemoToolsRoute: typeof BackofficeDemoToolsRoute
   BackofficeEsquemaRoute: typeof BackofficeEsquemaRoute
   BackofficeEstadoHospitalRoute: typeof BackofficeEstadoHospitalRoute
@@ -808,6 +828,7 @@ interface BackofficeRouteChildren {
 const BackofficeRouteChildren: BackofficeRouteChildren = {
   BackofficeComprasRoute: BackofficeComprasRoute,
   BackofficeConfigAsistenteRoute: BackofficeConfigAsistenteRoute,
+  BackofficeControlStockRoute: BackofficeControlStockRoute,
   BackofficeDemoToolsRoute: BackofficeDemoToolsRoute,
   BackofficeEsquemaRoute: BackofficeEsquemaRoute,
   BackofficeEstadoHospitalRoute: BackofficeEstadoHospitalRoute,

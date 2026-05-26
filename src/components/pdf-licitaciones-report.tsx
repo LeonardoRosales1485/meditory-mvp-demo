@@ -89,11 +89,32 @@ export default function DownloadLicitacionesPdf(props: Props) {
     try {
       doc = new jsPDF("p", "mm", "a4");
       if (el) {
-        // Temporarily override tailwind oklch border-color that breaks html2canvas
-        const fixStyle = document.createElement("style");
-        fixStyle.id = "pdf-temp-fix";
-        fixStyle.textContent = `* { border-color: #e2e8f0 !important; }`;
-        el.appendChild(fixStyle);
+        // Temporarily override oklch CSS variables that break html2canvas
+        const oklchFix = document.createElement("style");
+        oklchFix.id = "pdf-temp-fix";
+        oklchFix.textContent = `:root {
+          --background: #fcfdfd; --foreground: #0b1e33;
+          --card: #ffffff; --card-foreground: #0b1e33;
+          --popover: #ffffff; --popover-foreground: #0b1e33;
+          --primary: #3264c8; --primary-foreground: #fcfcfd;
+          --primary-soft: #ecf2fc;
+          --secondary: #f1f5f9; --secondary-foreground: #141f33;
+          --muted: #f4f7fa; --muted-foreground: #6b7a99;
+          --accent: #d9edf7; --accent-foreground: #1a2f4d;
+          --destructive: #bf3030; --destructive-foreground: #fcfcfd;
+          --success: #47b881; --success-foreground: #fcfcfd;
+          --warning: #d4a017; --warning-foreground: #332600;
+          --border: #dfe6ef; --input: #dfe6ef;
+          --ring: #3264c8;
+          --chart-1: #e86a4a; --chart-2: #44c9a0;
+          --chart-3: #3b679e; --chart-4: #f0c75e;
+          --chart-5: #e8a040;
+          --sidebar: #fcfcfd; --sidebar-foreground: #141f33;
+          --sidebar-primary: #3264c8; --sidebar-primary-foreground: #fcfcfd;
+          --sidebar-accent: #ecf2fc; --sidebar-accent-foreground: #141f33;
+          --sidebar-border: #dfe6ef; --sidebar-ring: #3264c8;
+        }`;
+        el.appendChild(oklchFix);
 
         await new Promise((r) => setTimeout(r, 100));
 
@@ -101,7 +122,7 @@ export default function DownloadLicitacionesPdf(props: Props) {
           scale: 2, useCORS: true, logging: false, backgroundColor: "#ffffff",
         });
 
-        el.removeChild(fixStyle);
+        el.removeChild(oklchFix);
 
         // Multi-page slicing
         const imgW = 190;

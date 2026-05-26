@@ -16,7 +16,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -362,9 +362,9 @@ function LicitacionesPage() {
         <div className="flex items-center gap-3">
           <Gavel className="text-primary" size={26} />
           <div>
-            <h1 className="text-2xl font-bold">Licitaciones</h1>
+            <h1 className="text-2xl font-bold">Pedidos automatizados</h1>
             <p className="text-sm text-muted-foreground">
-              {selectedWs === "__all__" ? "Visión consolidada de todos los hospitales" : selectedWsName} — Stock, licitaciones, ofertas y proveedores
+              {selectedWs === "__all__" ? "Visión consolidada de todos los hospitales" : selectedWsName} — Stock, pedidos, ofertas y proveedores
             </p>
           </div>
           <div className="ml-auto flex items-center gap-2">
@@ -382,8 +382,8 @@ function LicitacionesPage() {
                 </SelectContent>
               </Select>
             </div>
-            <Button onClick={() => setCreateOpen(true)} className="gap-2">
-              <Plus size={16} /> Nueva Licitación
+            <Button onClick={() => setCreateOpen(true)} className="gap-2 hidden">
+              <Plus size={16} /> Nueva pedido
             </Button>
           </div>
         </div>
@@ -424,7 +424,7 @@ function LicitacionesPage() {
           <CardContent className="p-4">
             <div className="flex items-center gap-2 text-blue-600 mb-1">
               <Package size={16} />
-              <span className="text-xs font-medium">Licitaciones Activas</span>
+              <span className="text-xs font-medium">Pedidos Activos</span>
             </div>
             <p className="text-2xl font-black">{activeLicitaciones.length}</p>
             <p className="text-xs text-muted-foreground mt-0.5">{filteredLicitaciones.length} total creadas</p>
@@ -459,7 +459,7 @@ function LicitacionesPage() {
       <Tabs value={tab} onValueChange={(v) => { setTab(v); loadAll(); }}>
         <TabsList className="grid grid-cols-5 w-full max-w-2xl">
           <TabsTrigger value="stock" className="gap-1.5 text-xs"><AlertCircle size={14} />Stock</TabsTrigger>
-          <TabsTrigger value="licitaciones" className="gap-1.5 text-xs"><Gavel size={14} />Licitaciones</TabsTrigger>
+          <TabsTrigger value="licitaciones" className="gap-1.5 text-xs"><Gavel size={14} />Pedidos</TabsTrigger>
           <TabsTrigger value="proveedores" className="gap-1.5 text-xs"><Building2 size={14} />Proveedores</TabsTrigger>
           <TabsTrigger value="transferencias" className="gap-1.5 text-xs"><ArrowLeftRight size={14} />Transferencias</TabsTrigger>
           <TabsTrigger value="asistente" className="gap-1.5 text-xs"><MessageSquare size={14} />Asistente</TabsTrigger>
@@ -540,7 +540,7 @@ function LicitacionesPage() {
         {/* Tab: Licitaciones */}
         <TabsContent value="licitaciones" className="space-y-4">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">{filteredLicitaciones.length} licitaciones registradas</p>
+            <p className="text-sm text-muted-foreground">{filteredLicitaciones.length} pedidos registrados</p>
             <div className="flex items-center gap-2">
               <DownloadLicitacionesPdf
                 lowStock={filteredLowStock}
@@ -550,7 +550,7 @@ function LicitacionesPage() {
                 medMap={medMap}
                 wsName={selectedWsName}
               />
-              <Button size="sm" onClick={() => setCreateOpen(true)} className="gap-1.5">
+              <Button size="sm" onClick={() => setCreateOpen(true)} className="gap-1.5 hidden">
                 <Plus size={14} /> Nueva
               </Button>
             </div>
@@ -747,11 +747,11 @@ function LicitacionesPage() {
         <TabsContent value="asistente" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-sm">Asistente de Licitaciones</CardTitle>
+              <CardTitle className="text-sm">Asistente de Pedidos</CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-xs text-muted-foreground mb-4">
-                Consultá al asistente sobre recomendaciones de compra, análisis de stock, o para que te ayude a crear una licitación.
+                Consultá al asistente sobre recomendaciones de compra, análisis de stock, o para que te ayude a crear un pedido.
               </p>
               <LicitacionesAssistant
                 lowStock={filteredLowStock}
@@ -1098,6 +1098,7 @@ function ConfirmLicitacionDialog({ open, onOpenChange, items, onConfirm }: {
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Confirmar creación de licitación</DialogTitle>
+          <DialogDescription className="sr-only">Resumen de items agrupados por hospital antes de crear las licitaciones</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <p className="text-xs text-muted-foreground">
@@ -1172,6 +1173,7 @@ function ConfirmTransferDialog({ open, onOpenChange, items, warehouses, workspac
       <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Crear transferencia por sobre stock</DialogTitle>
+          <DialogDescription className="sr-only">Seleccionar hospital y depósito destino para cada item con excedente de stock</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <p className="text-xs text-muted-foreground">
@@ -1425,6 +1427,7 @@ function ProveedoresPanel({ proveedores, onRefresh }: {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Nuevo Proveedor</DialogTitle>
+            <DialogDescription className="sr-only">Completar los datos del nuevo proveedor</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div>
@@ -1517,6 +1520,7 @@ function CreateLicitacionDialog({ open, onOpenChange, lowStock, allMeds, onConfi
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Nueva Licitación</DialogTitle>
+          <DialogDescription className="sr-only">Seleccionar medicamentos con bajo stock para crear una licitación</DialogDescription>
         </DialogHeader>
         <div className="space-y-2">
           <p className="text-xs text-muted-foreground">Seleccioná los medicamentos con bajo stock para incluir en la licitación.</p>
@@ -1645,6 +1649,7 @@ function DetailLicitacionDialog({ licitacionId, open, onOpenChange, licitaciones
               {ESTADO_LABELS[lic.estado]}
             </Badge>
           </DialogTitle>
+          <DialogDescription className="sr-only">Detalle de la licitación {lic.codigo}</DialogDescription>
         </DialogHeader>
 
         {lic.estado === "en_licitacion" && (

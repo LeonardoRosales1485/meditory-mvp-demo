@@ -16,7 +16,8 @@ export function isExplicitTransferCreationIntent(userText: string): boolean {
     ) ||
     /\b(hac(e|er)\s+(una\s+)?transfer|mand(ar|a|ame)\s+(una\s+)?transfer|envi(ar|a|ame)\s+.*transfer)\b/.test(t) ||
     /\btransfer(ir|i)\s+(\d|de|el|la|las|los)\b/.test(t) ||
-    /\b(mover|mueve)\s+(\d|stock|unidades)\b/.test(t)
+    /\b(mover|mueve)\s+(\d|stock|unidades)\b/.test(t) ||
+    /\b(transfiere|transfiero|transfieren|transfiera)\b/.test(t)
   );
 }
 

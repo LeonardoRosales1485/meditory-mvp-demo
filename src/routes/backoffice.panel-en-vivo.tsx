@@ -29,7 +29,7 @@ function PanelEnVivoPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <p className="text-sm text-muted-foreground">Cargando panel en vivo…</p>
+        <p className="text-sm text-muted-foreground">Cargando panel en tiempo real…</p>
       </div>
     );
   }

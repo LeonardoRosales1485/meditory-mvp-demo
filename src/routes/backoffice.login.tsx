@@ -50,7 +50,7 @@ function BackofficeLoginPage() {
           </div>
           <div className="flex flex-col">
             <span className="text-lg font-semibold tracking-tight">Meditory</span>
-            <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Backoffice</span>
+            <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Gestión administrativa</span>
           </div>
         </div>
 

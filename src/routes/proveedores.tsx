@@ -357,7 +357,6 @@ function ProveedoresPage() {
                         <TableHead className="text-xs">Medicamento</TableHead>
                         <TableHead className="text-xs text-right">Cantidad</TableHead>
                         <TableHead className="text-xs text-right">Precio Unit. Est.</TableHead>
-                        <TableHead className="text-xs">Justificación</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -368,7 +367,6 @@ function ProveedoresPage() {
                           <TableCell className="text-right text-sm text-muted-foreground">
                             ${item.precio_unitario_estimado.toLocaleString("es-AR")}
                           </TableCell>
-                          <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">{item.justificacion}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>

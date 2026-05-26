@@ -3,14 +3,13 @@ import { useRef, useMemo } from "react";
 import { Download } from "lucide-react";
 import { toast } from "sonner";
 import {
-  BarChart, Bar, PieChart, Pie, Cell, RadarChart, Radar, PolarGrid, PolarAngleAxis,
-  AreaChart, Area, ComposedChart, Line, Treemap,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PolarRadiusAxis,
+  BarChart, Bar, PieChart, Pie, Cell, Treemap,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { captureChartAsDataUrl, downloadChartAsPng, downloadElementAsPng } from "@/lib/utils";
 import { generateChartReportPdf } from "@/lib/pdf-generator";
-import type { CrossHospitalMedStock } from "@/lib/server/backoffice-service";
+import type { CrossHospitalMedStock, ConsumptionDataPoint } from "@/lib/server/backoffice-service";
 
 interface ChartReport {
   workspaceNames: string[];
@@ -107,14 +106,14 @@ export interface WorkspaceStat {
 export function StackedBarChart({ crossStock, workspaces }: { crossStock: CrossHospitalMedStock[]; workspaces: WorkspaceStat[] }) {
   const topMeds = crossStock.slice(0, 8);
   const data = topMeds.map((med) => {
-    const row: Record<string, string | number> = { name: med.medicationName.slice(0, 10) };
+    const row: Record<string, string | number> = { name: med.medicationName.slice(0, 12) };
     for (const s of med.stocks) {
-      row[s.workspaceName.split(" ")[1] ?? s.workspaceName] = s.quantity;
+      row[s.workspaceName] = s.quantity;
     }
     return row;
   });
 
-  const wsNames = workspaces.map((ws) => ws.name.split(" ")[1] ?? ws.name);
+  const wsNames = workspaces.map((ws) => ws.name);
 
   const report: ChartReport = useMemo(() => {
     const wsFullNames = workspaces.map((ws) => ws.name);
@@ -203,169 +202,44 @@ export function StockDonutChart({ workspaces }: { workspaces: WorkspaceStat[] })
 
   return (
     <ChartCard title="Distribución de Stock por Hospital" delay={0.05} report={report}>
-      <ResponsiveContainer width="100%" height={280}>
-        <PieChart>
-          <Pie
-            data={data}
-            cx="50%"
-            cy="50%"
-            innerRadius={65}
-            outerRadius={100}
-            paddingAngle={3}
-            dataKey="value"
-            isAnimationActive
-            label={({ name, percent }) => `${name.split(" ")[1]}: ${(percent * 100).toFixed(0)}%`}
-            labelLine={false}
-          >
-            {data.map((entry, i) => (
-              <Cell key={i} fill={entry.color} />
-            ))}
-          </Pie>
-          <Tooltip formatter={(v: number) => v.toLocaleString("es-AR")} />
-          <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle" className="fill-foreground" fontSize={12}>
-            {total > 0 ? `${(total / 1000).toFixed(0)}K` : "0"}
-          </text>
-        </PieChart>
-      </ResponsiveContainer>
-    </ChartCard>
-  );
-}
-
-// ── 3. RadarChart: Comparativa multi-eje de hospitales ───────
-
-export function HospitalRadarChart({ workspaces }: { workspaces: WorkspaceStat[] }) {
-  const wsFullNames = workspaces.map((ws) => ws.name);
-  const wsShortNames = workspaces.map((ws) => ws.name.split(" ")[1] ?? ws.name);
-  const maxUnits = Math.max(...workspaces.map((w) => w.totalUnits), 1);
-  const data = [
-    { axis: "Stock", ...Object.fromEntries(workspaces.map((ws) => [ws.name.split(" ")[1] ?? ws.name, Math.round((ws.totalUnits / maxUnits) * 100)])) },
-    { axis: "Usuarios", ...Object.fromEntries(workspaces.map((ws) => [ws.name.split(" ")[1] ?? ws.name, ws.totalUsers * 10])) },
-    { axis: "Depósitos", ...Object.fromEntries(workspaces.map((ws) => [ws.name.split(" ")[1] ?? ws.name, ws.totalWarehouses * 30])) },
-    { axis: "Movimientos", ...Object.fromEntries(workspaces.map((ws) => [ws.name.split(" ")[1] ?? ws.name, ws.movementsToday * 20])) },
-    { axis: "Medicamentos", ...Object.fromEntries(workspaces.map((ws) => [ws.name.split(" ")[1] ?? ws.name, 80])) },
-  ];
-
-  const report: ChartReport = useMemo(() => {
-    const wsFullNames = workspaces.map((ws) => ws.name);
-    const bestStock = workspaces.reduce((a, b) => a.totalUnits > b.totalUnits ? a : b);
-    const worstStock = workspaces.reduce((a, b) => a.totalUnits < b.totalUnits ? a : b);
-    const bestMovements = workspaces.reduce((a, b) => a.movementsToday > b.movementsToday ? a : b);
-    const wsLines: string[] = workspaces.map((ws) => `${ws.name} (${ws.totalUnits} uds, ${ws.totalWarehouses} depósitos, ${ws.movementsToday} movs/día)`);
-
-    const analysis = `La comparativa multi-indicador entre hospitales revela perfiles operativos notablemente distintos. ${bestStock.name} lidera en volumen de stock total con ${bestStock.totalUnits.toLocaleString('es-AR')} unidades, mientras que ${worstStock.name} registra el menor inventario (${worstStock.totalUnits.toLocaleString('es-AR')} unidades). En cuanto a actividad, ${bestMovements.name} presenta la mayor cantidad de movimientos diarios (${bestMovements.movementsToday}), lo que sugiere una rotación de inventario más dinámica. El análisis por hospital muestra que: ${wsLines.join('; ')}. Esta heterogeneidad sugiere que cada hospital opera con niveles de recursos y demandas distintas, lo que refuerza la necesidad de estrategias de gestión diferenciadas pero coordinadas.`;
-
-    return {
-      workspaceNames: wsFullNames,
-      analysis,
-      recommendations: [
-        `Establecer un plan de equiparación progresiva para que ${worstStock.name} alcance al menos el 70% del stock de ${bestStock.name} en medicamentos críticos.`,
-        'Implementar indicadores comunes de eficiencia (rotación de stock, días de cobertura) para evaluar el desempeño relativo de cada hospital con los mismos criterios.',
-        `Utilizar la mayor actividad de ${bestMovements.name} como caso de estudio para identificar prácticas replicables en los demás hospitales.`,
-      ],
-      tips: ['Realizar este análisis comparativo mensualmente para detectar tendencias y corregir desviaciones a tiempo.'],
-    };
-  }, [workspaces]);
-
-  return (
-    <ChartCard title="Comparativa Multi-Indicador" delay={0.1} report={report}>
-      <ResponsiveContainer width="100%" height={280}>
-        <RadarChart data={data}>
-          <PolarGrid />
-          <PolarAngleAxis dataKey="axis" tick={{ fontSize: 11 }} />
-          <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fontSize: 9 }} />
-          {wsShortNames.map((ws, i) => (
-            <Radar key={ws} name={ws} dataKey={ws} stroke={COLORS_HEX[i]} fill={COLORS_HEX[i]} fillOpacity={0.25} isAnimationActive />
+      <div className="flex flex-col items-center">
+        <ResponsiveContainer width="100%" height={220}>
+          <PieChart>
+            <Pie
+              data={data}
+              cx="50%"
+              cy="50%"
+              innerRadius={60}
+              outerRadius={90}
+              paddingAngle={3}
+              dataKey="value"
+              isAnimationActive
+            >
+              {data.map((entry, i) => (
+                <Cell key={i} fill={entry.color} />
+              ))}
+            </Pie>
+            <Tooltip formatter={(v: number) => v.toLocaleString("es-AR")} />
+            <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle" className="fill-foreground" fontSize={12}>
+              {total > 0 ? `${(total / 1000).toFixed(0)}K` : "0"}
+            </text>
+          </PieChart>
+        </ResponsiveContainer>
+        <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 mt-1">
+          {data.map((entry) => (
+            <div key={entry.name} className="flex items-center gap-1.5">
+              <span className="shrink-0 w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: entry.color }} />
+              <span className="text-xs text-muted-foreground">{entry.name}</span>
+              <span className="text-xs font-medium">{total > 0 ? ((entry.value / total) * 100).toFixed(1) : "0"}%</span>
+            </div>
           ))}
-          <Legend wrapperStyle={{ fontSize: 11 }} />
-          <Tooltip />
-        </RadarChart>
-      </ResponsiveContainer>
+        </div>
+      </div>
     </ChartCard>
   );
 }
 
-// ── 4. AreaChart: Consumo histórico 30d ─────────────────────
-
-export interface ConsumptionPoint { date: string; workspaceName: string; totalConsumed: number }
-
-export function ConsumptionAreaChart({ data }: { data: ConsumptionPoint[] }) {
-  const wsFullNames = [...new Set(data.map((d) => d.workspaceName))];
-  const wsNames = wsFullNames.map((n) => n.split(" ")[1] ?? n);
-  const byDate = new Map<string, Record<string, number>>();
-
-  for (const d of data) {
-    const ws = d.workspaceName.split(" ")[1] ?? d.workspaceName;
-    if (!byDate.has(d.date)) byDate.set(d.date, {});
-    const row = byDate.get(d.date)!;
-    row[ws] = (row[ws] ?? 0) + d.totalConsumed;
-  }
-
-  const chartData = [...byDate.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .slice(-20)
-    .map(([date, vals]) => ({ date: date.slice(5), ...vals }));
-
-  const totalConsumed = data.reduce((s, d) => s + d.totalConsumed, 0);
-
-  const report: ChartReport = useMemo(() => {
-    const wsFullNames = [...new Set(data.map((d) => d.workspaceName))];
-    const totalConsumed = data.reduce((s, d) => s + d.totalConsumed, 0);
-    const byWs = new Map<string, number>();
-    for (const d of data) {
-      byWs.set(d.workspaceName, (byWs.get(d.workspaceName) ?? 0) + d.totalConsumed);
-    }
-    const topWs = [...byWs.entries()].sort((a, b) => b[1] - a[1]);
-    const avgDaily = Math.round(totalConsumed / 30);
-    const dates = [...new Set(data.map((d) => d.date))].sort();
-    const firstDate = dates[0] ?? '';
-    const lastDate = dates[dates.length - 1] ?? '';
-
-    const analysis = `Durante el período del ${firstDate} al ${lastDate} se registró un consumo total de ${totalConsumed.toLocaleString('es-AR')} unidades de medicamentos en todos los hospitales, con un promedio diario de ${avgDaily.toLocaleString('es-AR')} unidades. ${topWs[0]?.[0] ?? 'Un hospital'} lidera el consumo con ${topWs[0]?.[1]?.toLocaleString('es-AR') ?? 0} unidades (${totalConsumed > 0 ? ((topWs[0]?.[1] ?? 0) / totalConsumed * 100).toFixed(1) : 0}% del total), seguido por ${topWs[1]?.[0] ?? 'otro'} con ${topWs[1]?.[1]?.toLocaleString('es-AR') ?? 0} unidades. La variabilidad en el consumo diario sugiere picos de demanda que podrían estar asociados a campañas de salud, estacionalidad o programas de tratamiento específicos. Identificar estos patrones es clave para optimizar la planificación de compras y evitar tanto el desabastecimiento como el exceso de inventario.`;
-
-    const tips: string[] = [];
-    if (avgDaily > 100) {
-      tips.push('Si el consumo promedio supera las 100 unidades diarias, considerar la implementación de un stock de seguridad calculado en función de la desviación estándar del consumo histórico.');
-    }
-
-    return {
-      workspaceNames: wsFullNames,
-      analysis,
-      recommendations: [
-        'Cruzar los picos de consumo con las campañas sanitarias y programas de salud para ajustar las compras preventivas.',
-        'Calcular el stock de seguridad óptimo usando la fórmula: (consumo máximo diario × plazo de reposición) - (consumo promedio × plazo de reposición).',
-        `Establecer reuniones semanales de revisión de consumo entre los hospitales para anticipar desabastecimientos, especialmente en ${topWs[0]?.[0] ?? 'el hospital de mayor consumo'}.`,
-      ],
-      tips,
-    };
-  }, [data]);
-
-  return (
-    <ChartCard title="Consumo Histórico 30 días" delay={0.15} report={report}>
-      <ResponsiveContainer width="100%" height={280}>
-        <AreaChart data={chartData} margin={{ left: -15 }}>
-          <defs>
-            {wsNames.map((ws, i) => (
-              <linearGradient key={ws} id={`grad${i}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={COLORS_HEX[i]} stopOpacity={0.4} />
-                <stop offset="95%" stopColor={COLORS_HEX[i]} stopOpacity={0.05} />
-              </linearGradient>
-            ))}
-          </defs>
-          <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-          <XAxis dataKey="date" tick={{ fontSize: 9 }} />
-          <YAxis tick={{ fontSize: 10 }} />
-          <Tooltip />
-          <Legend wrapperStyle={{ fontSize: 11 }} />
-          {wsNames.map((ws, i) => (
-            <Area key={ws} type="monotone" dataKey={ws} stroke={COLORS_HEX[i]} fill={`url(#grad${i})`} strokeWidth={2} isAnimationActive />
-          ))}
-        </AreaChart>
-      </ResponsiveContainer>
-    </ChartCard>
-  );
-}
-
-// ── 5. BarChart horizontal: Top 10 medicamentos más stockeados
+// ── 3. BarChart horizontal: Top 10 medicamentos más stockeados
 
 export function TopMedsHorizontalChart({ crossStock }: { crossStock: CrossHospitalMedStock[] }) {
   const data = crossStock
@@ -403,7 +277,7 @@ export function TopMedsHorizontalChart({ crossStock }: { crossStock: CrossHospit
         <BarChart layout="vertical" data={data} margin={{ left: 10, right: 20 }}>
           <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
           <XAxis type="number" tick={{ fontSize: 9 }} />
-          <YAxis dataKey="name" type="category" tick={{ fontSize: 9 }} width={80} />
+          <YAxis dataKey="name" type="category" tick={{ fontSize: 9 }} width={140} />
           <Tooltip formatter={(v: number) => v.toLocaleString("es-AR")} />
           <Bar dataKey="total" radius={[0, 4, 4, 0]} isAnimationActive>
             {data.map((_, i) => <Cell key={i} fill={COLORS_HEX[i]} />)}
@@ -414,12 +288,11 @@ export function TopMedsHorizontalChart({ crossStock }: { crossStock: CrossHospit
   );
 }
 
-// ── 6. ComposedChart: Stock actual vs demanda óptima ─────────
+// ── 6. BarChart 3 barras: Stock Actual vs Óptimo vs Crítico ──
 
 export function StockVsDemandChart({ crossStock }: { crossStock: CrossHospitalMedStock[] }) {
   const data = crossStock.slice(0, 10).map((m) => ({
-    name: m.medicationName.slice(0, 8),
-    fullName: m.medicationName,
+    name: m.medicationName,
     stockTotal: m.stocks.reduce((s, ws) => s + ws.quantity, 0),
     optimalTotal: m.stocks.reduce((s, ws) => s + ws.optimalStock, 0),
     minTotal: m.stocks.reduce((s, ws) => s + ws.minStock, 0),
@@ -434,14 +307,14 @@ export function StockVsDemandChart({ crossStock }: { crossStock: CrossHospitalMe
     const totalSurplus = surplusMeds.reduce((s, d) => s + (d.stockTotal - d.optimalTotal), 0);
     const pctOnTarget = data.length > 0 ? ((data.length - deficitMeds.length - surplusMeds.length) / data.length * 100).toFixed(0) : "0";
 
-    const analysis = `Del total de ${data.length} medicamentos analizados, solo el ${pctOnTarget}% se encuentra dentro del rango óptimo de stock. Se identificaron ${deficitMeds.length} medicamentos con déficit (faltante total de ${totalDeficit.toLocaleString('es-AR')} unidades para alcanzar el nivel óptimo) y ${surplusMeds.length} con superávit (excedente de ${totalSurplus.toLocaleString('es-AR')} unidades). De estos, ${criticalMeds.length} medicamentos se encuentran por debajo del stock mínimo, lo que representa un riesgo inminente de desabastecimiento. Los medicamentos más críticos son: ${criticalMeds.slice(0, 3).map((m) => `${m.fullName} (actual: ${m.stockTotal}, óptimo: ${m.optimalTotal})`).join('; ')}. Esta brecha entre el stock actual y los niveles óptimos sugiere que los parámetros de inventario no se actualizan con la frecuencia necesaria o que las compras no se ajustan a la demanda real.`;
+    const analysis = `Del total de ${data.length} medicamentos analizados, solo el ${pctOnTarget}% se encuentra dentro del rango óptimo de stock. Se identificaron ${deficitMeds.length} medicamentos con déficit (faltante total de ${totalDeficit.toLocaleString('es-AR')} unidades para alcanzar el nivel óptimo) y ${surplusMeds.length} con superávit (excedente de ${totalSurplus.toLocaleString('es-AR')} unidades). De estos, ${criticalMeds.length} medicamentos se encuentran por debajo del stock mínimo, lo que representa un riesgo inminente de desabastecimiento. Los medicamentos más críticos son: ${criticalMeds.slice(0, 3).map((m) => `${m.name} (actual: ${m.stockTotal}, óptimo: ${m.optimalTotal})`).join('; ')}. Esta brecha entre el stock actual y los niveles óptimos sugiere que los parámetros de inventario no se actualizan con la frecuencia necesaria o que las compras no se ajustan a la demanda real.`;
 
     return {
       workspaceNames: wsFullNames,
       analysis,
       recommendations: [
-        criticalMeds.length > 0 ? `Activar compra de emergencia para: ${criticalMeds.map((m) => m.fullName).join(', ')}.` : '',
-        deficitMeds.length > 0 && surplusMeds.length > 0 ? `Transferir excedentes de ${surplusMeds[0]?.fullName ?? ''} y ${surplusMeds[1]?.fullName ?? ''} hacia los hospitales con déficit, reduciendo la necesidad de compra externa.` : '',
+        criticalMeds.length > 0 ? `Activar compra de emergencia para: ${criticalMeds.map((m) => m.name).join(', ')}.` : '',
+        deficitMeds.length > 0 && surplusMeds.length > 0 ? `Transferir excedentes de ${surplusMeds[0]?.name ?? ''} y ${surplusMeds[1]?.name ?? ''} hacia los hospitales con déficit, reduciendo la necesidad de compra externa.` : '',
         'Revisar y actualizar los parámetros de stock mínimo y óptimo cada 90 días en función del consumo real y los plazos de reposición.',
         `Implementar alertas automáticas cuando el stock caiga por debajo del 120% del stock mínimo para activar la reposición con antelación.`,
       ].filter(Boolean),
@@ -454,18 +327,16 @@ export function StockVsDemandChart({ crossStock }: { crossStock: CrossHospitalMe
   return (
     <ChartCard title="Stock Actual vs Demanda Óptima" delay={0.25} report={report}>
       <ResponsiveContainer width="100%" height={280}>
-        <ComposedChart data={data} margin={{ left: -10 }}>
+        <BarChart data={data} margin={{ left: -10 }}>
           <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-          <XAxis dataKey="name" tick={{ fontSize: 9 }} />
+          <XAxis dataKey="name" tick={{ fontSize: 8 }} interval={0} />
           <YAxis tick={{ fontSize: 9 }} />
           <Tooltip formatter={(v: number) => v.toLocaleString("es-AR")} />
           <Legend wrapperStyle={{ fontSize: 11 }} />
-          <Bar dataKey="stockTotal" name="Stock actual" isAnimationActive>
-            {data.map((_, i) => <Cell key={i} fill={COLORS_HEX[i]} />)}
-          </Bar>
-          <Line type="monotone" dataKey="optimalTotal" name="Óptimo" stroke="#1e293b" strokeWidth={2} dot={false} />
-          <Line type="monotone" dataKey="minTotal" name="Mínimo" stroke="#94a3b8" strokeWidth={2} strokeDasharray="4 4" dot={false} />
-        </ComposedChart>
+          <Bar dataKey="stockTotal" name="Actual" fill="#6366f1" isAnimationActive />
+          <Bar dataKey="optimalTotal" name="Óptimo" fill="#22c55e" isAnimationActive />
+          <Bar dataKey="minTotal" name="Crítico" fill="#ef4444" isAnimationActive />
+        </BarChart>
       </ResponsiveContainer>
     </ChartCard>
   );
@@ -504,7 +375,7 @@ export function StockTreemap({ crossStock }: { crossStock: CrossHospitalMedStock
   }, [crossStock]);
 
   return (
-    <ChartCard title="Distribución por Medicamento (Treemap)" delay={0.3} report={report}>
+    <ChartCard title="Distribución por Medicamento (Treemap) en todos los hospitales" delay={0.3} report={report}>
       <ResponsiveContainer width="100%" height={280}>
         <Treemap
           data={data}
@@ -558,7 +429,7 @@ export function StockHeatmap({ crossStock, workspaceNames }: { crossStock: Cross
         else if (ratio >= 0.7 && ratio <= 1.1) optimalCells.push(`${med.medicationName} en ${s.workspaceName}`);
       }
     }
-    const wsNamesList = workspaceNames.map((n) => n.split(" ")[1] ?? n).join(', ');
+    const wsNamesList = workspaceNames.join(', ');
 
     const analysis = `El heatmap de stock por medicamento y hospital proporciona una visión de semáforo del estado del inventario. Se detectaron ${criticalCells.length} celdas en estado crítico (stock por debajo del 30% del nivel óptimo): ${criticalCells.slice(0, 5).join('; ')}${criticalCells.length > 5 ? ` y ${criticalCells.length - 5} más` : ''}. Por otro lado, ${optimalCells.length} celdas se encuentran en nivel óptimo. Los hospitales analizados son: ${wsNamesList}. Esta visualización permite identificar rápidamente los puntos de mayor riesgo y las áreas que requieren atención inmediata. La presencia de múltiples celdas críticas en un mismo hospital sugiere problemas sistémicos de abastecimiento que deben abordarse de raíz.`;
 
@@ -585,7 +456,7 @@ export function StockHeatmap({ crossStock, workspaceNames }: { crossStock: Cross
             <tr>
               <th className="text-left py-1 pr-2 font-medium text-muted-foreground">Medicamento</th>
               {workspaceNames.map((ws) => (
-                <th key={ws} className="px-1 text-center font-medium text-muted-foreground">{ws.split(" ")[1] ?? ws}</th>
+                <th key={ws} className="px-1 text-center font-medium text-muted-foreground text-[10px]">{ws.split(" ").pop()}</th>
               ))}
             </tr>
           </thead>
@@ -624,77 +495,9 @@ export function StockHeatmap({ crossStock, workspaceNames }: { crossStock: Cross
   );
 }
 
-// ── 10. Sankey simplificado SVG: Flujo de pérdidas ───────────
+// ── 10. Semi-circle donut: Capacidad depósitos ───────────────
 
-export function LossSankeyChart({ totalStock, lossAmount, savingAmount }: { totalStock: number; lossAmount: number; savingAmount: number }) {
-  const usedPct = Math.max(5, Math.min(80, ((totalStock - lossAmount / 100) / totalStock) * 100));
-  const lossPct = Math.max(5, 100 - usedPct - 10);
-
-  const report: ChartReport = useMemo(() => {
-    const usedPct = Math.max(5, Math.min(80, ((totalStock - lossAmount / 100) / totalStock) * 100));
-    const lossPct = Math.max(5, 100 - usedPct - 10);
-    const savingVsLoss = lossAmount > 0 ? ((savingAmount / lossAmount) * 100).toFixed(0) : "0";
-
-    const analysis = `Del total de ${(totalStock / 1000).toFixed(1)}K unidades en stock, se estima que el ${lossPct.toFixed(0)}% corresponde a stock ocioso que podría generar una pérdida económica de $${(lossAmount / 1000).toFixed(0)}K por vencimientos, costos de almacenamiento y capital inmovilizado. Sin embargo, mediante la implementación de transferencias internas entre hospitales, sería posible recuperar $${savingAmount.toLocaleString('es-AR')}, lo que representa el ${savingVsLoss}% de la pérdida potencial. Esto significa que una parte significativa del stock ocioso en un hospital podría ser aprovechado por otro hospital con déficit, transformando una pérdida en un ahorro. El impacto financiero de no implementar transferencias internas es sustancial y afecta directamente al presupuesto operativo de la red hospitalaria.`;
-
-    return {
-      workspaceNames: [],
-      analysis,
-      recommendations: [
-        'Implementar un programa de transferencias internas con proceso estandarizado: detección de superávit → notificación → solicitud → aprobación → envío → confirmación de recepción.',
-        'Designar un coordinador logístico de la red hospitalaria responsable de identificar semanalmente oportunidades de transferencia entre hospitales.',
-        'Establecer un plazo máximo de 48 horas para completar las transferencias internas una vez identificada la oportunidad.',
-        `Capacitar al personal de farmacia en la identificación de stock ocioso y en el uso de la plataforma de gestión de transferencias.`,
-      ],
-      tips: [
-        'Cada mes sin transferencias internas representa una pérdida evitable. Automatizar la detección de oportunidades de transferencia puede reducir el stock ocioso hasta en un 40%.',
-        'Considerar la creación de un fondo de compensación interna para incentivar a los hospitales que transfieren medicamentos, cubriendo sus costos logísticos.',
-      ],
-    };
-  }, [totalStock, lossAmount, savingAmount]);
-
-  return (
-    <ChartCard title="Flujo de Pérdidas — Stock Ocioso" delay={0.5} report={report}>
-      <div className="flex flex-col items-center justify-center h-[260px] gap-3 px-4">
-        <div className="w-full flex items-center gap-2 text-sm">
-          <div className="bg-blue-500 text-white px-3 py-2 rounded text-xs text-center min-w-[90px]">
-            Stock Total<br /><strong>{(totalStock / 1000).toFixed(1)}K uds</strong>
-          </div>
-          <div className="flex-1 flex flex-col gap-1">
-            <div className="flex items-center gap-2">
-              <div className="h-0.5 flex-1 bg-green-400" />
-              <div className="bg-green-100 dark:bg-green-900 border border-green-300 px-2 py-1 rounded text-xs text-green-700 dark:text-green-300">
-                Uso eficiente ({(100 - lossPct).toFixed(0)}%)
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="h-0.5 flex-1 bg-red-400" />
-              <div className="bg-red-100 dark:bg-red-900 border border-red-300 px-2 py-1 rounded text-xs text-red-700 dark:text-red-300">
-                Stock ocioso ({lossPct.toFixed(0)}%)
-              </div>
-            </div>
-          </div>
-          <div className="flex flex-col gap-1">
-            <div className="bg-green-500 text-white px-2 py-1 rounded text-xs text-center">
-              Hospitalización
-            </div>
-            <div className="bg-red-500 text-white px-2 py-1 rounded text-xs text-center">
-              Vencimiento<br /><strong>${(lossAmount / 1000).toFixed(0)}K pérdida</strong>
-            </div>
-          </div>
-        </div>
-        <div className="w-full bg-green-50 dark:bg-green-950 border border-green-200 rounded-lg p-3 text-center">
-          <p className="text-xs text-muted-foreground">Con transferencias internas se recuperaría</p>
-          <p className="text-lg font-bold text-green-600">${savingAmount.toLocaleString("es-AR")}</p>
-        </div>
-      </div>
-    </ChartCard>
-  );
-}
-
-// ── 12. Semi-circle donut: Capacidad depósitos ───────────────
-
-export interface WarehouseVolumeSummary { name: string; pct: number }
+export interface WarehouseVolumeSummary { name: string; pct: number; workspaceName?: string }
 
 export function CapacityDonutChart({ warehouses }: { warehouses: WarehouseVolumeSummary[] }) {
   const avgPct = warehouses.length > 0 ? warehouses.reduce((s, w) => s + w.pct, 0) / warehouses.length : 0;
@@ -758,18 +561,128 @@ export function CapacityDonutChart({ warehouses }: { warehouses: WarehouseVolume
           <text x={cx} y={cy - 5} textAnchor="middle" fontSize="24" fontWeight="bold" fill={color}>{avgPct.toFixed(0)}%</text>
           <text x={cx} y={cy + 10} textAnchor="middle" fontSize="9" fill="#6b7280">ocupación media</text>
         </svg>
-        <div className="grid grid-cols-3 gap-1 w-full mt-2">
+        <div className="grid grid-cols-2 gap-x-3 gap-y-1 w-full mt-2">
           {warehouses.slice(0, 6).map((wh, i) => {
             const c = wh.pct < 60 ? "text-green-600" : wh.pct < 85 ? "text-yellow-600" : "text-red-600";
+            const label = wh.workspaceName ? `${wh.workspaceName} - ${wh.name}` : wh.name;
             return (
-              <div key={`${wh.name}-${i}`} className="text-center">
-                <p className={`text-xs font-bold ${c}`}>{wh.pct.toFixed(0)}%</p>
-                <p className="text-[10px] text-muted-foreground truncate">{wh.name}</p>
+              <div key={`${wh.name}-${i}`} className="flex items-center gap-1.5 min-w-0">
+                <span className={`shrink-0 w-1.5 h-1.5 rounded-full ${c}`} />
+                <p className="text-[10px] text-muted-foreground truncate flex-1">{label}</p>
+                <p className={`text-[10px] font-bold ${c} shrink-0`}>{wh.pct.toFixed(0)}%</p>
               </div>
             );
           })}
         </div>
       </div>
+    </ChartCard>
+  );
+}
+
+// ── 11. BarChart horizontal: Ranking 100 Productos Estrella (top consumo) ──
+
+export function ProductosEstrellaChart({ crossStock, consumptionData }: { crossStock: CrossHospitalMedStock[]; consumptionData: ConsumptionDataPoint[] }) {
+  const consumedMap = new Map<string, number>();
+  for (const d of consumptionData) {
+    consumedMap.set(d.medicationName, (consumedMap.get(d.medicationName) ?? 0) + d.totalConsumed);
+  }
+
+  const data = [...consumedMap.entries()]
+    .map(([name, total]) => ({ name, total }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 100);
+
+  const report: ChartReport = useMemo(() => {
+    const wsFullNames = [...new Set(consumptionData.map((d) => d.workspaceName))];
+    const grandTotal = data.reduce((s, d) => s + d.total, 0);
+    const top1 = data[0];
+
+    const analysis = `El ranking de los 100 productos estrella muestra los medicamentos de mayor consumo en los últimos 30 días. ${top1?.name ?? 'El primer producto'} lidera con ${top1?.total.toLocaleString('es-AR') ?? 0} unidades consumidas, representando ${grandTotal > 0 ? ((top1?.total ?? 0) / grandTotal * 100).toFixed(1) : 0}% del total de ${grandTotal.toLocaleString('es-AR')} unidades consumidas en el top 100. Estos productos de alta rotación requieren una atención prioritaria en la gestión de inventario para evitar desabastecimientos.`;
+
+    return {
+      workspaceNames: wsFullNames,
+      analysis,
+      recommendations: [
+        'Garantizar stock de seguridad para los 20 productos principales del ranking.',
+        'Negociar contratos marco con proveedores para estos productos de alta demanda.',
+        'Monitorear semanalmente el nivel de stock de los productos estrella para evitar roturas.',
+      ],
+      tips: ['Los productos de mayor consumo suelen concentrar el 80% del valor del inventario (principio de Pareto).'],
+    };
+  }, [data]);
+
+  return (
+    <ChartCard title="Ranking 100 Productos Estrella" delay={0.4} report={report}>
+      <ResponsiveContainer width="100%" height={500}>
+        <BarChart layout="vertical" data={data} margin={{ left: 20, right: 20 }}>
+          <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+          <XAxis type="number" tick={{ fontSize: 9 }} />
+          <YAxis dataKey="name" type="category" tick={{ fontSize: 8 }} width={180} interval={0} />
+          <Tooltip formatter={(v: number) => v.toLocaleString("es-AR")} />
+          <Bar dataKey="total" radius={[0, 4, 4, 0]} isAnimationActive>
+            {data.map((_, i) => <Cell key={i} fill={COLORS_HEX[i % COLORS_HEX.length]} />)}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </ChartCard>
+  );
+}
+
+// ── 12. BarChart horizontal: Ranking 100 Productos Estancados (menor consumo) ──
+
+export function ProductosEstancadosChart({ crossStock, consumptionData }: { crossStock: CrossHospitalMedStock[]; consumptionData: ConsumptionDataPoint[] }) {
+  const consumedMap = new Map<string, number>();
+  for (const d of consumptionData) {
+    consumedMap.set(d.medicationName, (consumedMap.get(d.medicationName) ?? 0) + d.totalConsumed);
+  }
+
+  const zeroConsumption: { name: string; total: number }[] = [];
+  for (const m of crossStock) {
+    if (!consumedMap.has(m.medicationName)) {
+      const totalStock = m.stocks.reduce((s, ws) => s + ws.quantity, 0);
+      if (totalStock > 0) {
+        zeroConsumption.push({ name: m.medicationName, total: 0 });
+      }
+    }
+  }
+
+  const withConsumption = [...consumedMap.entries()]
+    .map(([name, total]) => ({ name, total }))
+    .sort((a, b) => a.total - b.total);
+
+  const data = [...zeroConsumption, ...withConsumption].slice(0, 100);
+
+  const report: ChartReport = useMemo(() => {
+    const wsFullNames = [...new Set(consumptionData.map((d) => d.workspaceName))];
+    const stagnantCount = data.filter((d) => d.total === 0).length;
+
+    const analysis = `El ranking de los 100 productos estancados revela ${stagnantCount} medicamentos con consumo cero en los últimos 30 días, a pesar de tener stock disponible. El resto del ranking corresponde a medicamentos con muy baja rotación. Estos productos representan capital inmovilizado y riesgo de vencimiento, por lo que requieren una estrategia de liquidación, redistribución o devolución a proveedores.`;
+
+    return {
+      workspaceNames: wsFullNames,
+      analysis,
+      recommendations: [
+        'Identificar los medicamentos con consumo cero y evaluar su necesidad clínica real.',
+        'Priorizar la redistribución de productos estancados hacia hospitales con posible demanda.',
+        'Establecer una política de devolución a proveedores para productos sin rotación en más de 90 días.',
+      ],
+      tips: ['Un producto estancado genera costos de almacenamiento sin beneficio terapéutico. Revisar la vigencia y fechas de vencimiento.'],
+    };
+  }, [data]);
+
+  return (
+    <ChartCard title="Ranking 100 Productos Estancados" delay={0.45} report={report}>
+      <ResponsiveContainer width="100%" height={500}>
+        <BarChart layout="vertical" data={data} margin={{ left: 20, right: 20 }}>
+          <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+          <XAxis type="number" tick={{ fontSize: 9 }} />
+          <YAxis dataKey="name" type="category" tick={{ fontSize: 8 }} width={180} interval={0} />
+          <Tooltip formatter={(v: number) => v.toLocaleString("es-AR")} />
+          <Bar dataKey="total" radius={[0, 4, 4, 0]} isAnimationActive>
+            {data.map((_, i) => <Cell key={i} fill={COLORS_HEX[(i + 3) % COLORS_HEX.length]} />)}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
     </ChartCard>
   );
 }
